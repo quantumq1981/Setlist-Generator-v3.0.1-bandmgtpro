@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Setlist Generator v3.0.1 — Band Management Pro</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #1a1a1a;
+      --secondary: #2d2d2d;
+      --accent: #ff6b35;
+      --accent-dark: #e85a28;
+      --text: #ffffff;
+      --text-muted: #9aa0a6;
+      --border: #404040;
+      --success: #4ade80;
+      --warning: #fbbf24;
+      --error: #ef4444;
+      --ballad: #60a5fa;
+      --uptempo: #f87171;
+      --midtempo: #fbbf24;
+      --funk: #a78bfa;
+      --shuffle: #34d399;
+      --swing: #fb923c;
+      --groove: #ec4899;
+      --locked: #4ade80;
+      --toast-bg: rgba(45,45,45,.95);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Manrope', system-ui, -apple-system, Arial, sans-serif;
+      background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%);
+      color: var(--text);
+      min-height: 100vh; overflow-x: hidden;
+    }
+    .app-container { max-width: 1600px; margin: 0 auto; padding: 1.25rem; }
+    header.header { text-align: center; margin: 1rem 0 2rem; position: relative; }
+    header.header::before {
+      content: ''; position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+      width: 100px; height: 4px; background: linear-gradient(90deg, var(--accent), var(--accent-dark)); border-radius: 2px;
+    }
+    h1 {
+      font-family: 'Space Mono', monospace; font-size: 2.2rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: .25rem;
+      background: linear-gradient(135deg, var(--text) 0%, var(--text-muted) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .subtitle { color: var(--text-muted); font-size: .95rem; letter-spacing: .08em; text-transform: uppercase; }
+    .band-bar {
+      background: var(--secondary); border: 1px solid var(--border); border-radius: 10px;
+      padding: .75rem 1rem; margin: 0 0 1rem; display: flex; gap: .75rem; align-items: center; justify-content: space-between;
+    }
+    .band-left { display: flex; align-items: center; gap: .75rem; }
+    .band-pill {
+      display: inline-flex; gap: .5rem; align-items: center; background: var(--primary);
+      border: 1px solid var(--border); border-radius: 999px; padding: .4rem .75rem; font-size: .9rem;
+    }
+    .band-pill .swatch { width: 12px; height: 12px; border-radius: 999px; border: 1px solid var(--border); }
+    .btn { padding: .65rem 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--primary); color: var(--text);
+      font-weight: 600; font-size: .85rem; letter-spacing: .04em; cursor: pointer; transition: .2s ease; }
+    .btn:hover { border-color: var(--accent); }
+    .btn-primary { background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%); border-color: transparent; }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(255, 107, 53, 0.35); }
+    .btn-small { padding: .45rem .75rem; font-size: .75rem; }
+    .main-grid { display: grid; grid-template-columns: 420px 1fr; gap: 1rem; }
+    .panel {
+      background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 1rem;
+      box-shadow: 0 6px 24px rgba(0,0,0,.35);
+    }
+    .panel-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border);
+      padding-bottom: .6rem; margin-bottom: 1rem; }
+    .panel-title { font-family: 'Space Mono', monospace; color: var(--accent); font-weight: 700; }
+    label { display:block; margin-bottom: .35rem; font-size: .8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+    input, select, textarea {
+      width: 100%; padding: .65rem .75rem; background: var(--primary); border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text); font-size: .9rem;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,107,53,.12); }
+    .input-group { margin-bottom: .8rem; }
+    .set-config { display:grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+    .toolbar { display:flex; gap:.6rem; flex-wrap: wrap; }
+    .song-list { max-height: 420px; overflow:auto; }
+    .song-item { background: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: .75rem;
+      display:flex; align-items:center; justify-content: space-between; margin-bottom:.6rem; }
+    .song-title { font-weight:700; margin-bottom: .2rem; }
+    .song-meta { font-size: .8rem; color: var(--text-muted); display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
+    .song-badge { padding: .15rem .4rem; border-radius: 4px; font-size: .7rem; font-weight:700; text-transform: uppercase; letter-spacing: .04em; }
+    .style-ballad{background:var(--ballad); color:#111;} .style-uptempo{background:var(--uptempo); color:#111;}
+    .style-midtempo{background:var(--midtempo); color:#111;} .style-funk{background:var(--funk); color:#111;}
+    .style-shuffle{background:var(--shuffle); color:#111;} .style-swing{background:var(--swing); color:#111;}
+    .style-groove{background:var(--groove); color:#111;}
+    .setlists-container { display:grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1rem; }
+    .setlist { background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
+    .setlist-header { display:flex; align-items:center; justify-content: space-between; border-bottom:2px solid var(--accent); padding-bottom:.5rem; margin-bottom:.75rem; }
+    .setlist-song { display:grid; grid-template-columns: 32px 1fr 54px 40px; gap:.6rem; align-items:center;
+      background: var(--primary); border:1px solid var(--border); border-left:3px solid transparent; border-radius: 8px; padding: .6rem; margin-bottom:.5rem; }
+    .setlist-song.locked { border-left-color: var(--locked); background: rgba(74,222,128,.06); }
+    .song-number { color: var(--accent); font-family:'Space Mono', monospace; font-weight:700; text-align:center; }
+    .song-time { font-size: .8rem; color: var(--text-muted); text-align:right; font-family:'Space Mono', monospace; }
+    .song-actions { display:flex; gap:.4rem; justify-content:flex-end; }
+    .action-btn { width:26px; height:26px; display:flex; align-items:center; justify-content:center;
+      border:1px solid var(--border); border-radius:6px; background: transparent; color:var(--text-muted); cursor:pointer; }
+    .action-btn:hover { background: var(--border); color: var(--text); }
+    .action-btn.locked { color: var(--locked); }
+    .toast-container { position: fixed; bottom: 1.25rem; left: 50%; transform: translateX(-50%);
+      z-index: 2000; }
+    .toast { background: var(--toast-bg); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: .75rem 1rem; display:flex; gap:.6rem; align-items:center; min-width: 240px; }
+    .alert { margin:.6rem 0; padding:.6rem .75rem; border-radius:8px; border:1px solid transparent; font-size:.9rem; display:flex; gap:.45rem; align-items:baseline; }
+    .alert-error{ border-color: var(--error); background: rgba(239,68,68,.12); color: var(--error); }
+    .alert-success{ border-color: var(--success); background: rgba(74,222,128,.12); color: var(--success); }
+    .alert-warning{ border-color: var(--warning); background: rgba(251,191,36,.12); color: var(--warning); }
+    .modal-backdrop { position:fixed; inset:0; background: rgba(0,0,0,.5); display:flex; justify-content:center; align-items:center; z-index:1500; }
+    .modal { width:min(520px, 92vw); background:var(--secondary); border:1px solid var(--border); border-radius:12px; padding:1rem; }
+    .band-row { display:flex; align-items:center; justify-content: space-between; padding:.5rem; border:1px solid var(--border);
+      border-radius:8px; margin-bottom:.5rem; background: var(--primary); }
+    .band-id { font-family:'Space Mono', monospace; color: var(--text-muted); font-size: .75rem; }
+    .history-list { max-height: 240px; overflow:auto; border:1px dashed var(--border); border-radius:8px; padding:.5rem; }
+    .history-item { padding:.45rem; border-bottom:1px dashed var(--border); }
+    @media (max-width: 1100px){ .main-grid{ grid-template-columns: 1fr; } }
+    @media (max-width: 700px){
+      h1{ font-size: 1.8rem; }
+      .setlist-song{ grid-template-columns: 26px 1fr 46px 34px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    /******************* Utilities & Guards *******************/
+    const genId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() :
+      ('id-' + Math.random().toString(36).slice(2) + Date.now().toString(36));
+
+    // Hardened sanitize: strip nested scripts then encode
+    const sanitizeInput = (input) => {
+      if (typeof input !== 'string') return input;
+      let cleaned = input.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, ''); // remove any script blocks
+      cleaned = cleaned
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;')
+        .replace(/'/g,'&#x27;')
+        .replace(/\//g,'&#x2F;');
+      // Remove dangerous protocols
+      cleaned = cleaned.replace(/javascript:|data:|vbscript:/gi, '');
+      return cleaned.trim();
+    };
+
+    // CSV injection guard: if field begins with = + - @, prefix with '
+    const guardCSVCell = (s) => {
+      if (s == null) return '';
+      const str = String(s);
+      return /^[=+\-@]/.test(str) ? "'" + str : str;
+    };
+
+    // CSV parser (handles quoted fields, escaped quotes)
+    const parseCSVLine = (line) => {
+      const res = [];
+      let cur = '', inQ = false;
+      for (let i=0; i<line.length; i++){
+        const ch = line[i], nxt = line[i+1];
+        if (ch === '"'){
+          if (inQ && nxt === '"'){ cur += '"'; i++; }
+          else { inQ = !inQ; }
+        } else if (ch === ',' && !inQ){
+          res.push(cur.trim()); cur = '';
+        } else cur += ch;
+      }
+      res.push(cur.trim());
+      return res;
+    };
+
+    const ENERGY_MAP = { ballad:1, midtempo:3, groove:4, swing:4, funk:5, shuffle:5, uptempo:6 };
+
+    /******************* LocalStorage Layer *******************/
+    const LS = {
+      getJSON(key, def=null){ try{ const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; }catch(e){ return def; } },
+      setJSON(key, obj){ try{ localStorage.setItem(key, JSON.stringify(obj)); }catch(e){} },
+      remove(key){ try{ localStorage.removeItem(key);}catch(e){} }
+    };
+
+    // Shared library resolver: if band.sharedLibraryId is set, songs/settings/history stored under lib keys
+    const keys = {
+      bands: 'setlist-bands',
+      activeBandId: 'setlist-active-band-id',
+      appVersion: 'setlist-app-version',
+      libSongs: (id) => `setlist-lib-${id}-songs`,
+      bandSongs: (id) => `setlist-band-${id}-songs`,
+      bandSettings: (id) => `setlist-band-${id}-settings`,
+      bandHistory: (id) => `setlist-band-${id}-history`,
+    };
+
+    // Migration from v2.x single-context
+    function migrateIfNeeded(){
+      const version = LS.getJSON(keys.appVersion, '2.x-or-earlier');
+      if (version === '3.0.1') return;
+
+      // Establish bands if not present
+      let bands = LS.getJSON(keys.bands, null);
+      if (!bands || !Array.isArray(bands) || bands.length === 0){
+        // Preseed explicit bands + shared libs per your mapping
+        const now = Date.now();
+        bands = [
+          { id: genId(), name: 'The Summit', icon:'🗻', color:'#4f46e5', sharedLibraryId:'ZEMBA_SHARED', createdAt: now, lastUsedAt: now },
+          { id: genId(), name: 'Chris Zemba & The Late Shift Band', icon:'🎤', color:'#ef4444', sharedLibraryId:'ZEMBA_SHARED', createdAt: now, lastUsedAt: now },
+          { id: genId(), name: "Lucille’s (Zemba Music Brand)", icon:'🎸', color:'#22c55e', sharedLibraryId:'ZEMBA_SHARED', createdAt: now, lastUsedAt: now },
+          { id: genId(), name: 'Down South Jukers', icon:'🎹', color:'#f59e0b', sharedLibraryId:'DSJ_LIB', createdAt: now, lastUsedAt: now },
+          { id: genId(), name: 'Johnny B & The Road Dogs', icon:'🐶', color:'#14b8a6', sharedLibraryId:'ROAD_DOGS_LIB', createdAt: now, lastUsedAt: now },
+        ];
+        LS.setJSON(keys.bands, bands);
+        LS.setJSON(keys.activeBandId, bands[0].id);
+      }
+
+      // Migrate legacy songs into ZEMBA_SHARED if found
+      const legacy = LS.getJSON('setlist_songs', null);
+      if (legacy && Array.isArray(legacy)){
+        const safe = legacy.map(s => ({
+          id: s.id ?? genId(),
+          title: sanitizeInput(s.title || ''),
+          artist: sanitizeInput(s.artist || ''),
+          duration: Number(s.duration) || 5,
+          style: (s.style || 'midtempo').toLowerCase(),
+          key: sanitizeInput(s.key || ''),
+          bpm: s.bpm ? Number(s.bpm) : ''
+        }));
+        const existing = LS.getJSON(keys.libSongs('ZEMBA_SHARED'), []);
+        LS.setJSON(keys.libSongs('ZEMBA_SHARED'), existing.concat(safe));
+        try{ localStorage.removeItem('setlist_songs'); }catch(e){}
+      }
+
+      // Bump version
+      LS.setJSON(keys.appVersion, '3.0.1');
+    }
+
+    migrateIfNeeded();
+
+    function getBands(){ return LS.getJSON(keys.bands, []); }
+    function setBands(bands){ LS.setJSON(keys.bands, bands); }
+
+    function getActiveBandId(){
+      const id = LS.getJSON(keys.activeBandId, null);
+      const bands = getBands();
+      if (!id || !bands.find(b => b.id === id)){
+        if (bands.length){ LS.setJSON(keys.activeBandId, bands[0].id); return bands[0].id; }
+        return null;
+      }
+      return id;
+    }
+    function setActiveBandId(id){
+      const bands = getBands();
+      const idx = bands.findIndex(b => b.id === id);
+      if (idx >= 0){
+        bands[idx].lastUsedAt = Date.now();
+        setBands(bands);
+        LS.setJSON(keys.activeBandId, id);
+      }
+    }
+
+    function getBandSongs(band){
+      if (!band) return [];
+      const k = band.sharedLibraryId ? keys.libSongs(band.sharedLibraryId) : keys.bandSongs(band.id);
+      return LS.getJSON(k, []);
+    }
+    function setBandSongs(band, songs){
+      if (!band) return;
+      const k = band.sharedLibraryId ? keys.libSongs(band.sharedLibraryId) : keys.bandSongs(band.id);
+      LS.setJSON(k, songs);
+    }
+    function getBandSettings(band){
+      if (!band) return { numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true };
+      return LS.getJSON(keys.bandSettings(band.id), { numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true });
+    }
+    function setBandSettings(band, settings){
+      if (!band) return;
+      LS.setJSON(keys.bandSettings(band.id), settings);
+    }
+    function getBandHistory(band){
+      if (!band) return [];
+      return LS.getJSON(keys.bandHistory(band.id), []);
+    }
+    function pushBandHistory(band, entry){
+      if (!band) return;
+      const hist = getBandHistory(band);
+      hist.unshift(entry);
+      LS.setJSON(keys.bandHistory(band.id), hist.slice(0, 200));
+    }
+
+    /******************* Generator (Pure Core) *******************/
+    function generateSetlistsCore(songs, opts){
+      const {
+        numSets = 2,
+        setDuration = 45,
+        allowSongReuse = false,
+        useEnergyCurve = true,
+        forceOpener = false,
+        forceCloser = true
+      } = opts || {};
+
+      const sets = [];
+      // available pool (reference only; we don't mutate source)
+      const pool = Array.isArray(songs) ? songs.slice() : [];
+
+      const pickWeightedByEnergy = (cands, currentDuration, targetDuration) => {
+        if (!useEnergyCurve || cands.length === 0) return cands[Math.floor(Math.random() * cands.length)];
+        const pos = currentDuration / targetDuration;
+        const target = pos < 0.2 ? {min:3,max:4} : pos < 0.5 ? {min:4,max:5} : pos < 0.8 ? {min:5,max:6} : {min:2,max:4};
+        const targetEnergy = (target.min + target.max) / 2;
+        const weighted = cands.map(s => {
+          const e = ENERGY_MAP[s.style] || 3;
+          const diff = Math.abs(e - targetEnergy);
+          const w = 1 / (diff + 1);
+          return { s, w };
+        });
+        const total = weighted.reduce((a,b)=>a+b.w,0);
+        let r = Math.random()*total;
+        for (const {s,w} of weighted){ r -= w; if (r <= 0) return s; }
+        return cands[cands.length-1];
+      };
+
+      for (let i=0; i<numSets; i++){
+        const setSongs = [];
+        let current = 0;
+        const usedInThisSet = new Set();
+
+        let guard = 0, maxGuard = pool.length * 3 + 200;
+
+        while (current < setDuration - 0.25 && guard < maxGuard){
+          guard++;
+          const remaining = setDuration - current;
+          // candidates by duration
+          let candidates = pool.filter(song => (allowSongReuse ? true : !usedInThisSet.has(song.id)) && (song.duration <= remaining + 3));
+
+          if (candidates.length === 0){
+            candidates = pool.filter(song => (allowSongReuse ? true : !usedInThisSet.has(song.id)));
+            if (candidates.length === 0) break;
+          }
+
+          // flow: avoid same style/artist back-to-back
+          if (setSongs.length > 0){
+            const last = setSongs[setSongs.length-1];
+            let filtered = candidates.filter(s => s.style !== last.style && s.artist !== last.artist);
+            if (filtered.length) candidates = filtered;
+
+            // opener preference
+            if (forceOpener && setSongs.length === 0){
+              const opener = candidates.filter(s => s.style === 'swing' || s.style === 'midtempo');
+              if (opener.length) candidates = opener;
+            }
+          }
+
+          const selected = pickWeightedByEnergy(candidates, current, setDuration);
+          if (!selected) break;
+          setSongs.push(selected);
+          if (!allowSongReuse) usedInThisSet.add(selected.id);
+          current += Number(selected.duration) || 0;
+          if (current > setDuration + 5) break;
+        }
+
+        // closer
+        if (forceCloser && setSongs.length){
+          const last = setSongs[setSongs.length-1];
+          const e = ENERGY_MAP[last.style] || 3;
+          if (!(e >= 5 || last.style === 'ballad')){
+            const closers = pool.filter(s => (allowSongReuse ? true : !usedInThisSet.has(s.id)) && (s.style === 'uptempo' || s.style === 'ballad'));
+            if (closers.length){
+              const closer = closers[Math.floor(Math.random()*closers.length)];
+              setSongs.push(closer);
+              if (!allowSongReuse) usedInThisSet.add(closer.id);
+              current += Number(closer.duration) || 0;
+            }
+          }
+        }
+
+        sets.push({ id: i+1, songs: setSongs, totalDuration: Math.round(current*10)/10 });
+      }
+      return sets;
+    }
+
+    /******************* Printing / Export *******************/
+    function exportSetlistsToPDFBlob(setlists){
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      let y = 20;
+      const pageH = doc.internal.pageSize.height, margin = 16;
+
+      doc.setFontSize(18);
+      doc.text('Generated Setlists', 105, y, {align:'center'});
+      y += 10;
+
+      setlists.forEach(set => {
+        if (y > pageH - margin - 30){ doc.addPage(); y = 20; }
+        doc.setFontSize(13);
+        doc.text(`Set ${set.id} (${set.totalDuration} min)`, 16, y); y+=8;
+        doc.setFontSize(10);
+        set.songs.forEach((song, idx) => {
+          if (y > pageH - margin){ doc.addPage(); y = 20; }
+          const line = `${idx+1}. ${song.title} - ${song.artist} (${song.duration}min, ${song.style}${song.bpm?`, ${song.bpm} BPM`:''})`;
+          doc.text(line, 18, y);
+          y += 6;
+        });
+        y += 6;
+      });
+
+      return doc.output('blob');
+    }
+
+    async function exportToPDFAndPrint(setlists){
+      try{
+        const blob = exportSetlistsToPDFBlob(setlists);
+        const url = URL.createObjectURL(blob);
+        // Try new tab
+        const w = window.open(url, '_blank');
+        if (!w){
+          alert('Popup blocked. We will download the PDF instead.');
+          const a = document.createElement('a');
+          a.href = url; a.download = `setlists-${new Date().toISOString().slice(0,10)}.pdf`; a.click();
+          URL.revokeObjectURL(url); return;
+        }
+        // Try to trigger print after tab opens
+        setTimeout(() => { w.focus(); try{ w.print && w.print(); }catch(e){} }, 400);
+        setTimeout(()=> URL.revokeObjectURL(url), 5000);
+      } catch(e){
+        alert('PDF print failed. Falling back to direct download.');
+        try{
+          const blob = exportSetlistsToPDFBlob(setlists);
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = `setlists-${new Date().toISOString().slice(0,10)}.pdf`; a.click();
+          URL.revokeObjectURL(url);
+        }catch(_) {}
+      }
+    }
+
+    function exportSongsCSV(songs){
+      const headers = ['Title','Artist','Duration','Style','Key','BPM'];
+      const rows = songs.map(s => [
+        guardCSVCell(s.title),
+        guardCSVCell(s.artist),
+        String(s.duration ?? ''),
+        guardCSVCell(s.style),
+        guardCSVCell(s.key ?? ''),
+        String(s.bpm ?? '')
+      ]);
+      const csv = [headers.join(','), ...rows.map(r=>r.join(','))].join('\\n');
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url;
+      a.download = `songs-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+      setTimeout(()=> URL.revokeObjectURL(url), 3000);
+    }
+
+    function mapCSVHeaders(rawHeaders){
+      const map = {};
+      const headers = rawHeaders.map(h => (h||'').toString().toLowerCase().trim());
+      headers.forEach((h, i) => {
+        if (['title','song','song title','name'].includes(h)) map.title = i;
+        else if (['artist','band','performer'].includes(h)) map.artist = i;
+        else if (['duration','mins','minutes','length'].includes(h)) map.duration = i;
+        else if (['style','feel','tempo feel','vibe'].includes(h)) map.style = i;
+        else if (['key','tonality'].includes(h)) map.key = i;
+        else if (['bpm','tempo','beats per minute'].includes(h)) map.bpm = i;
+      });
+      // Minimum required
+      if (map.title == null || map.artist == null || map.duration == null || map.style == null) return null;
+      return map;
+    }
+
+    function parseDuration(value){
+      if (typeof value === 'number') return value;
+      if (typeof value !== 'string') return 5;
+      // accept "4", "4.5", "4m30s", "00:04:30"
+      const s = value.trim();
+      if (/^\\d+(\\.\\d+)?$/.test(s)) return parseFloat(s);
+      const m = s.match(/(?:(\\d+)m)?\\s*(?:(\\d+)s)?/i);
+      if (m && (m[1] || m[2])){
+        const mins = m[1] ? parseInt(m[1]) : 0;
+        const secs = m[2] ? parseInt(m[2]) : 0;
+        return Math.max(0.5, Math.round((mins + secs/60)*2)/2);
+      }
+      const clock = s.match(/^(\\d{1,2}):(\\d{2})(?::(\\d{2}))?$/);
+      if (clock){
+        const mm = parseInt(clock[1]), ss = parseInt(clock[2]); const hh = clock[3] ? parseInt(clock[3]) : 0;
+        const totalMin = (hh*60)+mm+(ss/60);
+        return Math.max(0.5, Math.round(totalMin*2)/2);
+      }
+      const num = parseFloat(s);
+      return isNaN(num) ? 5 : num;
+    }
+
+    /******************* UI Components *******************/
+    const Toast = ({message, type='info', onClose}) => {
+      useEffect(()=>{ const t = setTimeout(onClose, 2600); return ()=>clearTimeout(t); }, [onClose]);
+      const icon = type==='success'?'✓':type==='error'?'✗':type==='warning'?'⚠':'ℹ';
+      return <div className="toast"><span style={{fontSize:'1.2rem'}}>{icon}</span><span>{message}</span></div>;
+    };
+
+    const ErrorBoundary = class extends React.Component {
+      constructor(p){ super(p); this.state = {hasError:false}; }
+      static getDerivedStateFromError(){ return {hasError:true}; }
+      componentDidCatch(e, info){ console.error('Setlist ErrorBoundary:', e, info); }
+      render(){
+        if (this.state.hasError){
+          return (
+            <div style={{padding:'2rem', textAlign:'center'}}>
+              <h2 style={{color:'var(--error)'}}>Something went wrong</h2>
+              <p>Please refresh the page and try again.</p>
+              <button className="btn btn-primary" onClick={()=>window.location.reload()}>Refresh</button>
+            </div>
+          );
+        }
+        return this.props.children;
+      }
+    };
+
+    function BandModal({open, onClose, bands, onCreate, onUpdate, onDelete, onDuplicate}){
+      const [draft, setDraft] = useState({ name:'', icon:'🎵', color:'#ff6b35', sharedLibraryId:'' });
+      if (!open) return null;
+      return (
+        <div className="modal-backdrop" onClick={onClose}>
+          <div className="modal" onClick={(e)=>e.stopPropagation()}>
+            <div className="panel-header">
+              <h3 className="panel-title">Manage Bands</h3>
+              <button className="btn btn-small" onClick={onClose}>Close</button>
+            </div>
+
+            <div className="input-group">
+              <label>Band Name</label>
+              <input value={draft.name} onChange={(e)=>setDraft({...draft, name:e.target.value})} placeholder="e.g., The Summit" />
+            </div>
+            <div className="set-config">
+              <div className="input-group">
+                <label>Icon</label>
+                <input value={draft.icon} onChange={(e)=>setDraft({...draft, icon:e.target.value})} placeholder="🎸" />
+              </div>
+              <div className="input-group">
+                <label>Brand Color</label>
+                <input type="color" value={draft.color} onChange={(e)=>setDraft({...draft, color:e.target.value})} />
+              </div>
+            </div>
+            <div className="input-group">
+              <label>Shared Library Id (Optional)</label>
+              <input value={draft.sharedLibraryId} onChange={(e)=>setDraft({...draft, sharedLibraryId:e.target.value.trim()})} placeholder="ZEMBA_SHARED" />
+            </div>
+            <div className="toolbar" style={{marginBottom:'.75rem'}}>
+              <button className="btn btn-primary" onClick={()=>{
+                if (!draft.name.trim()) return alert('Name required');
+                onCreate({...draft});
+                setDraft({ name:'', icon:'🎵', color:'#ff6b35', sharedLibraryId:'' });
+              }}>+ Create Band</button>
+            </div>
+
+            <div style={{marginTop:'.5rem'}}>
+              {bands.map(b => (
+                <div className="band-row" key={b.id}>
+                  <div style={{display:'flex', alignItems:'center', gap:'.6rem'}}>
+                    <span style={{fontSize:'1.25rem'}}>{b.icon||'🎵'}</span>
+                    <div>
+                      <div style={{fontWeight:700}}>{b.name}</div>
+                      <div className="band-id">{b.sharedLibraryId ? `Shared: ${b.sharedLibraryId}` : 'Own Library'}</div>
+                    </div>
+                  </div>
+                  <div className="toolbar">
+                    <button className="btn btn-small" onClick={()=>{
+                      const name = prompt('Rename Band', b.name);
+                      if (name && name.trim()) onUpdate({...b, name:name.trim()});
+                    }}>Edit</button>
+                    <button className="btn btn-small" onClick={()=>onDuplicate(b)}>Duplicate</button>
+                    <button className="btn btn-small" onClick={()=>{
+                      if (confirm('Delete this band?')) onDelete(b);
+                    }}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function SongLibrary({ songs, onAddSong, onDeleteSong, onExportCSV, onImportCSV }){
+      const [newSong, setNewSong] = useState({ title:'', artist:'', duration:5, style:'midtempo', key:'', bpm:'' });
+      const [filterStyle, setFilterStyle] = useState('all');
+      const [filterArtist, setFilterArtist] = useState('');
+
+      const filtered = useMemo(()=>{
+        return songs.filter(s => {
+          if (filterStyle !== 'all' && s.style !== filterStyle) return false;
+          if (filterArtist && !s.artist?.toLowerCase().includes(filterArtist.toLowerCase())) return false;
+          return true;
+        });
+      }, [songs, filterStyle, filterArtist]);
+
+      const uniqueArtists = useMemo(()=>[...new Set(songs.map(s=>s.artist).filter(Boolean))].sort(), [songs]);
+
+      const add = () => {
+        if (!newSong.title.trim() || !newSong.artist.trim()) return alert('Title and Artist required');
+        const duration = parseDuration(newSong.duration);
+        let bpm = newSong.bpm === '' ? '' : Number(newSong.bpm);
+        if (Number.isNaN(bpm)) bpm = '';
+        onAddSong({
+          id: genId(),
+          title: sanitizeInput(newSong.title),
+          artist: sanitizeInput(newSong.artist),
+          duration,
+          style: (newSong.style||'midtempo').toLowerCase(),
+          key: sanitizeInput(newSong.key || ''),
+          bpm
+        });
+        setNewSong({ title:'', artist:'', duration:5, style:'midtempo', key:'', bpm:'' });
+      };
+
+      return (
+        <div className="panel">
+          <div className="panel-header">
+            <h3 className="panel-title">Song Library</h3>
+            <span style={{color:'var(--text-muted)', fontSize:'.9rem'}}>{filtered.length} of {songs.length} songs</span>
+          </div>
+
+          <div className="panel" style={{padding:'.75rem', marginBottom:'.75rem'}}>
+            <div className="set-config">
+              <div className="input-group">
+                <label>Filter by Style</label>
+                <select value={filterStyle} onChange={(e)=>setFilterStyle(e.target.value)}>
+                  <option value="all">All</option>
+                  <option value="ballad">Ballad</option><option value="midtempo">Mid-Tempo</option>
+                  <option value="groove">Groove</option><option value="swing">Swing</option>
+                  <option value="funk">Funk</option><option value="shuffle">Shuffle</option>
+                  <option value="uptempo">Up-Tempo</option>
+                </select>
+              </div>
+              <div className="input-group">
+                <label>Filter by Artist</label>
+                <input value={filterArtist} onChange={(e)=>setFilterArtist(e.target.value)} list="artists" placeholder="type to search..." />
+                <datalist id="artists">
+                  {uniqueArtists.map(a => <option key={a} value={a} />)}
+                </datalist>
+              </div>
+            </div>
+          </div>
+
+          <div className="input-group"><label>Song Title *</label>
+            <input value={newSong.title} onChange={(e)=>setNewSong({...newSong, title:e.target.value})} placeholder="e.g., Blue Bossa" />
+          </div>
+          <div className="input-group"><label>Artist *</label>
+            <input value={newSong.artist} onChange={(e)=>setNewSong({...newSong, artist:e.target.value})} placeholder="e.g., Joe Henderson" />
+          </div>
+          <div className="set-config">
+            <div className="input-group"><label>Duration (min) *</label>
+              <input value={newSong.duration} onChange={(e)=>setNewSong({...newSong, duration:e.target.value})} placeholder="e.g., 6 or 5m30s or 00:05:30" />
+            </div>
+            <div className="input-group"><label>Style</label>
+              <select value={newSong.style} onChange={(e)=>setNewSong({...newSong, style:e.target.value})}>
+                <option value="ballad">Ballad</option><option value="midtempo">Mid-Tempo</option>
+                <option value="groove">Groove</option><option value="swing">Swing</option>
+                <option value="funk">Funk</option><option value="shuffle">Shuffle</option>
+                <option value="uptempo">Up-Tempo</option>
+              </select>
+            </div>
+          </div>
+          <div className="set-config">
+            <div className="input-group"><label>Key (optional)</label>
+              <input value={newSong.key} onChange={(e)=>setNewSong({...newSong, key:e.target.value})} placeholder="e.g., Cm" />
+            </div>
+            <div className="input-group"><label>BPM (optional)</label>
+              <input value={newSong.bpm} onChange={(e)=>setNewSong({...newSong, bpm:e.target.value})} placeholder="e.g., 120" />
+            </div>
+          </div>
+
+          <button className="btn btn-primary" onClick={add} style={{width:'100%', marginBottom:'.6rem'}}>Add Song</button>
+          <div className="toolbar" style={{marginBottom:'.6rem'}}>
+            <button className="btn btn-small" onClick={onExportCSV}>Export CSV</button>
+            <label className="btn btn-small" style={{cursor:'pointer'}}>
+              Import CSV<input type="file" accept=".csv" onChange={onImportCSV} style={{display:'none'}} />
+            </label>
+          </div>
+
+          <div className="song-list">
+            {filtered.map(s => (
+              <div className="song-item" key={s.id}>
+                <div>
+                  <div className="song-title">{s.title}</div>
+                  <div className="song-meta">
+                    <span>{s.artist}</span>
+                    <span className={`song-badge style-${s.style}`}>{s.style}</span>
+                    <span>{s.duration}min</span>
+                    {s.key && <span>{s.key}</span>}
+                    {s.bpm !== '' && <span>{s.bpm} BPM</span>}
+                  </div>
+                </div>
+                <button className="btn btn-small" onClick={()=>onDeleteSong(s.id)}>×</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, songCount }){
+      const s = settings;
+      return (
+        <div className="panel">
+          <div className="panel-header">
+            <h3 className="panel-title">Set Configuration</h3>
+          </div>
+          <div className="set-config">
+            <div className="input-group"><label>Number of Sets</label>
+              <select value={s.numSets} onChange={(e)=>onChange({...s, numSets: parseInt(e.target.value)})}>
+                <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
+              </select>
+            </div>
+            <div className="input-group"><label>Minutes per Set</label>
+              <select value={s.setDuration} onChange={(e)=>onChange({...s, setDuration: parseInt(e.target.value)})}>
+                <option value="30">30</option><option value="45">45</option><option value="60">60</option><option value="75">75</option><option value="90">90</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="panel" style={{padding:'.75rem', margin:'.75rem 0'}}>
+            <div className="input-group">
+              <label style={{textTransform:'none'}}>Allow Song Reuse Across Sets</label>
+              <select value={s.allowSongReuse ? '1':'0'} onChange={(e)=>onChange({...s, allowSongReuse: e.target.value==='1'})}>
+                <option value="0">No (no duplicates within each set)</option>
+                <option value="1">Yes (song may appear in multiple sets)</option>
+              </select>
+            </div>
+            <div className="set-config">
+              <div className="input-group">
+                <label style={{textTransform:'none'}}>Use Energy Curve</label>
+                <select value={s.useEnergyCurve ? '1':'0'} onChange={(e)=>onChange({...s, useEnergyCurve: e.target.value==='1'})}>
+                  <option value="1">Enabled</option><option value="0">Disabled</option>
+                </select>
+              </div>
+              <div className="input-group">
+                <label style={{textTransform:'none'}}>Force Memorable Closer</label>
+                <select value={s.forceCloser ? '1':'0'} onChange={(e)=>onChange({...s, forceCloser: e.target.value==='1'})}>
+                  <option value="1">Yes</option><option value="0">No</option>
+                </select>
+              </div>
+            </div>
+            <div className="input-group">
+              <label style={{textTransform:'none'}}>Prefer Strong Opener (Swing/Midtempo)</label>
+              <select value={s.forceOpener ? '1':'0'} onChange={(e)=>onChange({...s, forceOpener: e.target.value==='1'})}>
+                <option value="1">Yes</option><option value="0">No</option>
+              </select>
+            </div>
+          </div>
+
+          <button className="btn btn-primary" style={{width:'100%', marginBottom:'.6rem'}} onClick={onGenerate} disabled={songCount===0}>
+            Generate Setlists
+          </button>
+          <div className="toolbar">
+            <button className="btn btn-small" onClick={onCopy}>Copy to Clipboard</button>
+            <button className="btn btn-small" onClick={onExportPDF}>Print / Export PDF</button>
+          </div>
+        </div>
+      );
+    }
+
+    function SetlistView({ setlist, locked, onToggleLock, onSwap }){
+      return (
+        <div className="setlist">
+          <div className="setlist-header">
+            <h4 style={{fontFamily:'Space Mono, monospace'}}>Set {setlist.id}</h4>
+            <span style={{color:'var(--text-muted)', fontWeight:600}}>{setlist.totalDuration} min</span>
+          </div>
+          {setlist.songs.map((song, idx) => {
+            const startTime = Math.round(setlist.songs.slice(0, idx).reduce((sum, s)=> sum + (Number(s.duration)||0), 0));
+            const key = `${setlist.id-1}-${idx}`;
+            const isLocked = locked.has(key);
+            const prev = idx>0 ? setlist.songs[idx-1] : null;
+            const bpmMatch = prev && song.bpm !== '' && prev.bpm !== '' && Math.abs(Number(song.bpm) - Number(prev.bpm)) <= 5;
+            return (
+              <div className={`setlist-song ${isLocked ? 'locked':''}`} key={song.id || key}>
+                <div className="song-number">{idx+1}</div>
+                <div>
+                  <div style={{fontWeight:700}}>{song.title}</div>
+                  <div className="song-meta">
+                    <span>{song.artist}</span>
+                    <span className={`song-badge style-${song.style}`}>{song.style}</span>
+                    <span>{song.duration}min</span>
+                    {song.key && <span>{song.key}</span>}
+                    {song.bpm !== '' && <span>{song.bpm} BPM</span>}
+                    {bpmMatch && <span title="Smooth BPM transition">🔗</span>}
+                  </div>
+                </div>
+                <div className="song-time">+{startTime}m</div>
+                <div className="song-actions">
+                  <button className={`action-btn ${isLocked?'locked':''}`} title={isLocked?'Unlock':'Lock'} onClick={()=>onToggleLock(key)}>
+                    {isLocked?'🔒':'🔓'}
+                  </button>
+                  <button className="action-btn" title="Swap song" onClick={()=>onSwap(setlist.id-1, idx)}>🔄</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    function App(){
+      const [bands, setBandsState] = useState(getBands());
+      const [activeBandId, setActive] = useState(getActiveBandId());
+      const activeBand = useMemo(()=> bands.find(b => b.id === activeBandId) || null, [bands, activeBandId]);
+      const [songs, setSongsState] = useState(getBandSongs(activeBand));
+      const [settings, setSettingsState] = useState(getBandSettings(activeBand));
+      const [setlists, setSetlists] = useState([]);
+      const [locked, setLocked] = useState(new Set());
+      const [toast, setToast] = useState(null);
+      const [bandModal, setBandModal] = useState(false);
+
+      // Sync when band changes
+      useEffect(()=>{
+        setSongsState(getBandSongs(activeBand));
+        setSettingsState(getBandSettings(activeBand));
+      }, [activeBandId]);
+
+      // Persist on changes (debounced)
+      useEffect(()=>{
+        if (!activeBand) return;
+        const t = setTimeout(()=> setBandSongs(activeBand, songs), 350);
+        return ()=> clearTimeout(t);
+      }, [songs, activeBand]);
+      useEffect(()=>{
+        if (!activeBand) return;
+        const t = setTimeout(()=> setBandSettings(activeBand, settings), 350);
+        return ()=> clearTimeout(t);
+      }, [settings, activeBand]);
+
+      const showToast = (msg, type='info') => setToast({message: msg, type});
+
+      function createBand(draft){
+        const b = { id: genId(), name: draft.name.trim(), icon: draft.icon || '🎵', color: draft.color || '#ff6b35',
+          sharedLibraryId: draft.sharedLibraryId?.trim() || '', createdAt: Date.now(), lastUsedAt: Date.now() };
+        const next = [...bands, b];
+        setBands(next); setBandsState(next);
+        showToast('Band created', 'success');
+      }
+      function updateBand(band){
+        const next = bands.map(b => b.id===band.id ? {...b, ...band, lastUsedAt:b.lastUsedAt} : b);
+        setBands(next); setBandsState(next);
+        showToast('Band updated', 'success');
+      }
+      function duplicateBand(band){
+        const copy = {...band, id: genId(), name: band.name + ' (Copy)', createdAt: Date.now(), lastUsedAt: Date.now() };
+        const next = [...bands, copy];
+        setBands(next); setBandsState(next);
+        // copy own library if non-shared
+        if (!band.sharedLibraryId){
+          const lib = getBandSongs(band);
+          setBandSongs(copy, lib.slice());
+        }
+        showToast('Band duplicated', 'success');
+      }
+      function deleteBand(band){
+        const next = bands.filter(b => b.id !== band.id);
+        setBands(next); setBandsState(next);
+        if (activeBandId === band.id && next.length){ setActive(next[0].id); setActiveBandId(next[0].id); }
+        showToast('Band deleted', 'warning');
+      }
+
+      function switchBand(id){
+        setActive(id); setActiveBandId(id);
+        setLocked(new Set()); setSetlists([]);
+        showToast('Switched band', 'info');
+      }
+
+      // Songs mutate
+      function addSong(song){
+        setSongsState([...songs, song]);
+      }
+      function deleteSong(id){
+        setSongsState(songs.filter(s => s.id !== id));
+      }
+
+      function copyToClipboard(){
+        try{
+          let text = 'GENERATED SETLISTS\\n\\n';
+          setlists.forEach(set => {
+            text += `SET ${set.id} (${set.totalDuration} minutes)\\n`;
+            text += '─'.repeat(50)+'\\n';
+            set.songs.forEach((song,i)=>{
+              text += `${i+1}. ${song.title} - ${song.artist} (${song.duration}min, ${song.style})\\n`;
+            });
+            text += '\\n';
+          });
+          navigator.clipboard.writeText(text).then(()=> showToast('Copied to clipboard','success'));
+        }catch(e){
+          showToast('Copy failed','error');
+        }
+      }
+
+      function importCSV(ev){
+        const file = ev.target.files?.[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try{
+            const text = e.target.result;
+            const lines = text.split(/\\r?\\n/).filter(l=>l.trim());
+            if (lines.length < 2) return showToast('CSV empty or missing headers','error');
+            const header = parseCSVLine(lines[0]);
+            const map = mapCSVHeaders(header);
+            if (!map) return showToast('CSV missing required columns (Title, Artist, Duration, Style)','error');
+            const imported = [];
+            for (let i=1;i<lines.length;i++){
+              const cols = parseCSVLine(lines[i]);
+              const title = sanitizeInput(cols[map.title] || '');
+              const artist = sanitizeInput(cols[map.artist] || '');
+              const duration = parseDuration(cols[map.duration] || '5');
+              const style = (cols[map.style] || 'midtempo').toLowerCase();
+              const key = map.key!=null ? sanitizeInput(cols[map.key] || '') : '';
+              let bpm = map.bpm!=null ? cols[map.bpm] : '';
+              bpm = bpm==='' ? '' : Number(bpm);
+              if (!title || !artist) continue;
+              imported.push({ id: genId(), title, artist, duration, style, key, bpm: Number.isNaN(bpm)?'':bpm });
+            }
+            if (imported.length){
+              setSongsState([...songs, ...imported]);
+              showToast(`Imported ${imported.length} song(s)`, 'success');
+            } else showToast('No valid rows found','warning');
+          }catch(err){ showToast('Import failed','error'); }
+          ev.target.value='';
+        };
+        reader.onerror = ()=> showToast('Failed to read file','error');
+        reader.readAsText(file);
+      }
+
+      function exportPDF(){ exportToPDFAndPrint(setlists); }
+
+      function generate(){
+        const out = generateSetlistsCore(songs, settings);
+        setSetlists(out);
+        pushBandHistory(activeBand, { ts: Date.now(), settings, setlists: out });
+        showToast(`Generated ${settings.numSets} set(s)`,'success');
+      }
+
+      function toggleLock(key){
+        setLocked(prev => {
+          const n = new Set(prev);
+          if (n.has(key)) n.delete(key); else n.add(key);
+          return n;
+        });
+      }
+
+      function swapSong(setIdx, songIdx){
+        const set = setlists[setIdx];
+        if (!set) return;
+        const songToReplace = set.songs[songIdx];
+        const before = set.songs.slice(0, songIdx);
+        const after = set.songs.slice(songIdx+1);
+        const usedTime = before.reduce((a,s)=>a+(Number(s.duration)||0),0);
+        const remaining = settings.setDuration - usedTime - after.reduce((a,s)=>a+(Number(s.duration)||0),0);
+        const candidates = songs.filter(s => s.id !== songToReplace.id && !set.songs.some(x => x.id === s.id) &&
+          (Number(s.duration)||0) <= remaining + 2 && (Number(s.duration)||0) >= remaining - 2);
+        const pick = candidates.length ? candidates[Math.floor(Math.random()*candidates.length)] : null;
+        if (!pick) return showToast('No suitable replacement','warning');
+        const next = [...setlists];
+        next[setIdx] = {...next[setIdx]};
+        next[setIdx].songs = next[setIdx].songs.slice();
+        next[setIdx].songs[songIdx] = pick;
+        next[setIdx].totalDuration = Math.round(next[setIdx].songs.reduce((a,s)=>a+(Number(s.duration)||0),0)*10)/10;
+        setSetlists(next);
+        showToast(`Swapped "${songToReplace.title}" ↔ "${pick.title}"`,'success');
+      }
+
+      function exportSongs(){ exportSongsCSV(songs); }
+
+      function deleteBandSafe(b){ deleteBand(b); }
+
+      function openBandModal(){ setBandModal(true); }
+      function closeBandModal(){ setBandModal(false); }
+
+      // Self-test hook
+      window.__runHotfixSelfTest__ = () => {
+        const testSongs = [
+          { id:'1', title:'A', artist:'X', duration:5, style:'midtempo' },
+          { id:'2', title:'B', artist:'Y', duration:10, style:'ballad' },
+          { id:'3', title:'C', artist:'Z', duration:15, style:'funk' },
+        ];
+        const res = generateSetlistsCore(testSongs, { numSets:2, setDuration:30, allowSongReuse:false, useEnergyCurve:false, forceOpener:false, forceCloser:false });
+        const ok = res.length===2 && res[0].songs.length>0 && res[1].songs.length>0;
+        console.log(ok ? 'SELF-TEST PASS' : 'SELF-TEST FAIL', res);
+        return ok;
+      };
+
+      const history = activeBand ? getBandHistory(activeBand) : [];
+
+      return (
+        <div className="app-container">
+          {toast && <div className="toast-container"><Toast message={toast.message} type={toast.type} onClose={()=>setToast(null)} /></div>}
+
+          <header className="header">
+            <h1>SETLIST GENERATOR</h1>
+            <div className="subtitle">v3.0.1 — Band Management Pro</div>
+          </header>
+
+          <div className="band-bar">
+            <div className="band-left">
+              <div className="band-pill">
+                <span style={{fontSize:'1.2rem'}}>{activeBand?.icon || '🎵'}</span>
+                <strong>{activeBand?.name || 'No Band'}</strong>
+                <span className="swatch" style={{background: activeBand?.color || '#ff6b35'}}></span>
+              </div>
+              <button className="btn btn-small" onClick={()=>setBandModal(true)}>Manage Bands</button>
+            </div>
+            <div className="toolbar">
+              <select value={activeBandId||''} onChange={(e)=>switchBand(e.target.value)}>
+                {bands.map(b => <option key={b.id} value={b.id}>{b.icon||'🎵'} {b.name}</option>)}
+              </select>
+              <button className="btn btn-small" onClick={()=>{ if(window.__runHotfixSelfTest__ && window.__runHotfixSelfTest__()){ showToast('Self-test PASS','success'); } else { showToast('Self-test FAIL','error'); } }}>Run Self-Test</button>
+            </div>
+          </div>
+
+          <div className="main-grid">
+            <SongLibrary
+              songs={songs}
+              onAddSong={addSong}
+              onDeleteSong={deleteSong}
+              onExportCSV={exportSongs}
+              onImportCSV={importCSV}
+            />
+
+            <SetConfiguration
+              settings={settings}
+              onChange={setSettingsState}
+              onGenerate={generate}
+              onCopy={copyToClipboard}
+              onExportPDF={exportPDF}
+              songCount={songs.length}
+            />
+          </div>
+
+          {setlists.length === 0 ? (
+            <div className="panel" style={{marginTop:'1rem'}}>
+              <div className="alert alert-warning">No setlists yet. Configure your settings and click <strong>Generate Setlists</strong>.</div>
+              {history.length>0 && (
+                <>
+                  <h3 className="panel-title" style={{marginTop:'.5rem'}}>Recent Setlist History</h3>
+                  <div className="history-list">
+                    {history.slice(0,6).map((h, i) => (
+                      <div className="history-item" key={i}>
+                        <div style={{display:'flex', justifyContent:'space-between'}}>
+                          <div>{new Date(h.ts).toLocaleString()}</div>
+                          <div style={{color:'var(--text-muted)'}}>{h.settings.numSets} set(s) × {h.settings.setDuration}m</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <>
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:'1rem'}}>
+                <h3 className="panel-title">Generated Setlists</h3>
+                <div className="toolbar">
+                  <button className="btn btn-small" onClick={generate}>Regenerate</button>
+                  <button className="btn btn-small" onClick={()=>{ setSetlists([]); setLocked(new Set()); }}>Clear</button>
+                </div>
+              </div>
+              <div className="setlists-container">
+                {setlists.map((set, i)=> (
+                  <SetlistView
+                    key={set.id}
+                    setlist={set}
+                    locked={locked}
+                    onToggleLock={toggleLock}
+                    onSwap={swapSong}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          <BandModal
+            open={bandModal}
+            onClose={closeBandModal}
+            bands={bands}
+            onCreate={createBand}
+            onUpdate={updateBand}
+            onDelete={deleteBandSafe}
+            onDuplicate={duplicateBand}
+          />
+        </div>
+      );
+    }
+
+    const container = document.getElementById('root');
+    const root = ReactDOM.createRoot(container);
+    root.render(<ErrorBoundary><App /></ErrorBoundary>);
+  </script>
+</body>
+</html>
