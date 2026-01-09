@@ -178,6 +178,240 @@
       return res;
     };
 
+    /* --- CSV HARDENING HELPERS (ADD-ONLY) ----------------------------------- */
+
+    // Remove UTF-8 BOM if present
+    function stripBOM(text) {
+      if (typeof text !== 'string') return text;
+      if (text.charCodeAt(0) === 0xFEFF) return text.slice(1);
+      // Sometimes BOM is embedded in first cell (e.g. "\uFEFFTitle")
+      return text.replace(/^\uFEFF/, '');
+    }
+
+    // Normalize newlines to \n and trim trailing whitespace-only lines
+    function normalizeNewlines(text) {
+      return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\s+$/, '');
+    }
+
+    // Flexible header mapping: accept synonyms -> canonical keys
+    const CSV_HEADER_MAP = {
+      title: ['title', 'song title', 'song', 'name'],
+      artist: ['artist', 'performer', 'band', 'composer'],
+      duration: ['duration', 'mins', 'minutes', 'length', 'time'],
+      style: ['style', 'feel', 'genre', 'vibe'],
+      key: ['key', 'tonality'],
+      bpm: ['bpm', 'tempo']
+    };
+
+    function resolveHeaderIndex(headerCells) {
+      // headerCells are already lowercased/trimmed
+      const indexByCanonical = {};
+      const used = new Set();
+
+      const findIndex = (synonyms) => {
+        for (let i = 0; i < headerCells.length; i++) {
+          if (used.has(i)) continue;
+          if (synonyms.includes(headerCells[i])) {
+            used.add(i);
+            return i;
+          }
+        }
+        return -1;
+      };
+
+      Object.entries(CSV_HEADER_MAP).forEach(([canonical, synonyms]) => {
+        indexByCanonical[canonical] = findIndex(synonyms);
+      });
+
+      // Require core fields at minimum
+      const required = ['title', 'artist', 'duration', 'style'];
+      const missing = required.filter(k => indexByCanonical[k] === -1);
+      return { indexByCanonical, missing };
+    }
+
+    /**
+     * Robust CSV normalization that:
+     *  - strips BOM
+     *  - normalizes newlines
+     *  - accepts flexible header synonyms
+     *  - returns { rows, errors } ready for import
+     */
+    function normalizeAndParseCSV(rawText, parseCSVLineFn) {
+      const errors = [];
+      if (!rawText || typeof rawText !== 'string') {
+        return { rows: [], errors: ['Empty or unreadable CSV payload'] };
+      }
+
+      let text = stripBOM(rawText);
+      text = normalizeNewlines(text);
+
+      const allLines = text.split('\n').filter(line => line.trim().length > 0);
+      if (allLines.length < 2) {
+        return { rows: [], errors: ['CSV has no data rows or header is missing'] };
+      }
+
+      // Header (lowercase+trim per cell)
+      const rawHeaderCells = parseCSVLineFn(allLines[0]).map(h => stripBOM(h).trim().toLowerCase());
+      const { indexByCanonical, missing } = resolveHeaderIndex(rawHeaderCells);
+      if (missing.length > 0) {
+        errors.push(
+          `Missing required columns: ${missing.join(', ')}. ` +
+          `Accepted headers are flexible; expected at least one of each synonym group: ` +
+          JSON.stringify(CSV_HEADER_MAP)
+        );
+        return { rows: [], errors };
+      }
+
+      const rows = [];
+      for (let i = 1; i < allLines.length; i++) {
+        const line = allLines[i];
+        try {
+          const fields = parseCSVLineFn(line);
+          const get = (name) => {
+            const idx = indexByCanonical[name];
+            return idx >= 0 ? (fields[idx] ?? '').trim() : '';
+          };
+
+          const title = get('title');
+          const artist = get('artist');
+          const duration = get('duration');
+          const style = get('style') || 'midtempo';
+          const key = get('key') || '';
+          const bpm = get('bpm') || '';
+
+          // Defensive: accept "03:30" or "3.5" or "3" as minutes
+          let durMin = 5;
+          if (/^\d+:\d+$/.test(duration)) {
+            const [mm, ss] = duration.split(':').map(n => parseInt(n, 10));
+            if (!Number.isNaN(mm) && !Number.isNaN(ss)) {
+              durMin = Math.max(0.5, Math.round(((mm * 60 + ss) / 60) * 10) / 10);
+            }
+          } else {
+            const d = parseFloat(duration);
+            if (!Number.isNaN(d) && d > 0 && d < 60 * 2) durMin = d;
+          }
+
+          const bpmNum = bpm ? parseFloat(bpm) : null;
+
+          rows.push({
+            title, artist, duration: durMin, style: style.toLowerCase(),
+            key, bpm: bpmNum
+          });
+        } catch (e) {
+          errors.push(`Line ${i + 1}: ${e.message || 'Parse error'}`);
+        }
+      }
+
+      return { rows, errors };
+    }
+
+    /* --- SAFE IMPORT WRAPPER (ADD-ONLY) ------------------------------------- */
+
+    async function safeImportFromCSV(event, {
+      existingSongs,
+      setSongs,
+      setAlert,
+      nextSongIdRef,
+      parseCSVLineFn // pass the existing parseCSVLine function
+    }) {
+      try {
+        const file = event?.target?.files?.[0];
+        if (!file) {
+          setAlert?.({ type: 'error', message: 'No file selected' });
+          return;
+        }
+
+        // iOS/Android/Windows friendly
+        const reader = new FileReader();
+        reader.onerror = () => {
+          setAlert?.({ type: 'error', message: 'Failed to read CSV file (FileReader error)' });
+        };
+        reader.onload = (e) => {
+          try {
+            const raw = e.target.result;
+            const { rows, errors } = normalizeAndParseCSV(raw, parseCSVLineFn);
+
+            if (rows.length === 0) {
+              setAlert?.({
+                type: 'error',
+                message: errors[0] || 'CSV appears empty or has no valid rows'
+              });
+              console.warn('CSV import errors:', errors);
+              return;
+            }
+
+            // Validate with existing validateSong() if available (non-breaking)
+            const imported = [];
+            const rejects = [];
+            for (const row of rows) {
+              try {
+                const song = {
+                  id: (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`),
+                  title: row.title,
+                  artist: row.artist,
+                  duration: row.duration,
+                  style: row.style,
+                  key: row.key,
+                  bpm: row.bpm
+                };
+                // If validateSong exists in this scope, use it
+                if (typeof validateSong === 'function') {
+                  const vErr = validateSong(song);
+                  if (vErr && Object.keys(vErr).length) {
+                    rejects.push(`${song.title}: ${Object.values(vErr).join(', ')}`);
+                    continue;
+                  }
+                }
+                imported.push(song);
+              } catch (ee) {
+                rejects.push(`Row error: ${ee?.message || 'unknown'}`);
+              }
+            }
+
+            if (imported.length === 0) {
+              setAlert?.({
+                type: 'error',
+                message: 'No rows imported. First few errors: ' + (rejects.slice(0, 3).join(' | ') || 'Unknown format')
+              });
+              return;
+            }
+
+            setSongs?.([...(existingSongs || []), ...imported]);
+            setAlert?.({
+              type: 'success',
+              message: `Imported ${imported.length} song${imported.length > 1 ? 's' : ''}` +
+                       (rejects.length ? ` (${rejects.length} errors)` : '')
+            });
+          } catch (inner) {
+            setAlert?.({ type: 'error', message: `Import failed: ${inner.message}` });
+          } finally {
+            // Let users re-import the same file again
+            if (event?.target) event.target.value = '';
+          }
+        };
+        reader.readAsText(file);
+      } catch (err) {
+        setAlert?.({ type: 'error', message: `Import failed: ${err.message}` });
+      }
+    }
+
+    function downloadSampleCSV() {
+      const headers = ['Title', 'Artist', 'Duration', 'Style', 'Key', 'BPM'];
+      const rows = [
+        ['Pride and Joy', 'Stevie Ray Vaughan', '4', 'shuffle', 'E', '130'],
+        ['Ain’t No Sunshine', 'Bill Withers', '3.5', 'ballad', 'Am', '78'],
+        ['I Got You (I Feel Good)', 'James Brown', '3', 'funk', 'D', '156']
+      ];
+      const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'setlist-sample.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
     const ENERGY_MAP = { ballad:1, midtempo:3, groove:4, swing:4, funk:5, shuffle:5, uptempo:6 };
 
     /******************* LocalStorage Layer *******************/
@@ -585,7 +819,7 @@
       );
     }
 
-    function SongLibrary({ songs, onAddSong, onDeleteSong, onExportCSV, onImportCSV }){
+    function SongLibrary({ songs, onAddSong, onDeleteSong, onExportCSV, onImportCSV, onImportCSVRobust, onDownloadSampleCSV }){
       const [newSong, setNewSong] = useState({ title:'', artist:'', duration:5, style:'midtempo', key:'', bpm:'' });
       const [filterStyle, setFilterStyle] = useState('all');
       const [filterArtist, setFilterArtist] = useState('');
@@ -680,6 +914,18 @@
             <label className="btn btn-small" style={{cursor:'pointer'}}>
               Import CSV<input type="file" accept=".csv" onChange={onImportCSV} style={{display:'none'}} />
             </label>
+            <label className="btn btn-secondary btn-small" style={{cursor:'pointer'}}>
+              Import CSV (Robust)
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={onImportCSVRobust}
+                style={{display:'none'}}
+              />
+            </label>
+            <button className="btn btn-secondary btn-small" onClick={onDownloadSampleCSV}>
+              Download Sample CSV
+            </button>
           </div>
 
           <div className="song-list">
@@ -932,6 +1178,17 @@
         reader.readAsText(file);
       }
 
+      function importCSVRobust(ev){
+        const setAlertBridge = (payload) => showToast(payload.message, payload.type);
+        safeImportFromCSV(ev, {
+          existingSongs: songs,
+          setSongs: setSongsState,
+          setAlert: setAlertBridge,
+          nextSongIdRef: null,
+          parseCSVLineFn: parseCSVLine
+        });
+      }
+
       function exportPDF(){ exportToPDFAndPrint(setlists); }
 
       function generate(){
@@ -1025,6 +1282,8 @@
               onDeleteSong={deleteSong}
               onExportCSV={exportSongs}
               onImportCSV={importCSV}
+              onImportCSVRobust={importCSVRobust}
+              onDownloadSampleCSV={downloadSampleCSV}
             />
 
             <SetConfiguration
