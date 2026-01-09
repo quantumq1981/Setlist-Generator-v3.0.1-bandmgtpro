@@ -63,9 +63,12 @@
     .btn { padding: .65rem 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--primary); color: var(--text);
       font-weight: 600; font-size: .85rem; letter-spacing: .04em; cursor: pointer; transition: .2s ease; }
     .btn:hover { border-color: var(--accent); }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
     .btn-primary { background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%); border-color: transparent; }
     .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(255, 107, 53, 0.35); }
     .btn-small { padding: .45rem .75rem; font-size: .75rem; }
+    .btn-toggle-active { border-color: var(--accent); color: var(--text); }
+    .btn-toggle-active.btn-primary { box-shadow: 0 4px 12px rgba(255, 107, 53, 0.35); }
     .main-grid { display: grid; grid-template-columns: 420px 1fr; gap: 1rem; }
     .panel {
       background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 1rem;
@@ -105,6 +108,7 @@
     .action-btn { width:26px; height:26px; display:flex; align-items:center; justify-content:center;
       border:1px solid var(--border); border-radius:6px; background: transparent; color:var(--text-muted); cursor:pointer; }
     .action-btn:hover { background: var(--border); color: var(--text); }
+    .action-btn:disabled { opacity:.5; cursor:not-allowed; }
     .action-btn.locked { color: var(--locked); }
     .toast-container { position: fixed; bottom: 1.25rem; left: 50%; transform: translateX(-50%);
       z-index: 2000; }
@@ -160,6 +164,23 @@
       const str = String(s);
       return /^[=+\-@]/.test(str) ? "'" + str : str;
     };
+
+    function normalizeSongKey(song) {
+      return (song?.title || '')
+        .toLowerCase()
+        .replace(/→|->/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function getSongDedupKeys(song) {
+      const baseKey = normalizeSongKey(song);
+      if (!baseKey) return [];
+      const rawTitle = (song?.title || '');
+      if (!rawTitle.includes('→') && !rawTitle.includes('->')) return [baseKey];
+      const parts = rawTitle.split(/→|->/).map(part => normalizeSongKey({ title: part })).filter(Boolean);
+      return Array.from(new Set([baseKey, ...parts]));
+    }
 
     // CSV parser (handles quoted fields, escaped quotes)
     const parseCSVLine = (line) => {
@@ -539,6 +560,7 @@
       } = opts || {};
 
       const sets = [];
+      const generationWarnings = new Set();
       // available pool (reference only; we don't mutate source)
       const pool = Array.isArray(songs) ? songs.slice() : [];
 
@@ -562,7 +584,7 @@
       for (let i=0; i<numSets; i++){
         const setSongs = [];
         let current = 0;
-        const usedInThisSet = new Set();
+        const usedSongKeys = new Set();
 
         let guard = 0, maxGuard = pool.length * 3 + 200;
 
@@ -570,11 +592,20 @@
           guard++;
           const remaining = setDuration - current;
           // candidates by duration
-          let candidates = pool.filter(song => (allowSongReuse ? true : !usedInThisSet.has(song.id)) && (song.duration <= remaining + 3));
+          let candidates = pool.filter(song => (
+            allowSongReuse ? true : !getSongDedupKeys(song).some(key => usedSongKeys.has(key))
+          ) && (song.duration <= remaining + 3));
 
           if (candidates.length === 0){
-            candidates = pool.filter(song => (allowSongReuse ? true : !usedInThisSet.has(song.id)));
-            if (candidates.length === 0) break;
+            candidates = pool.filter(song => (
+              allowSongReuse ? true : !getSongDedupKeys(song).some(key => usedSongKeys.has(key))
+            ));
+            if (candidates.length === 0){
+              if (!allowSongReuse){
+                generationWarnings.add('Unable to reach target duration without repeating songs.');
+              }
+              break;
+            }
           }
 
           // flow: avoid same style/artist back-to-back
@@ -593,7 +624,9 @@
           const selected = pickWeightedByEnergy(candidates, current, setDuration);
           if (!selected) break;
           setSongs.push(selected);
-          if (!allowSongReuse) usedInThisSet.add(selected.id);
+          if (!allowSongReuse){
+            getSongDedupKeys(selected).forEach(key => usedSongKeys.add(key));
+          }
           current += Number(selected.duration) || 0;
           if (current > setDuration + 5) break;
         }
@@ -603,11 +636,15 @@
           const last = setSongs[setSongs.length-1];
           const e = ENERGY_MAP[last.style] || 3;
           if (!(e >= 5 || last.style === 'ballad')){
-            const closers = pool.filter(s => (allowSongReuse ? true : !usedInThisSet.has(s.id)) && (s.style === 'uptempo' || s.style === 'ballad'));
+            const closers = pool.filter(s => (
+              allowSongReuse ? true : !getSongDedupKeys(s).some(key => usedSongKeys.has(key))
+            ) && (s.style === 'uptempo' || s.style === 'ballad'));
             if (closers.length){
               const closer = closers[Math.floor(Math.random()*closers.length)];
               setSongs.push(closer);
-              if (!allowSongReuse) usedInThisSet.add(closer.id);
+              if (!allowSongReuse){
+                getSongDedupKeys(closer).forEach(key => usedSongKeys.add(key));
+              }
               current += Number(closer.duration) || 0;
             }
           }
@@ -615,6 +652,7 @@
 
         sets.push({ id: i+1, songs: setSongs, totalDuration: Math.round(current*10)/10 });
       }
+      sets.generationWarnings = Array.from(generationWarnings);
       return sets;
     }
 
@@ -949,7 +987,7 @@
       );
     }
 
-    function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, songCount }){
+    function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, songCount, manualEditMode, onToggleManualEdit }){
       const s = settings;
       return (
         <div className="panel">
@@ -999,7 +1037,22 @@
             </div>
           </div>
 
-          <button className="btn btn-primary" style={{width:'100%', marginBottom:'.6rem'}} onClick={onGenerate} disabled={songCount===0}>
+          <div className="toolbar" style={{marginBottom:'.6rem'}}>
+            <button
+              className={`btn btn-small ${!manualEditMode ? 'btn-primary btn-toggle-active' : ''}`}
+              onClick={()=>onToggleManualEdit(false)}
+            >
+              Auto Generate
+            </button>
+            <button
+              className={`btn btn-small ${manualEditMode ? 'btn-primary btn-toggle-active' : ''}`}
+              onClick={()=>onToggleManualEdit(true)}
+            >
+              Manual Edit Mode
+            </button>
+          </div>
+
+          <button className="btn btn-primary" style={{width:'100%', marginBottom:'.6rem'}} onClick={onGenerate} disabled={songCount===0 || manualEditMode}>
             Generate Setlists
           </button>
           <div className="toolbar">
@@ -1010,7 +1063,7 @@
       );
     }
 
-    function SetlistView({ setlist, locked, onToggleLock, onSwap }){
+    function SetlistView({ setlist, locked, onToggleLock, onSwap, manualEditMode, onMoveSong }){
       return (
         <div className="setlist">
           <div className="setlist-header">
@@ -1042,7 +1095,13 @@
                   <button className={`action-btn ${isLocked?'locked':''}`} title={isLocked?'Unlock':'Lock'} onClick={()=>onToggleLock(key)}>
                     {isLocked?'🔒':'🔓'}
                   </button>
-                  <button className="action-btn" title="Swap song" onClick={()=>onSwap(setlist.id-1, idx)}>🔄</button>
+                  <button className="action-btn" title="Swap song" onClick={()=>onSwap(setlist.id-1, idx)} disabled={manualEditMode}>🔄</button>
+                  {manualEditMode && (
+                    <>
+                      <button className="action-btn" title="Move up" onClick={()=>onMoveSong(setlist.id-1, idx, idx-1)} disabled={idx===0}>⬆️</button>
+                      <button className="action-btn" title="Move down" onClick={()=>onMoveSong(setlist.id-1, idx, idx+1)} disabled={idx===setlist.songs.length-1}>⬇️</button>
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -1061,6 +1120,7 @@
       const [locked, setLocked] = useState(new Set());
       const [toast, setToast] = useState(null);
       const [bandModal, setBandModal] = useState(false);
+      const [manualEditMode, setManualEditMode] = useState(false);
 
       // Sync when band changes
       useEffect(()=>{
@@ -1115,6 +1175,7 @@
       function switchBand(id){
         setActive(id); setActiveBandId(id);
         setLocked(new Set()); setSetlists([]);
+        setManualEditMode(false);
         showToast('Switched band', 'info');
       }
 
@@ -1195,7 +1256,11 @@
         const out = generateSetlistsCore(songs, settings);
         setSetlists(out);
         pushBandHistory(activeBand, { ts: Date.now(), settings, setlists: out });
-        showToast(`Generated ${settings.numSets} set(s)`,'success');
+        if (out.generationWarnings && out.generationWarnings.length){
+          showToast('Unable to reach target duration without repeating songs.','warning');
+        } else {
+          showToast(`Generated ${settings.numSets} set(s)`,'success');
+        }
       }
 
       function toggleLock(key){
@@ -1207,6 +1272,7 @@
       }
 
       function swapSong(setIdx, songIdx){
+        if (manualEditMode) return;
         const set = setlists[setIdx];
         if (!set) return;
         const songToReplace = set.songs[songIdx];
@@ -1214,8 +1280,16 @@
         const after = set.songs.slice(songIdx+1);
         const usedTime = before.reduce((a,s)=>a+(Number(s.duration)||0),0);
         const remaining = settings.setDuration - usedTime - after.reduce((a,s)=>a+(Number(s.duration)||0),0);
+        const existingKeys = new Set();
+        if (!settings.allowSongReuse){
+          set.songs.forEach((s, idx) => {
+            if (idx === songIdx) return;
+            getSongDedupKeys(s).forEach(key => existingKeys.add(key));
+          });
+        }
         const candidates = songs.filter(s => s.id !== songToReplace.id && !set.songs.some(x => x.id === s.id) &&
-          (Number(s.duration)||0) <= remaining + 2 && (Number(s.duration)||0) >= remaining - 2);
+          (Number(s.duration)||0) <= remaining + 2 && (Number(s.duration)||0) >= remaining - 2 &&
+          (settings.allowSongReuse ? true : !getSongDedupKeys(s).some(key => existingKeys.has(key))));
         const pick = candidates.length ? candidates[Math.floor(Math.random()*candidates.length)] : null;
         if (!pick) return showToast('No suitable replacement','warning');
         const next = [...setlists];
@@ -1225,6 +1299,19 @@
         next[setIdx].totalDuration = Math.round(next[setIdx].songs.reduce((a,s)=>a+(Number(s.duration)||0),0)*10)/10;
         setSetlists(next);
         showToast(`Swapped "${songToReplace.title}" ↔ "${pick.title}"`,'success');
+      }
+
+      function moveSong(setIdx, fromIdx, toIdx){
+        const set = setlists[setIdx];
+        if (!set) return;
+        if (toIdx < 0 || toIdx >= set.songs.length) return;
+        const updated = set.songs.slice();
+        const [item] = updated.splice(fromIdx, 1);
+        updated.splice(toIdx, 0, item);
+        const next = [...setlists];
+        next[setIdx] = {...next[setIdx], songs: updated};
+        next[setIdx].totalDuration = Math.round(updated.reduce((a,s)=>a+(Number(s.duration)||0),0)*10)/10;
+        setSetlists(next);
       }
 
       function exportSongs(){ exportSongsCSV(songs); }
@@ -1293,6 +1380,8 @@
               onCopy={copyToClipboard}
               onExportPDF={exportPDF}
               songCount={songs.length}
+              manualEditMode={manualEditMode}
+              onToggleManualEdit={setManualEditMode}
             />
           </div>
 
@@ -1320,7 +1409,7 @@
               <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:'1rem'}}>
                 <h3 className="panel-title">Generated Setlists</h3>
                 <div className="toolbar">
-                  <button className="btn btn-small" onClick={generate}>Regenerate</button>
+                  <button className="btn btn-small" onClick={generate} disabled={manualEditMode}>Regenerate</button>
                   <button className="btn btn-small" onClick={()=>{ setSetlists([]); setLocked(new Set()); }}>Clear</button>
                 </div>
               </div>
@@ -1332,6 +1421,8 @@
                     locked={locked}
                     onToggleLock={toggleLock}
                     onSwap={swapSong}
+                    manualEditMode={manualEditMode}
+                    onMoveSong={moveSong}
                   />
                 ))}
               </div>
