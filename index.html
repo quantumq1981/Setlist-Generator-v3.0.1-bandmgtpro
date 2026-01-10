@@ -660,10 +660,6 @@
           break;
         }
 
-        if (generationAborted){
-          break;
-        }
-
         // closer
         if (forceCloser && setSongs.length){
           const last = setSongs[setSongs.length-1];
@@ -682,6 +678,8 @@
                 getSongDedupKeys(closer).forEach(key => globalUsedSongKeys.add(key));
               }
               current += Number(closer.duration) || 0;
+            } else if (!allowSongReuse){
+              getSongDedupKeys(last).forEach(key => globalUsedSongKeys.add(key));
             }
           }
         }
