@@ -125,6 +125,25 @@
     .band-id { font-family:'Space Mono', monospace; color: var(--text-muted); font-size: .75rem; }
     .history-list { max-height: 240px; overflow:auto; border:1px dashed var(--border); border-radius:8px; padding:.5rem; }
     .history-item { padding:.45rem; border-bottom:1px dashed var(--border); }
+    .print-only { display: none; }
+    @media print {
+      @page {
+        size: letter;
+        margin: 1in;
+      }
+      body { background: #fff; color: #000; }
+      .no-print { display: none !important; }
+      .print-only { display: block; }
+      .set-page {
+        page-break-after: always;
+        break-after: page;
+        font-family: "Times New Roman", serif;
+        font-size: 19pt;
+        font-weight: bold;
+        line-height: 1.0;
+      }
+      .set-page:last-child { page-break-after: auto; break-after: auto; }
+    }
     @media (max-width: 1100px){ .main-grid{ grid-template-columns: 1fr; } }
     @media (max-width: 700px){
       h1{ font-size: 1.8rem; }
@@ -561,6 +580,7 @@
 
       const sets = [];
       const generationWarnings = new Set();
+      const globalUsedSongKeys = new Set();
       // available pool (reference only; we don't mutate source)
       const pool = Array.isArray(songs) ? songs.slice() : [];
 
@@ -581,28 +601,33 @@
         return cands[cands.length-1];
       };
 
+      let generationAborted = false;
       for (let i=0; i<numSets; i++){
         const setSongs = [];
         let current = 0;
-        const usedSongKeys = new Set();
-
+        let setFailed = false;
         let guard = 0, maxGuard = pool.length * 3 + 200;
 
         while (current < setDuration - 0.25 && guard < maxGuard){
           guard++;
           const remaining = setDuration - current;
+          const isAvailable = (song) => (
+            allowSongReuse ? true : !getSongDedupKeys(song).some(key => globalUsedSongKeys.has(key))
+          );
           // candidates by duration
           let candidates = pool.filter(song => (
-            allowSongReuse ? true : !getSongDedupKeys(song).some(key => usedSongKeys.has(key))
-          ) && (song.duration <= remaining + 3));
+            isAvailable(song) && (song.duration <= remaining + 3)
+          ));
 
           if (candidates.length === 0){
             candidates = pool.filter(song => (
-              allowSongReuse ? true : !getSongDedupKeys(song).some(key => usedSongKeys.has(key))
+              isAvailable(song)
             ));
             if (candidates.length === 0){
               if (!allowSongReuse){
-                generationWarnings.add('Unable to reach target duration without repeating songs.');
+                generationWarnings.add('Unable to generate requested sets without repeating songs.');
+                setFailed = true;
+                generationAborted = true;
               }
               break;
             }
@@ -625,10 +650,14 @@
           if (!selected) break;
           setSongs.push(selected);
           if (!allowSongReuse){
-            getSongDedupKeys(selected).forEach(key => usedSongKeys.add(key));
+            getSongDedupKeys(selected).forEach(key => globalUsedSongKeys.add(key));
           }
           current += Number(selected.duration) || 0;
           if (current > setDuration + 5) break;
+        }
+
+        if (setFailed){
+          break;
         }
 
         // closer
@@ -637,13 +666,13 @@
           const e = ENERGY_MAP[last.style] || 3;
           if (!(e >= 5 || last.style === 'ballad')){
             const closers = pool.filter(s => (
-              allowSongReuse ? true : !getSongDedupKeys(s).some(key => usedSongKeys.has(key))
+              allowSongReuse ? true : !getSongDedupKeys(s).some(key => globalUsedSongKeys.has(key))
             ) && (s.style === 'uptempo' || s.style === 'ballad'));
             if (closers.length){
               const closer = closers[Math.floor(Math.random()*closers.length)];
               setSongs.push(closer);
               if (!allowSongReuse){
-                getSongDedupKeys(closer).forEach(key => usedSongKeys.add(key));
+                getSongDedupKeys(closer).forEach(key => globalUsedSongKeys.add(key));
               }
               current += Number(closer.duration) || 0;
             }
@@ -651,6 +680,9 @@
         }
 
         sets.push({ id: i+1, songs: setSongs, totalDuration: Math.round(current*10)/10 });
+        if (generationAborted){
+          break;
+        }
       }
       sets.generationWarnings = Array.from(generationWarnings);
       return sets;
@@ -1011,7 +1043,7 @@
             <div className="input-group">
               <label style={{textTransform:'none'}}>Allow Song Reuse Across Sets</label>
               <select value={s.allowSongReuse ? '1':'0'} onChange={(e)=>onChange({...s, allowSongReuse: e.target.value==='1'})}>
-                <option value="0">No (no duplicates within each set)</option>
+                <option value="0">No (no duplicates across all sets)</option>
                 <option value="1">Yes (song may appear in multiple sets)</option>
               </select>
             </div>
@@ -1057,7 +1089,7 @@
           </button>
           <div className="toolbar">
             <button className="btn btn-small" onClick={onCopy}>Copy to Clipboard</button>
-            <button className="btn btn-small" onClick={onExportPDF}>Print / Export PDF</button>
+            <button className="btn btn-small" onClick={onExportPDF}>Printer Export</button>
           </div>
         </div>
       );
@@ -1106,6 +1138,27 @@
               </div>
             );
           })}
+        </div>
+      );
+    }
+
+    function PrintView({ setlists }){
+      if (!setlists || setlists.length === 0) return null;
+      return (
+        <div className="print-only">
+          {setlists.map((set) => (
+            <div className="set-page" key={`print-${set.id}`}>
+              <div>{`Set ${set.id} (${set.totalDuration}min)`}</div>
+              {set.songs.map((song, idx) => {
+                const bpmLabel = song.bpm !== '' && song.bpm != null ? `, ${song.bpm} BPM` : '';
+                return (
+                  <div key={song.id || `${set.id}-${idx}`}>
+                    {`${idx + 1}. ${song.title} – ${song.artist} (${song.duration}min, ${song.style}${bpmLabel})`}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
       );
     }
@@ -1250,14 +1303,20 @@
         });
       }
 
-      function exportPDF(){ exportToPDFAndPrint(setlists); }
+      function exportPrint(){
+        if (!setlists.length){
+          showToast('No setlists to print','warning');
+          return;
+        }
+        window.print();
+      }
 
       function generate(){
         const out = generateSetlistsCore(songs, settings);
         setSetlists(out);
         pushBandHistory(activeBand, { ts: Date.now(), settings, setlists: out });
         if (out.generationWarnings && out.generationWarnings.length){
-          showToast('Unable to reach target duration without repeating songs.','warning');
+          showToast(out.generationWarnings[0],'warning');
         } else {
           showToast(`Generated ${settings.numSets} set(s)`,'success');
         }
@@ -1280,16 +1339,18 @@
         const after = set.songs.slice(songIdx+1);
         const usedTime = before.reduce((a,s)=>a+(Number(s.duration)||0),0);
         const remaining = settings.setDuration - usedTime - after.reduce((a,s)=>a+(Number(s.duration)||0),0);
-        const existingKeys = new Set();
+        const globalUsedSongKeys = new Set();
         if (!settings.allowSongReuse){
-          set.songs.forEach((s, idx) => {
-            if (idx === songIdx) return;
-            getSongDedupKeys(s).forEach(key => existingKeys.add(key));
+          setlists.forEach((list) => {
+            list.songs.forEach((s) => {
+              getSongDedupKeys(s).forEach(key => globalUsedSongKeys.add(key));
+            });
           });
+          getSongDedupKeys(songToReplace).forEach(key => globalUsedSongKeys.delete(key));
         }
         const candidates = songs.filter(s => s.id !== songToReplace.id && !set.songs.some(x => x.id === s.id) &&
           (Number(s.duration)||0) <= remaining + 2 && (Number(s.duration)||0) >= remaining - 2 &&
-          (settings.allowSongReuse ? true : !getSongDedupKeys(s).some(key => existingKeys.has(key))));
+          (settings.allowSongReuse ? true : !getSongDedupKeys(s).some(key => globalUsedSongKeys.has(key))));
         const pick = candidates.length ? candidates[Math.floor(Math.random()*candidates.length)] : null;
         if (!pick) return showToast('No suitable replacement','warning');
         const next = [...setlists];
@@ -1337,7 +1398,8 @@
       const history = activeBand ? getBandHistory(activeBand) : [];
 
       return (
-        <div className="app-container">
+        <>
+        <div className="app-container no-print">
           {toast && <div className="toast-container"><Toast message={toast.message} type={toast.type} onClose={()=>setToast(null)} /></div>}
 
           <header className="header">
@@ -1378,7 +1440,7 @@
               onChange={setSettingsState}
               onGenerate={generate}
               onCopy={copyToClipboard}
-              onExportPDF={exportPDF}
+              onExportPDF={exportPrint}
               songCount={songs.length}
               manualEditMode={manualEditMode}
               onToggleManualEdit={setManualEditMode}
@@ -1439,6 +1501,8 @@
             onDuplicate={duplicateBand}
           />
         </div>
+        <PrintView setlists={setlists} />
+        </>
       );
     }
 
