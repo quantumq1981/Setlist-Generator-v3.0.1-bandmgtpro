@@ -660,11 +660,18 @@
           break;
         }
 
+        if (generationAborted){
+          break;
+        }
+
         // closer
         if (forceCloser && setSongs.length){
           const last = setSongs[setSongs.length-1];
           const e = ENERGY_MAP[last.style] || 3;
           if (!(e >= 5 || last.style === 'ballad')){
+            if (!allowSongReuse){
+              getSongDedupKeys(last).forEach(key => globalUsedSongKeys.delete(key));
+            }
             const closers = pool.filter(s => (
               allowSongReuse ? true : !getSongDedupKeys(s).some(key => globalUsedSongKeys.has(key))
             ) && (s.style === 'uptempo' || s.style === 'ballad'));
