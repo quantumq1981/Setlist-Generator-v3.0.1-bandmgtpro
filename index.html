@@ -352,7 +352,8 @@
       setSongs,
       setAlert,
       nextSongIdRef,
-      parseCSVLineFn // pass the existing parseCSVLine function
+      parseCSVLineFn, // pass the existing parseCSVLine function
+      onImportSuccess
     }) {
       try {
         const file = event?.target?.files?.[0];
@@ -391,7 +392,7 @@
                   artist: row.artist,
                   duration: row.duration,
                   style: row.style,
-                  key: row.key,
+                  key: sanitizeInput(row.key || '').trim() || null,
                   bpm: row.bpm
                 };
                 // If validateSong exists in this scope, use it
@@ -422,6 +423,7 @@
               message: `Imported ${imported.length} song${imported.length > 1 ? 's' : ''}` +
                        (rejects.length ? ` (${rejects.length} errors)` : '')
             });
+            onImportSuccess?.(file.name, imported.length);
           } catch (inner) {
             setAlert?.({ type: 'error', message: `Import failed: ${inner.message}` });
           } finally {
@@ -470,6 +472,7 @@
       bandSongs: (id) => `setlist-band-${id}-songs`,
       bandSettings: (id) => `setlist-band-${id}-settings`,
       bandHistory: (id) => `setlist-band-${id}-history`,
+      bandImports: (id) => `setlist-band-${id}-imports`,
     };
 
     // Migration from v2.x single-context
@@ -565,6 +568,16 @@
       const hist = getBandHistory(band);
       hist.unshift(entry);
       LS.setJSON(keys.bandHistory(band.id), hist.slice(0, 200));
+    }
+    function getBandImports(band){
+      if (!band) return [];
+      return LS.getJSON(keys.bandImports(band.id), []);
+    }
+    function pushBandImport(band, entry){
+      if (!band) return;
+      const imports = getBandImports(band);
+      imports.unshift(entry);
+      LS.setJSON(keys.bandImports(band.id), imports.slice(0, 10));
     }
 
     /******************* Generator (Pure Core) *******************/
@@ -711,7 +724,12 @@
         doc.setFontSize(10);
         set.songs.forEach((song, idx) => {
           if (y > pageH - margin){ doc.addPage(); y = 20; }
-          const line = `${idx+1}. ${song.title} - ${song.artist} (${song.duration}min, ${song.style}${song.bpm?`, ${song.bpm} BPM`:''})`;
+          const line =
+            `${idx+1}. ${song.title} - ${song.artist} (` +
+            `${song.duration}min, ${song.style}` +
+            `${song.key ? `, ${song.key}` : ''}` +
+            `${song.bpm ? `, ${song.bpm} BPM` : ''}` +
+            `)`;
           doc.text(line, 18, y);
           y += 6;
         });
@@ -894,7 +912,7 @@
       );
     }
 
-    function SongLibrary({ songs, onAddSong, onDeleteSong, onExportCSV, onImportCSV, onImportCSVRobust, onDownloadSampleCSV }){
+    function SongLibrary({ songs, onAddSong, onDeleteSong, onExportCSV, onImportCSV, onImportCSVRobust, onDownloadSampleCSV, onClearAll, latestImport }){
       const [newSong, setNewSong] = useState({ title:'', artist:'', duration:5, style:'midtempo', key:'', bpm:'' });
       const [filterStyle, setFilterStyle] = useState('all');
       const [filterArtist, setFilterArtist] = useState('');
@@ -932,6 +950,11 @@
             <h3 className="panel-title">Song Library</h3>
             <span style={{color:'var(--text-muted)', fontSize:'.9rem'}}>{filtered.length} of {songs.length} songs</span>
           </div>
+          {latestImport && (
+            <div style={{color:'var(--text-muted)', fontSize:'.9rem', marginTop:'-.35rem', marginBottom:'.5rem'}}>
+              Imported from: {latestImport.filename} ({latestImport.songCount} songs)
+            </div>
+          )}
 
           <div className="panel" style={{padding:'.75rem', marginBottom:'.75rem'}}>
             <div className="set-config">
@@ -1000,6 +1023,16 @@
             </label>
             <button className="btn btn-secondary btn-small" onClick={onDownloadSampleCSV}>
               Download Sample CSV
+            </button>
+            <button
+              className="btn btn-small"
+              onClick={() => {
+                if (confirm('Delete ALL songs for this band?')) {
+                  onClearAll();
+                }
+              }}
+            >
+              Clear Library
             </button>
           </div>
 
@@ -1156,9 +1189,10 @@
               <div>{`Set ${set.id} (${set.totalDuration}min)`}</div>
               {set.songs.map((song, idx) => {
                 const bpmLabel = song.bpm !== '' && song.bpm != null ? `, ${song.bpm} BPM` : '';
+                const keyLabel = song.key ? `, ${song.key}` : '';
                 return (
                   <div key={song.id || `${set.id}-${idx}`}>
-                    {`${idx + 1}. ${song.title} – ${song.artist} (${song.duration}min, ${song.style}${bpmLabel})`}
+                    {`${idx + 1}. ${song.title} – ${song.artist} (${song.duration}min, ${song.style}${keyLabel}${bpmLabel})`}
                   </div>
                 );
               })}
@@ -1173,6 +1207,7 @@
       const [activeBandId, setActive] = useState(getActiveBandId());
       const activeBand = useMemo(()=> bands.find(b => b.id === activeBandId) || null, [bands, activeBandId]);
       const [songs, setSongsState] = useState(getBandSongs(activeBand));
+      const [imports, setImportsState] = useState(getBandImports(activeBand));
       const [settings, setSettingsState] = useState(getBandSettings(activeBand));
       const [setlists, setSetlists] = useState([]);
       const [locked, setLocked] = useState(new Set());
@@ -1184,6 +1219,7 @@
       useEffect(()=>{
         setSongsState(getBandSongs(activeBand));
         setSettingsState(getBandSettings(activeBand));
+        setImportsState(getBandImports(activeBand));
       }, [activeBandId]);
 
       // Persist on changes (debounced)
@@ -1244,6 +1280,22 @@
       function deleteSong(id){
         setSongsState(songs.filter(s => s.id !== id));
       }
+      function clearAllSongs(){
+        setSongsState([]);
+        showToast('Song library cleared', 'warning');
+      }
+
+      function recordImport(filename, songCount){
+        if (!activeBand) return;
+        const entry = {
+          id: (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`),
+          filename,
+          importedAt: Date.now(),
+          songCount
+        };
+        pushBandImport(activeBand, entry);
+        setImportsState(getBandImports(activeBand));
+      }
 
       function copyToClipboard(){
         try{
@@ -1280,7 +1332,7 @@
               const artist = sanitizeInput(cols[map.artist] || '');
               const duration = parseDuration(cols[map.duration] || '5');
               const style = (cols[map.style] || 'midtempo').toLowerCase();
-              const key = map.key!=null ? sanitizeInput(cols[map.key] || '') : '';
+              const key = map.key!=null ? sanitizeInput(cols[map.key] || '').trim() || null : null;
               let bpm = map.bpm!=null ? cols[map.bpm] : '';
               bpm = bpm==='' ? '' : Number(bpm);
               if (!title || !artist) continue;
@@ -1289,6 +1341,7 @@
             if (imported.length){
               setSongsState([...songs, ...imported]);
               showToast(`Imported ${imported.length} song(s)`, 'success');
+              recordImport(file.name, imported.length);
             } else showToast('No valid rows found','warning');
           }catch(err){ showToast('Import failed','error'); }
           ev.target.value='';
@@ -1304,7 +1357,8 @@
           setSongs: setSongsState,
           setAlert: setAlertBridge,
           nextSongIdRef: null,
-          parseCSVLineFn: parseCSVLine
+          parseCSVLineFn: parseCSVLine,
+          onImportSuccess: recordImport
         });
       }
 
@@ -1438,6 +1492,8 @@
               onImportCSV={importCSV}
               onImportCSVRobust={importCSVRobust}
               onDownloadSampleCSV={downloadSampleCSV}
+              onClearAll={clearAllSongs}
+              latestImport={imports[0] || null}
             />
 
             <SetConfiguration
