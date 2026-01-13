@@ -1,0 +1,3 @@
+- Added musician roster management with literacy levels, known forms, and core repertoire tracking.
+- Added gig setup with lineup selection, prep mode, and local persistence.
+- Added viable song filtering, gig-aware generation, and text prep packet exports.
