@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Setlist Generator v3.0.1 — Band Management Pro</title>
+  <title>Setlist Generator v3.1 Draft — Musician Preparedness Pro</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -125,6 +125,12 @@
     .band-id { font-family:'Space Mono', monospace; color: var(--text-muted); font-size: .75rem; }
     .history-list { max-height: 240px; overflow:auto; border:1px dashed var(--border); border-radius:8px; padding:.5rem; }
     .history-item { padding:.45rem; border-bottom:1px dashed var(--border); }
+    .split-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; }
+    .muted { color: var(--text-muted); }
+    .pill { display:inline-flex; gap:.35rem; align-items:center; padding:.2rem .5rem; border-radius:999px; background: var(--primary); border:1px solid var(--border); font-size:.75rem; }
+    .tag { padding: .1rem .4rem; border-radius: 6px; font-size:.7rem; background: rgba(255,255,255,.08); border:1px solid var(--border); }
+    .checkbox-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:.5rem; }
+    .checkbox-row { display:flex; align-items:center; gap:.45rem; background: var(--primary); border:1px solid var(--border); border-radius:8px; padding:.4rem .5rem; }
     .print-only { display: none; }
     @media print {
       @page {
@@ -473,6 +479,9 @@
       bandSettings: (id) => `setlist-band-${id}-settings`,
       bandHistory: (id) => `setlist-band-${id}-history`,
       bandImports: (id) => `setlist-band-${id}-imports`,
+      bandMusicians: (id) => `setlist-band-${id}-musicians`,
+      bandGigs: (id) => `setlist-band-${id}-gigs`,
+      bandActiveGigId: (id) => `setlist-band-${id}-active-gig`,
     };
 
     // Migration from v2.x single-context
@@ -578,6 +587,31 @@
       const imports = getBandImports(band);
       imports.unshift(entry);
       LS.setJSON(keys.bandImports(band.id), imports.slice(0, 10));
+    }
+
+    function getBandMusicians(band){
+      if (!band) return [];
+      return LS.getJSON(keys.bandMusicians(band.id), []);
+    }
+    function setBandMusicians(band, musicians){
+      if (!band) return;
+      LS.setJSON(keys.bandMusicians(band.id), musicians);
+    }
+    function getBandGigs(band){
+      if (!band) return [];
+      return LS.getJSON(keys.bandGigs(band.id), []);
+    }
+    function setBandGigs(band, gigs){
+      if (!band) return;
+      LS.setJSON(keys.bandGigs(band.id), gigs);
+    }
+    function getBandActiveGigId(band){
+      if (!band) return null;
+      return LS.getJSON(keys.bandActiveGigId(band.id), null);
+    }
+    function setBandActiveGigId(band, id){
+      if (!band) return;
+      LS.setJSON(keys.bandActiveGigId(band.id), id);
     }
 
     /******************* Generator (Pure Core) *******************/
@@ -704,6 +738,69 @@
       }
       sets.generationWarnings = Array.from(generationWarnings);
       return sets;
+    }
+
+    /******************* Musician Preparedness *******************/
+    const PREP_MODE_LABELS = {
+      'notes-only': 'Notes Only',
+      'one-rehearsal': 'One Rehearsal',
+      'full-prep': 'Full Prep'
+    };
+
+    function getMusicianReadiness(musician, song){
+      if (!musician || !song) return 'not-ready';
+      if (Array.isArray(musician.coreRepertoire) && musician.coreRepertoire.includes(song.id)){
+        return 'knows-cold';
+      }
+      switch (musician.literacyLevel){
+        case 'numbers':
+        case 'charts':
+          return 'chart-readable';
+        case 'full':
+          return 'needs-rehearsal';
+        default:
+          return 'not-ready';
+      }
+    }
+
+    function meetsPrepMode(readiness, prepMode){
+      if (prepMode === 'notes-only') return readiness === 'knows-cold';
+      if (prepMode === 'one-rehearsal') return readiness === 'knows-cold' || readiness === 'chart-readable';
+      return readiness !== 'not-ready';
+    }
+
+    function getViableSongsForGig(allSongs, activeGig, musicians){
+      if (!activeGig) return Array.isArray(allSongs) ? allSongs : [];
+      const musicianMap = new Map((musicians || []).map(m => [m.id, m]));
+      const lineup = Array.isArray(activeGig.musicianIds) ? activeGig.musicianIds : [];
+      if (lineup.length === 0) return [];
+      const prepMode = activeGig.prepMode || 'notes-only';
+      const source = Array.isArray(allSongs) ? allSongs : [];
+      return source.filter(song => {
+        return lineup.every(id => {
+          const musician = musicianMap.get(id);
+          if (!musician) return false;
+          const readiness = getMusicianReadiness(musician, song);
+          return meetsPrepMode(readiness, prepMode);
+        });
+      });
+    }
+
+    function formatPrepSongLine(song){
+      const duration = song.duration ? `${song.duration} min` : 'N/A';
+      const notes = song.notes ? ` | Notes: ${song.notes}` : '';
+      const formDelta = song.formDelta ? ` | Form: ${song.formDelta}` : '';
+      return `- ${song.title} — ${song.artist} (${duration})${notes}${formDelta}`;
+    }
+
+    function downloadTextFile(filename, content){
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
     }
 
     /******************* Printing / Export *******************/
@@ -908,6 +1005,344 @@
               ))}
             </div>
           </div>
+        </div>
+      );
+    }
+
+    function MusicianRoster({ musicians, songs, onUpsertMusician, onDeleteMusician }){
+      const emptyDraft = { id:'', name:'', instrument:'', literacyLevel:'ear', knownForms:'', coreRepertoire:[] };
+      const [draft, setDraft] = useState(emptyDraft);
+      const [bulkMusicianId, setBulkMusicianId] = useState(null);
+      const [bulkSelection, setBulkSelection] = useState(new Set());
+
+      const bulkMusician = useMemo(
+        () => musicians.find(m => m.id === bulkMusicianId) || null,
+        [musicians, bulkMusicianId]
+      );
+
+      useEffect(() => {
+        if (bulkMusician){
+          setBulkSelection(new Set(bulkMusician.coreRepertoire || []));
+        }
+      }, [bulkMusicianId, bulkMusician]);
+
+      const saveDraft = () => {
+        if (!draft.name.trim()) return alert('Musician name required');
+        if (!draft.instrument.trim()) return alert('Instrument required');
+        const payload = {
+          id: draft.id || genId(),
+          name: sanitizeInput(draft.name),
+          instrument: sanitizeInput(draft.instrument),
+          literacyLevel: draft.literacyLevel || 'ear',
+          knownForms: (draft.knownForms || '')
+            .split(',')
+            .map(s => sanitizeInput(s.trim()))
+            .filter(Boolean),
+          coreRepertoire: Array.isArray(draft.coreRepertoire) ? draft.coreRepertoire : []
+        };
+        onUpsertMusician(payload);
+        setDraft(emptyDraft);
+      };
+
+      const startEdit = (musician) => {
+        setDraft({
+          id: musician.id,
+          name: musician.name,
+          instrument: musician.instrument,
+          literacyLevel: musician.literacyLevel || 'ear',
+          knownForms: (musician.knownForms || []).join(', '),
+          coreRepertoire: musician.coreRepertoire || []
+        });
+      };
+
+      const toggleBulkSong = (songId) => {
+        setBulkSelection(prev => {
+          const next = new Set(prev);
+          if (next.has(songId)) next.delete(songId);
+          else next.add(songId);
+          return next;
+        });
+      };
+
+      const saveBulk = () => {
+        if (!bulkMusician) return;
+        onUpsertMusician({ ...bulkMusician, coreRepertoire: Array.from(bulkSelection) });
+        setBulkMusicianId(null);
+      };
+
+      const selectedCount = draft.coreRepertoire?.length || 0;
+
+      return (
+        <div className="panel">
+          <div className="panel-header">
+            <h3 className="panel-title">Musician Roster</h3>
+            <span className="muted" style={{fontSize:'.85rem'}}>{musicians.length} musicians</span>
+          </div>
+
+          <div className="input-group">
+            <label>Name *</label>
+            <input value={draft.name} onChange={(e)=>setDraft({...draft, name:e.target.value})} placeholder="e.g., Sam Rivera" />
+          </div>
+          <div className="input-group">
+            <label>Instrument *</label>
+            <input value={draft.instrument} onChange={(e)=>setDraft({...draft, instrument:e.target.value})} placeholder="e.g., Bass" />
+          </div>
+          <div className="set-config">
+            <div className="input-group">
+              <label>Literacy Level</label>
+              <select value={draft.literacyLevel} onChange={(e)=>setDraft({...draft, literacyLevel:e.target.value})}>
+                <option value="ear">Ear Only</option>
+                <option value="numbers">Numbers</option>
+                <option value="charts">Charts</option>
+                <option value="full">Full Reading</option>
+              </select>
+            </div>
+            <div className="input-group">
+              <label>Known Forms (comma-separated)</label>
+              <input value={draft.knownForms} onChange={(e)=>setDraft({...draft, knownForms:e.target.value})} placeholder="12-bar, AABA" />
+            </div>
+          </div>
+          <div className="input-group">
+            <label>Core Repertoire</label>
+            <div className="muted" style={{fontSize:'.85rem'}}>Selected songs: {selectedCount}</div>
+          </div>
+          <div className="toolbar">
+            <button className="btn btn-primary" onClick={saveDraft}>
+              {draft.id ? 'Update Musician' : 'Add Musician'}
+            </button>
+            {draft.id && <button className="btn" onClick={()=>setDraft(emptyDraft)}>Cancel Edit</button>}
+          </div>
+
+          <div style={{marginTop:'1rem'}}>
+            {musicians.length === 0 && (
+              <div className="alert alert-warning">No musicians yet. Add your roster to begin gig planning.</div>
+            )}
+            {musicians.map(musician => (
+              <div className="band-row" key={musician.id}>
+                <div>
+                  <div style={{fontWeight:700}}>{musician.name} <span className="muted">• {musician.instrument}</span></div>
+                  <div className="song-meta">
+                    <span className="tag">{musician.literacyLevel || 'ear'}</span>
+                    <span className="tag">Core: {(musician.coreRepertoire || []).length}</span>
+                  </div>
+                </div>
+                <div className="toolbar">
+                  <button className="btn btn-small" onClick={()=>startEdit(musician)}>Edit</button>
+                  <button className="btn btn-small" onClick={()=>setBulkMusicianId(musician.id)}>Bulk Songs</button>
+                  <button className="btn btn-small" onClick={()=>onDeleteMusician(musician.id)}>Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {bulkMusician && (
+            <div className="modal-backdrop" onClick={()=>setBulkMusicianId(null)}>
+              <div className="modal" onClick={(e)=>e.stopPropagation()}>
+                <div className="panel-header">
+                  <h3 className="panel-title">Core Repertoire: {bulkMusician.name}</h3>
+                  <button className="btn btn-small" onClick={()=>setBulkMusicianId(null)}>Close</button>
+                </div>
+                <div className="toolbar" style={{marginBottom:'.75rem'}}>
+                  <button className="btn btn-small" onClick={()=>{
+                    setBulkSelection(new Set(songs.map(s => s.id)));
+                  }}>Select All</button>
+                  <button className="btn btn-small" onClick={()=>setBulkSelection(new Set())}>Clear</button>
+                </div>
+                <div className="checkbox-grid" style={{maxHeight:'280px', overflow:'auto'}}>
+                  {songs.map(song => (
+                    <label className="checkbox-row" key={song.id}>
+                      <input
+                        type="checkbox"
+                        checked={bulkSelection.has(song.id)}
+                        onChange={()=>toggleBulkSong(song.id)}
+                      />
+                      <span>{song.title} <span className="muted">({song.artist})</span></span>
+                    </label>
+                  ))}
+                  {songs.length === 0 && (
+                    <div className="alert alert-warning">No songs yet. Add songs before assigning core repertoire.</div>
+                  )}
+                </div>
+                <div className="toolbar" style={{marginTop:'1rem'}}>
+                  <button className="btn btn-primary" onClick={saveBulk}>Save Repertoire</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function GigSetup({ gigs, musicians, activeGigId, onSaveGig, onDeleteGig, onActivateGig, onClearActiveGig }){
+      const emptyGig = { id:'', venue:'', date:'', musicianIds:[], prepMode:'notes-only' };
+      const [draft, setDraft] = useState(emptyGig);
+
+      const toggleMusician = (id) => {
+        setDraft(prev => {
+          const exists = prev.musicianIds.includes(id);
+          return {
+            ...prev,
+            musicianIds: exists ? prev.musicianIds.filter(mid => mid !== id) : [...prev.musicianIds, id]
+          };
+        });
+      };
+
+      const saveGig = () => {
+        if (!draft.venue.trim()) return alert('Venue name required');
+        if (!draft.date.trim()) return alert('Gig date required');
+        const payload = {
+          id: draft.id || genId(),
+          venue: sanitizeInput(draft.venue),
+          date: draft.date,
+          musicianIds: draft.musicianIds,
+          prepMode: draft.prepMode || 'notes-only',
+          createdAt: draft.id ? draft.createdAt : Date.now()
+        };
+        onSaveGig(payload);
+        setDraft(emptyGig);
+      };
+
+      const startEdit = (gig) => {
+        setDraft({
+          id: gig.id,
+          venue: gig.venue,
+          date: gig.date,
+          musicianIds: gig.musicianIds || [],
+          prepMode: gig.prepMode || 'notes-only',
+          createdAt: gig.createdAt
+        });
+      };
+
+      const activeGig = gigs.find(g => g.id === activeGigId);
+
+      return (
+        <div className="panel">
+          <div className="panel-header">
+            <h3 className="panel-title">Gig Setup</h3>
+            <span className="muted" style={{fontSize:'.85rem'}}>{gigs.length} gigs</span>
+          </div>
+
+          {activeGig && (
+            <div className="alert alert-success">
+              Active Gig: <strong>{activeGig.venue}</strong> • {activeGig.date} • {PREP_MODE_LABELS[activeGig.prepMode] || activeGig.prepMode}
+              <button className="btn btn-small" style={{marginLeft:'auto'}} onClick={onClearActiveGig}>Clear Active</button>
+            </div>
+          )}
+
+          <div className="input-group">
+            <label>Venue Name *</label>
+            <input value={draft.venue} onChange={(e)=>setDraft({...draft, venue:e.target.value})} placeholder="e.g., Blue Note" />
+          </div>
+          <div className="input-group">
+            <label>Date *</label>
+            <input type="date" value={draft.date} onChange={(e)=>setDraft({...draft, date:e.target.value})} />
+          </div>
+          <div className="input-group">
+            <label>Prep Mode</label>
+            <select value={draft.prepMode} onChange={(e)=>setDraft({...draft, prepMode:e.target.value})}>
+              <option value="notes-only">Notes Only</option>
+              <option value="one-rehearsal">One Rehearsal</option>
+              <option value="full-prep">Full Prep</option>
+            </select>
+          </div>
+          <div className="input-group">
+            <label>Musicians Playing</label>
+            <div className="checkbox-grid">
+              {musicians.map(m => (
+                <label className="checkbox-row" key={m.id}>
+                  <input
+                    type="checkbox"
+                    checked={draft.musicianIds.includes(m.id)}
+                    onChange={()=>toggleMusician(m.id)}
+                  />
+                  <span>{m.name} <span className="muted">({m.instrument})</span></span>
+                </label>
+              ))}
+              {musicians.length === 0 && (
+                <div className="alert alert-warning">Add musicians to build a gig lineup.</div>
+              )}
+            </div>
+          </div>
+          <div className="toolbar">
+            <button className="btn btn-primary" onClick={saveGig}>
+              {draft.id ? 'Update Gig' : 'Save Gig'}
+            </button>
+            {draft.id && <button className="btn" onClick={()=>setDraft(emptyGig)}>Cancel Edit</button>}
+          </div>
+
+          <div style={{marginTop:'1rem'}}>
+            {gigs.map(gig => (
+              <div className="band-row" key={gig.id}>
+                <div>
+                  <div style={{fontWeight:700}}>{gig.venue} <span className="muted">• {gig.date}</span></div>
+                  <div className="song-meta">
+                    <span className="tag">{PREP_MODE_LABELS[gig.prepMode] || gig.prepMode}</span>
+                    <span className="tag">{(gig.musicianIds || []).length} musicians</span>
+                  </div>
+                </div>
+                <div className="toolbar">
+                  <button className="btn btn-small" onClick={()=>onActivateGig(gig.id)}>
+                    {activeGigId === gig.id ? 'Active' : 'Activate'}
+                  </button>
+                  <button className="btn btn-small" onClick={()=>startEdit(gig)}>Edit</button>
+                  <button className="btn btn-small" onClick={()=>onDeleteGig(gig.id)}>Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function PrepPacketPanel({ setlists, activeGig, musicians, onExportFull, onExportMusician }){
+      const [selectedMusicianId, setSelectedMusicianId] = useState('');
+
+      useEffect(() => {
+        if (activeGig?.musicianIds?.length){
+          setSelectedMusicianId(activeGig.musicianIds[0]);
+        } else {
+          setSelectedMusicianId('');
+        }
+      }, [activeGig?.id]);
+
+      const lineup = activeGig?.musicianIds || [];
+      const lineupMusicians = musicians.filter(m => lineup.includes(m.id));
+
+      return (
+        <div className="panel">
+          <div className="panel-header">
+            <h3 className="panel-title">Prep Packets</h3>
+            <span className="muted" style={{fontSize:'.85rem'}}>Text export</span>
+          </div>
+          {!activeGig && (
+            <div className="alert alert-warning">Activate a gig to generate prep packets.</div>
+          )}
+          {activeGig && (
+            <div className="alert alert-success">
+              Gig: <strong>{activeGig.venue}</strong> • {activeGig.date} • {PREP_MODE_LABELS[activeGig.prepMode] || activeGig.prepMode}
+            </div>
+          )}
+          <div className="toolbar" style={{marginBottom:'.75rem'}}>
+            <button className="btn btn-primary" disabled={!setlists.length || !activeGig} onClick={onExportFull}>
+              Export Full Band Packet
+            </button>
+          </div>
+          <div className="input-group">
+            <label>Per-Musician Packet</label>
+            <select value={selectedMusicianId} onChange={(e)=>setSelectedMusicianId(e.target.value)} disabled={!activeGig}>
+              <option value="">Select musician</option>
+              {lineupMusicians.map(m => (
+                <option key={m.id} value={m.id}>{m.name} ({m.instrument})</option>
+              ))}
+            </select>
+          </div>
+          <button
+            className="btn"
+            disabled={!selectedMusicianId || !setlists.length || !activeGig}
+            onClick={()=>onExportMusician(selectedMusicianId)}
+          >
+            Export Musician Packet
+          </button>
         </div>
       );
     }
@@ -1209,6 +1644,9 @@
       const [songs, setSongsState] = useState(getBandSongs(activeBand));
       const [imports, setImportsState] = useState(getBandImports(activeBand));
       const [settings, setSettingsState] = useState(getBandSettings(activeBand));
+      const [musicians, setMusiciansState] = useState(getBandMusicians(activeBand));
+      const [gigs, setGigsState] = useState(getBandGigs(activeBand));
+      const [activeGigId, setActiveGigIdState] = useState(getBandActiveGigId(activeBand));
       const [setlists, setSetlists] = useState([]);
       const [locked, setLocked] = useState(new Set());
       const [toast, setToast] = useState(null);
@@ -1220,6 +1658,9 @@
         setSongsState(getBandSongs(activeBand));
         setSettingsState(getBandSettings(activeBand));
         setImportsState(getBandImports(activeBand));
+        setMusiciansState(getBandMusicians(activeBand));
+        setGigsState(getBandGigs(activeBand));
+        setActiveGigIdState(getBandActiveGigId(activeBand));
       }, [activeBandId]);
 
       // Persist on changes (debounced)
@@ -1233,8 +1674,23 @@
         const t = setTimeout(()=> setBandSettings(activeBand, settings), 350);
         return ()=> clearTimeout(t);
       }, [settings, activeBand]);
+      useEffect(()=>{
+        if (!activeBand) return;
+        const t = setTimeout(()=> setBandMusicians(activeBand, musicians), 350);
+        return ()=> clearTimeout(t);
+      }, [musicians, activeBand]);
+      useEffect(()=>{
+        if (!activeBand) return;
+        const t = setTimeout(()=> setBandGigs(activeBand, gigs), 350);
+        return ()=> clearTimeout(t);
+      }, [gigs, activeBand]);
+      useEffect(()=>{
+        if (!activeBand) return;
+        setBandActiveGigId(activeBand, activeGigId);
+      }, [activeGigId, activeBand]);
 
       const showToast = (msg, type='info') => setToast({message: msg, type});
+      const activeGig = useMemo(() => gigs.find(g => g.id === activeGigId) || null, [gigs, activeGigId]);
 
       function createBand(draft){
         const b = { id: genId(), name: draft.name.trim(), icon: draft.icon || '🎵', color: draft.color || '#ff6b35',
@@ -1283,6 +1739,53 @@
       function clearAllSongs(){
         setSongsState([]);
         showToast('Song library cleared', 'warning');
+      }
+
+      function upsertMusician(musician){
+        setMusiciansState(prev => {
+          const idx = prev.findIndex(m => m.id === musician.id);
+          if (idx >= 0){
+            const next = prev.slice();
+            next[idx] = { ...prev[idx], ...musician };
+            return next;
+          }
+          return [...prev, musician];
+        });
+        showToast('Musician saved', 'success');
+      }
+      function deleteMusician(id){
+        setMusiciansState(prev => prev.filter(m => m.id !== id));
+        setGigsState(prev => prev.map(g => ({
+          ...g,
+          musicianIds: (g.musicianIds || []).filter(mid => mid !== id)
+        })));
+        showToast('Musician deleted', 'warning');
+      }
+
+      function saveGig(gig){
+        setGigsState(prev => {
+          const idx = prev.findIndex(g => g.id === gig.id);
+          if (idx >= 0){
+            const next = prev.slice();
+            next[idx] = { ...prev[idx], ...gig };
+            return next;
+          }
+          return [gig, ...prev];
+        });
+        showToast('Gig saved', 'success');
+      }
+      function deleteGig(id){
+        setGigsState(prev => prev.filter(g => g.id !== id));
+        if (activeGigId === id) setActiveGigIdState(null);
+        showToast('Gig deleted', 'warning');
+      }
+      function activateGig(id){
+        setActiveGigIdState(id);
+        showToast('Gig activated', 'success');
+      }
+      function clearActiveGig(){
+        setActiveGigIdState(null);
+        showToast('Gig cleared', 'info');
       }
 
       function recordImport(filename, songCount){
@@ -1370,8 +1873,72 @@
         window.print();
       }
 
+      function exportFullBandPrepPacket(){
+        if (!activeGig){
+          showToast('Activate a gig to export prep packets','warning');
+          return;
+        }
+        if (!setlists.length){
+          showToast('Generate setlists first','warning');
+          return;
+        }
+        const lineupNames = (activeGig.musicianIds || [])
+          .map(id => musicians.find(m => m.id === id))
+          .filter(Boolean)
+          .map(m => `${m.name} (${m.instrument})`);
+        let text = `FULL BAND PREP PACKET\\n\\n`;
+        text += `Venue: ${activeGig.venue}\\n`;
+        text += `Date: ${activeGig.date}\\n`;
+        text += `Prep Mode: ${PREP_MODE_LABELS[activeGig.prepMode] || activeGig.prepMode}\\n`;
+        text += `Musicians: ${lineupNames.join(', ') || 'None selected'}\\n\\n`;
+        setlists.forEach(set => {
+          text += `SET ${set.id} (${set.totalDuration} min)\\n`;
+          set.songs.forEach(song => {
+            text += `${formatPrepSongLine(song)}\\n`;
+          });
+          text += '\\n';
+        });
+        downloadTextFile(`prep-full-band-${activeGig.date}.txt`, text);
+        showToast('Full band prep packet exported','success');
+      }
+
+      function exportMusicianPrepPacket(musicianId){
+        if (!activeGig){
+          showToast('Activate a gig to export prep packets','warning');
+          return;
+        }
+        if (!setlists.length){
+          showToast('Generate setlists first','warning');
+          return;
+        }
+        const musician = musicians.find(m => m.id === musicianId);
+        if (!musician){
+          showToast('Select a musician','warning');
+          return;
+        }
+        let text = `MUSICIAN PREP PACKET\\n\\n`;
+        text += `Musician: ${musician.name} (${musician.instrument})\\n`;
+        text += `Gig: ${activeGig.venue} — ${activeGig.date}\\n`;
+        text += `Prep Mode: ${PREP_MODE_LABELS[activeGig.prepMode] || activeGig.prepMode}\\n\\n`;
+        setlists.forEach(set => {
+          text += `SET ${set.id} (${set.totalDuration} min)\\n`;
+          set.songs.forEach(song => {
+            const readiness = getMusicianReadiness(musician, song).replace('-', ' ');
+            text += `${formatPrepSongLine(song)} | Readiness: ${readiness}\\n`;
+          });
+          text += '\\n';
+        });
+        downloadTextFile(`prep-${musician.name.replace(/\\s+/g,'-').toLowerCase()}-${activeGig.date}.txt`, text);
+        showToast('Musician prep packet exported','success');
+      }
+
       function generate(){
-        const out = generateSetlistsCore(songs, settings);
+        const viableSongs = activeGig ? getViableSongsForGig(songs, activeGig, musicians) : songs;
+        if (activeGig && viableSongs.length === 0){
+          showToast('No viable songs for this gig lineup/prep mode','error');
+          return;
+        }
+        const out = generateSetlistsCore(viableSongs, settings);
         setSetlists(out);
         pushBandHistory(activeBand, { ts: Date.now(), settings, setlists: out });
         if (out.generationWarnings && out.generationWarnings.length){
@@ -1463,7 +2030,7 @@
 
           <header className="header">
             <h1>SETLIST GENERATOR</h1>
-            <div className="subtitle">v3.0.1 — Band Management Pro</div>
+            <div className="subtitle">v3.1 Draft — Musician Preparedness Pro</div>
           </header>
 
           <div className="band-bar">
@@ -1505,6 +2072,31 @@
               songCount={songs.length}
               manualEditMode={manualEditMode}
               onToggleManualEdit={setManualEditMode}
+            />
+          </div>
+
+          <div className="split-grid" style={{marginTop:'1rem'}}>
+            <MusicianRoster
+              musicians={musicians}
+              songs={songs}
+              onUpsertMusician={upsertMusician}
+              onDeleteMusician={deleteMusician}
+            />
+            <GigSetup
+              gigs={gigs}
+              musicians={musicians}
+              activeGigId={activeGigId}
+              onSaveGig={saveGig}
+              onDeleteGig={deleteGig}
+              onActivateGig={activateGig}
+              onClearActiveGig={clearActiveGig}
+            />
+            <PrepPacketPanel
+              setlists={setlists}
+              activeGig={activeGig}
+              musicians={musicians}
+              onExportFull={exportFullBandPrepPacket}
+              onExportMusician={exportMusicianPrepPacket}
             />
           </div>
 
