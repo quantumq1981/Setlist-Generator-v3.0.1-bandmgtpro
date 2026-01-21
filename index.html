@@ -707,6 +707,10 @@
           break;
         }
 
+        if (generationAborted){
+          break;
+        }
+
         // closer
         if (forceCloser && setSongs.length){
           const last = setSongs[setSongs.length-1];
