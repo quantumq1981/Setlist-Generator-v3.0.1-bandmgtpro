@@ -1,0 +1,1676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Setlist Generator v3.3.0 — Phase 2 Optimized (Phase 3A: Cold List)</title>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --primary: #1a1a1a;
+      --secondary: #2d2d2d;
+      --accent: #ff6b35;
+      --accent-dark: #e85a28;
+      --text: #ffffff;
+      --text-muted: #9aa0a6;
+      --border: #404040;
+      --success: #4ade80;
+      --warning: #fbbf24;
+      --error: #ef4444;
+      --ballad: #60a5fa;
+      --uptempo: #f87171;
+      --midtempo: #fbbf24;
+      --funk: #a78bfa;
+      --shuffle: #34d399;
+      --swing: #fb923c;
+      --groove: #ec4899;
+      --locked: #4ade80;
+      --toast-bg: rgba(45,45,45,.95);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Manrope', system-ui, -apple-system, Arial, sans-serif;
+      background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%);
+      color: var(--text);
+      min-height: 100vh; overflow-x: hidden;
+    }
+    .app-container { max-width: 1600px; margin: 0 auto; padding: 1.25rem; }
+    header.header { text-align: center; margin: 1rem 0 2rem; position: relative; }
+    header.header::before {
+      content: ''; position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+      width: 100px; height: 4px; background: linear-gradient(90deg, var(--accent), var(--accent-dark)); border-radius: 2px;
+    }
+    h1 {
+      font-family: 'Space Mono', monospace; font-size: 2.2rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: .25rem;
+      background: linear-gradient(135deg, var(--text) 0%, var(--text-muted) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .subtitle { color: var(--text-muted); font-size: .95rem; letter-spacing: .08em; text-transform: uppercase; }
+    .band-bar {
+      background: var(--secondary); border: 1px solid var(--border); border-radius: 10px;
+      padding: .75rem 1rem; margin: 0 0 1rem; display: flex; gap: .75rem; align-items: center; justify-content: space-between;
+    }
+    .band-left { display: flex; align-items: center; gap: .75rem; }
+    .band-pill {
+      display: inline-flex; gap: .5rem; align-items: center; background: var(--primary);
+      border: 1px solid var(--border); border-radius: 999px; padding: .4rem .75rem; font-size: .9rem;
+    }
+    .band-pill .swatch { width: 12px; height: 12px; border-radius: 999px; border: 1px solid var(--border); }
+    .btn {
+      padding: .65rem 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--primary); color: var(--text);
+      font-weight: 600; font-size: .85rem; letter-spacing: .04em; cursor: pointer; transition: .2s ease;
+    }
+    .btn:hover { border-color: var(--accent); }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+    .btn-primary { background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%); border-color: transparent; }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(255, 107, 53, 0.35); }
+    .btn-small { padding: .45rem .75rem; font-size: .75rem; }
+    .btn-toggle-active { border-color: var(--accent); color: var(--text); }
+    .btn-toggle-active.btn-primary { box-shadow: 0 4px 12px rgba(255, 107, 53, 0.35); }
+
+    .main-grid { display: grid; grid-template-columns: 420px 1fr; gap: 1rem; }
+    .panel {
+      background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 1rem;
+      box-shadow: 0 6px 24px rgba(0,0,0,.35);
+    }
+    .panel-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border);
+      padding-bottom: .6rem; margin-bottom: 1rem; }
+    .panel-title { font-family: 'Space Mono', monospace; color: var(--accent); font-weight: 700; }
+
+    label { display:block; margin-bottom: .35rem; font-size: .8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+    input, select, textarea {
+      width: 100%; padding: .65rem .75rem; background: var(--primary); border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text); font-size: .9rem;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,107,53,.12); }
+    .input-group { margin-bottom: .8rem; }
+    .set-config { display:grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+    .toolbar { display:flex; gap:.6rem; flex-wrap: wrap; align-items:center; }
+
+    .song-list { max-height: 420px; overflow:auto; }
+    .song-item {
+      background: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: .75rem;
+      display:flex; align-items:center; justify-content: space-between; margin-bottom:.6rem;
+    }
+    .song-title { font-weight:700; margin-bottom: .2rem; }
+    .song-meta { font-size: .8rem; color: var(--text-muted); display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
+    .song-badge { padding: .15rem .4rem; border-radius: 4px; font-size: .7rem; font-weight:700; text-transform: uppercase; letter-spacing: .04em; }
+    .style-ballad{background:var(--ballad); color:#111;} .style-uptempo{background:var(--uptempo); color:#111;}
+    .style-midtempo{background:var(--midtempo); color:#111;} .style-funk{background:var(--funk); color:#111;}
+    .style-shuffle{background:var(--shuffle); color:#111;} .style-swing{background:var(--swing); color:#111;}
+    .style-groove{background:var(--groove); color:#111;}
+
+    .setlists-container { display:grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1rem; }
+    .setlist { background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
+    .setlist-header { display:flex; align-items:center; justify-content: space-between; border-bottom:2px solid var(--accent); padding-bottom:.5rem; margin-bottom:.75rem; }
+    .setlist-song {
+      display:grid; grid-template-columns: 32px 1fr 54px 40px; gap:.6rem; align-items:center;
+      background: var(--primary); border:1px solid var(--border); border-left:3px solid transparent; border-radius: 8px; padding: .6rem; margin-bottom:.5rem;
+    }
+    .setlist-song.locked { border-left-color: var(--locked); background: rgba(74,222,128,.06); }
+    .song-number { color: var(--accent); font-family:'Space Mono', monospace; font-weight:700; text-align:center; }
+    .song-time { font-size: .8rem; color: var(--text-muted); text-align:right; font-family:'Space Mono', monospace; }
+    .song-actions { display:flex; gap:.4rem; justify-content:flex-end; }
+    .action-btn {
+      width:26px; height:26px; display:flex; align-items:center; justify-content:center;
+      border:1px solid var(--border); border-radius:6px; background: transparent; color:var(--text-muted); cursor:pointer;
+    }
+    .action-btn:hover { background: var(--border); color: var(--text); }
+    .action-btn:disabled { opacity:.5; cursor:not-allowed; }
+    .action-btn.locked { color: var(--locked); }
+
+    .toast-container { position: fixed; bottom: 1.25rem; left: 50%; transform: translateX(-50%); z-index: 2000; }
+    .toast {
+      background: var(--toast-bg); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: .75rem 1rem; display:flex; gap:.6rem; align-items:center; min-width: 240px;
+    }
+
+    .alert { margin:.6rem 0; padding:.6rem .75rem; border-radius:8px; border:1px solid transparent; font-size:.9rem; display:flex; gap:.45rem; align-items:baseline; }
+    .alert-error{ border-color: var(--error); background: rgba(239,68,68,.12); color: var(--error); }
+    .alert-success{ border-color: var(--success); background: rgba(74,222,128,.12); color: var(--success); }
+    .alert-warning{ border-color: var(--warning); background: rgba(251,191,36,.12); color: var(--warning); }
+
+    .modal-backdrop { position:fixed; inset:0; background: rgba(0,0,0,.5); display:flex; justify-content:center; align-items:center; z-index:1500; }
+    .modal { width:min(520px, 92vw); background:var(--secondary); border:1px solid var(--border); border-radius:12px; padding:1rem; }
+
+    .band-row { display:flex; align-items:center; justify-content: space-between; padding:.5rem; border:1px solid var(--border);
+      border-radius:8px; margin-bottom:.5rem; background: var(--primary); }
+    .band-id { font-family:'Space Mono', monospace; color: var(--text-muted); font-size: .75rem; }
+
+    .print-only { display: none; }
+    .generation-stats { background: var(--primary); border-radius: 8px; padding: .5rem .75rem; margin-top: .5rem; font-size: .8rem; color: var(--text-muted); }
+    .generation-stats strong { color: var(--accent); }
+
+    @media print {
+      @page { size: letter; margin: 1in; }
+      body { background: #fff; color: #000; }
+      .no-print { display: none !important; }
+      .print-only { display: block; }
+      .set-page {
+        page-break-after: always; break-after: page;
+        font-family: "Times New Roman", serif; font-size: 19pt; font-weight: bold; line-height: 1.0;
+      }
+      .set-page:last-child { page-break-after: auto; break-after: auto; }
+    }
+    @media (max-width: 1100px){ .main-grid{ grid-template-columns: 1fr; } }
+    @media (max-width: 700px){
+      h1{ font-size: 1.8rem; }
+      .setlist-song{ grid-template-columns: 26px 1fr 46px 34px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    /******************* UTILITIES & GUARDS *******************/
+    const genId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() :
+      ('id-' + Math.random().toString(36).slice(2) + Date.now().toString(36));
+
+    const sanitizeInput = (input) => {
+      if (typeof input !== 'string') return input;
+      let cleaned = input;
+      cleaned = cleaned.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
+      cleaned = cleaned.replace(/<\/?[^>]+>/g, '');
+      cleaned = cleaned.replace(/javascript:|data:|vbscript:/gi, '');
+      return cleaned.trim();
+    };
+
+    const guardCSVCell = (s) => {
+      if (s == null) return '';
+      const str = String(s);
+      return /^[=+\-@]/.test(str) ? `'${str}` : str;
+    };
+
+    // PHASE 2: CSV Quoting Fix
+    function csvEscapeCell(value) {
+      const s = guardCSVCell(value == null ? '' : String(value));
+      if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    }
+
+    const parseDuration = (v) => {
+      if (typeof v === 'number') return v;
+      if (typeof v !== 'string') return 0;
+      const cleaned = v.replace(/[^\d.:]/g, '');
+      if (cleaned.includes(':')) {
+        const [mins, secs] = cleaned.split(':').map(Number);
+        return (mins || 0) + ((secs || 0) / 60);
+      }
+      return parseFloat(cleaned) || 0;
+    };
+
+    const LS = {
+      get: (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+      set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (err) { console.error('LS.set error:', err); } },
+      remove: (k) => { try { localStorage.removeItem(k); } catch (err) { console.error('LS.remove error:', err); } }
+    };
+
+    const LS_KEYS = {
+      bands: 'setlist_bands_v3',
+      active: 'setlist_activeBandId_v3',
+      bandSongs: (id) => `setlist_band_songs_v3_${id}`,
+      bandSettings: (id) => `setlist_band_settings_v3_${id}`,
+      bandHistory: (id) => `setlist_band_history_v3_${id}`,
+      bandImports: (id) => `setlist_band_imports_v3_${id}`
+    };
+
+    const ENERGY_MAP = {
+      ballad: 2, uptempo: 6, midtempo: 4, funk: 5, shuffle: 5, swing: 4, groove: 5
+    };
+
+
+
+/******************* PHASE 3B: TONAL GRAVITY (CIRCLE OF FIFTHS) *******************/
+// Canonical internal tonics are taken from the fixed circle ordering below.
+// Display tonics are musician-friendly (F# instead of Gb), but distances always use canonical tonics.
+
+const CIRCLE_OF_FIFTHS = ["C","G","D","A","E","B","F#","Db","Ab","Eb","Bb","F"];
+const SHARP_TO_FLAT = { "C#":"Db","D#":"Eb","F#":"Gb","G#":"Ab","A#":"Bb" };
+const CANONICAL_SET = new Set(["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B","F#"]); // include F# for direct user input
+const DISPLAY_OVERRIDES = { "Gb":"F#" };
+
+function normalizeKey_TG(keyString, songTags = []) {
+  if (!keyString || typeof keyString !== 'string') return null;
+  const raw = keyString.trim().replace(/♯/g,'#').replace(/♭/g,'b');
+  if (!raw) return null;
+
+  // detect tonic letter + accidental
+  const m = raw.match(/^([A-G])\s*([#b]?)/);
+  if (!m) { console.warn('[TonalGravity] Invalid key:', keyString); return null; }
+
+  let tonic = (m[1] || '').toUpperCase() + (m[2] || '');
+  // convert sharp to canonical flat where required (except F# which is explicitly on the circle)
+  if (SHARP_TO_FLAT[tonic] && tonic !== 'F#') tonic = SHARP_TO_FLAT[tonic];
+
+  // allow Gb internally even though circle uses F#
+  if (tonic === 'Gb') tonic = 'F#';
+
+  if (!CIRCLE_OF_FIFTHS.includes(tonic)) {
+    // allow naturals that may parse oddly
+    if (!CANONICAL_SET.has(tonic)) {
+      console.warn('[TonalGravity] Unsupported tonic:', tonic, 'from', keyString);
+      return null;
+    }
+  }
+
+  const tags = Array.isArray(songTags) ? songTags.map(t => String(t).toLowerCase()) : [];
+  const isMinor =
+    /\bminor\b/i.test(raw) ||
+    /\bmin\b/i.test(raw) ||
+    (/m$/i.test(raw) && !/maj/i.test(raw)) ||
+    tags.includes('minor') || tags.includes('dark');
+
+  const mode = isMinor ? 'minor' : 'major';
+  const displayTonic = DISPLAY_OVERRIDES[tonic] || tonic;
+
+  return { tonic, mode, displayTonic };
+}
+
+function getCircleIndex_TG(tonic) {
+  return CIRCLE_OF_FIFTHS.indexOf(tonic);
+}
+
+function circleDistance_TG(a, b) {
+  const ia = getCircleIndex_TG(a);
+  const ib = getCircleIndex_TG(b);
+  if (ia < 0 || ib < 0) return 6;
+  const diff = Math.abs(ia - ib);
+  return Math.min(diff, 12 - diff);
+}
+
+function areRelativeKeys_TG(k1, k2) {
+  if (!k1 || !k2) return false;
+  if (k1.mode === k2.mode) return false;
+  return circleDistance_TG(k1.tonic, k2.tonic) === 3;
+}
+
+function areParallelKeys_TG(k1, k2) {
+  if (!k1 || !k2) return false;
+  return k1.tonic === k2.tonic && k1.mode !== k2.mode;
+}
+
+function determineAnchorKey_TG(songs, userAnchor = '') {
+  const manual = userAnchor && typeof userAnchor === 'string' ? userAnchor.trim() : '';
+  if (manual) {
+    const nk = normalizeKey_TG(manual);
+    if (nk) return nk;
+  }
+
+  const counts = {};
+  for (const s of songs) {
+    const nk = s.normalizedKey;
+    if (!nk) continue;
+    counts[nk.tonic] = (counts[nk.tonic] || 0) + 1;
+  }
+  const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([t])=>t);
+  if (top.length === 0) return normalizeKey_TG('A'); // safe default
+
+  let best = top[0], bestAvg = Infinity;
+  for (const cand of top) {
+    const avg = top.reduce((sum,t)=>sum+circleDistance_TG(cand,t),0) / top.length;
+    if (avg < bestAvg) { bestAvg = avg; best = cand; }
+  }
+  return normalizeKey_TG(best);
+}
+
+function isContrastSlot_TG(pos, setLen, tonalSmoothness) {
+  if (tonalSmoothness > 50) return false; // <=50 means allow contrast
+  const cp = Math.floor(setLen * 0.66);
+  return Math.abs(pos - cp) <= 1;
+}
+
+function calculateTonalTransitionScore_TG(prevSong, nextSong, pos, setLen, tonalSmoothness) {
+  // Null-safe: missing keys simply contribute 0 tonal score
+  if (!prevSong?.normalizedKey || !nextSong?.normalizedKey) return 0;
+
+  const a = prevSong.normalizedKey;
+  const b = nextSong.normalizedKey;
+  const dist = circleDistance_TG(a.tonic, b.tonic);
+
+  let base = 0;
+  if (dist <= 1) base = 10;
+  else if (dist === 2) base = 6;
+  else if (dist === 3) base = 2;
+  else base = -4;
+
+  // planned contrast slot
+  if (isContrastSlot_TG(pos, setLen, tonalSmoothness) && dist >= 4) {
+    base = Math.max(0, base);
+  }
+
+  let modeBonus = 0;
+  if (areRelativeKeys_TG(a, b)) modeBonus += 5;
+  if (areParallelKeys_TG(a, b)) modeBonus += 4;
+
+  // repetition penalty (simple, fast)
+  let repetitionPenalty = 0;
+  if (a.tonic === b.tonic && a.mode === b.mode) repetitionPenalty -= 5;
+
+  return base + modeBonus + repetitionPenalty;
+}
+
+function generateTonalDiagnostics_TG(setlists, anchorKey, tonalSmoothness) {
+  const out = [];
+  for (let setIdx = 0; setIdx < setlists.length; setIdx++) {
+    const set = setlists[setIdx];
+    const keyPath = set.songs.map(s => {
+      const nk = s.normalizedKey;
+      return nk ? { tonicCanonical: nk.tonic, tonicDisplay: nk.displayTonic, mode: nk.mode } : null;
+    }).filter(Boolean);
+
+    let sum = 0;
+    let edges = 0;
+    const contrastJumps = [];
+
+    for (let i = 0; i < set.songs.length - 1; i++) {
+      const a = set.songs[i].normalizedKey;
+      const b = set.songs[i+1].normalizedKey;
+      if (!a || !b) continue;
+      const dist = circleDistance_TG(a.tonic, b.tonic);
+      sum += dist; edges++;
+      if (dist >= 4) {
+        contrastJumps.push({
+          position: i + 2,
+          from: a.displayTonic + (a.mode === 'minor' ? 'm' : ''),
+          to: b.displayTonic + (b.mode === 'minor' ? 'm' : ''),
+          distance: dist
+        });
+      }
+    }
+
+    const avg = edges ? (sum / edges) : 0;
+    const qualityScore = avg <= 2 ? "Excellent" : avg <= 3 ? "Good" : avg <= 4 ? "Fair" : "Needs Review";
+
+    out.push({
+      avgCircleDistance: Math.round(avg * 10) / 10,
+      qualityScore,
+      keyPath: keyPath.map(k => ({ tonic: k.tonicDisplay, mode: k.mode })), // safe for UI
+      contrastJumps
+    });
+  }
+  return out;
+}
+
+// Tonal Gravity generator wrapper: preserve Phase 2 validity, then refine ordering locally.
+function generateSetlistsCore_WithTonalGravity(songs, opts) {
+  const enriched = (songs || []).map(s => ({
+    ...s,
+    normalizedKey: normalizeKey_TG(s.key, s.tags || [])
+  }));
+
+  // Always use Phase 2 to satisfy duration/energy/locks robustly
+  const base = generateSetlistsCore(enriched, opts);
+
+  // Local refinement pass: adjacent swaps only (fast & safe)
+  base.forEach(set => {
+    const len = set.songs.length;
+    if (len < 3) return;
+
+    // multiple passes for a little more convergence
+    const PASSES = 2;
+    for (let pass = 0; pass < PASSES; pass++) {
+      for (let i = 1; i < len - 1; i++) {
+        const prev = set.songs[i - 1];
+        const curr = set.songs[i];
+        const next = set.songs[i + 1];
+
+        const currentScore =
+          calculateTonalTransitionScore_TG(prev, curr, i, len, opts.tonalSmoothness ?? 70) +
+          calculateTonalTransitionScore_TG(curr, next, i + 1, len, opts.tonalSmoothness ?? 70);
+
+        const swappedScore =
+          calculateTonalTransitionScore_TG(prev, next, i, len, opts.tonalSmoothness ?? 70) +
+          calculateTonalTransitionScore_TG(next, curr, i + 1, len, opts.tonalSmoothness ?? 70);
+
+        if (swappedScore > currentScore + 3) {
+          [set.songs[i], set.songs[i + 1]] = [set.songs[i + 1], set.songs[i]];
+        }
+      }
+    }
+
+    set.totalTime = set.songs.reduce((sum, s) => sum + (Number(parseDuration(s.duration)) || 0), 0);
+  });
+
+  // Attach diagnostics (non-breaking) when enabled
+  try {
+    const anchor = determineAnchorKey_TG(enriched, opts.anchorKey || '');
+    base.diagnostics = generateTonalDiagnostics_TG(base, anchor, opts.tonalSmoothness ?? 70);
+    base.anchorKey = anchor?.displayTonic || anchor?.tonic || null;
+  } catch (e) {
+    console.warn('[TonalGravity] Diagnostics failed:', e);
+  }
+
+  return base;
+}
+
+
+    /******************* CORE GENERATOR (PHASE 2 OPTIMIZED) *******************/
+    function generateSetlistsCore(songs, opts) {
+      const {
+        numSets = 2,
+        setDuration = 45,
+        allowSongReuse = false,
+        useEnergyCurve = true,
+        forceOpener = false,
+        forceCloser = true,
+        seedSets = null,
+        lockPlan = null
+      } = opts || {};
+
+      const pool = [...songs].map(s => ({ ...s, duration: parseDuration(s.duration) }));
+      const used = new Map();
+      const generationWarnings = new Set();
+      let totalAttempts = 0;
+
+      const getSongDedupKeys = (s) => {
+        const k = [];
+        if (s.id) k.push(`id:${s.id}`);
+        if (s.title && s.artist) k.push(`ta:${s.title.toLowerCase().trim()}|${s.artist.toLowerCase().trim()}`);
+        return k;
+      };
+
+      const markUsed = (song) => {
+        const keys = getSongDedupKeys(song);
+        for (const k of keys) {
+          used.set(k, (used.get(k) || 0) + 1);
+        }
+      };
+
+      const isAvailable = (song) => {
+        if (allowSongReuse) return true;
+        const keys = getSongDedupKeys(song);
+        return !keys.some(k => used.has(k) && used.get(k) > 0);
+      };
+
+      const results = [];
+
+      for (let setNum = 0; setNum < numSets; setNum++) {
+        const lockedSlots = new Map(); // idx -> song
+        const plan = Array.isArray(lockPlan) && Array.isArray(lockPlan[setNum]) ? lockPlan[setNum] : null;
+
+        if (plan && plan.length) {
+          for (const entry of plan) {
+            if (!entry || !entry.song) continue;
+            const idx = Math.max(0, Math.floor(entry.index));
+            const song = entry.song;
+
+            if (!allowSongReuse && !isAvailable(song)) continue;
+            lockedSlots.set(idx, song);
+            markUsed(song);
+          }
+        }
+
+        let setArr = [];
+        let current = 0;
+
+        if (lockedSlots.size > 0) {
+          const maxIdx = Math.max(...lockedSlots.keys());
+          setArr = new Array(maxIdx + 1).fill(null);
+          for (const [idx, song] of lockedSlots.entries()) {
+            setArr[idx] = song;
+            current += Number(song.duration) || 0;
+          }
+        } else {
+          setArr = [];
+        }
+
+        if (lockedSlots.size === 0 && forceOpener) {
+          const openerStyles = ['swing', 'midtempo', 'groove'];
+          const openers = pool.filter(s => isAvailable(s) && openerStyles.includes(s.style));
+          if (openers.length > 0) {
+            const opener = openers[Math.floor(Math.random() * openers.length)];
+            setArr[0] = opener;
+            markUsed(opener);
+            current += Number(opener.duration) || 0;
+          }
+        }
+
+        const lastSongInSet = () => {
+          for (let i = setArr.length - 1; i >= 0; i--) {
+            if (setArr[i]) return setArr[i];
+          }
+          return null;
+        };
+
+        let guard = 0;
+        const maxGuard = 10000;
+
+        while (current < setDuration - 0.5 && guard < maxGuard) {
+          guard++;
+          const remaining = setDuration - current;
+
+          let insertIndex = setArr.findIndex(x => x === null);
+          if (insertIndex === -1) insertIndex = setArr.length;
+
+          let candidates = pool.filter(song => {
+            if (!isAvailable(song)) return false;
+            if (setArr.some(x => x && x.id === song.id)) return false;
+
+            const dur = Number(song.duration) || 0;
+            if (dur <= remaining + 2.0 && dur >= Math.max(0.5, remaining - 6.0)) return true;
+            return false;
+          });
+
+          if (candidates.length === 0) {
+            candidates = pool.filter(s => isAvailable(s) && !setArr.some(x => x && x.id === s.id));
+            if (candidates.length === 0) {
+              if (!allowSongReuse) generationWarnings.add(`Set ${setNum + 1}: Ran out of unique songs at ${Math.round(current)}min.`);
+              break;
+            }
+          }
+
+          const last = lastSongInSet();
+
+          const scored = candidates.map(s => {
+            const dur = Number(s.duration) || 0;
+            const timePenalty = Math.abs(remaining - dur);
+
+            let diversityPenalty = 0;
+            if (last) {
+              if (s.style === last.style) diversityPenalty += 1.25;
+              if (s.artist === last.artist) diversityPenalty += 1.0;
+            }
+
+            let energyPenalty = 0;
+            if (useEnergyCurve) {
+              const pos = (setDuration - remaining) / setDuration;
+              let targetE = 4;
+              if (pos < 0.15) targetE = 3.5;
+              else if (pos < 0.4) targetE = 4.5;
+              else if (pos < 0.75) targetE = 5.5;
+              else targetE = 3.0;
+              const e = ENERGY_MAP[s.style] || 3;
+              energyPenalty = Math.abs(e - targetE) * 0.35;
+            }
+
+            const score = timePenalty + diversityPenalty + energyPenalty;
+            return { s, score };
+          });
+
+          scored.sort((a, b) => a.score - b.score);
+
+          const topK = scored.slice(0, Math.min(6, scored.length));
+          const pick = topK[Math.floor(Math.random() * topK.length)].s;
+
+          setArr[insertIndex] = pick;
+          markUsed(pick);
+          current += Number(pick.duration) || 0;
+          totalAttempts++;
+
+          if (current > setDuration + 8) break;
+        }
+
+        const setSongs = setArr.filter(Boolean);
+
+        if (forceCloser && setSongs.length > 0) {
+          const lastIdx = setSongs.length - 1;
+          const lastSong = setSongs[lastIdx];
+          const closerStyles = ['ballad', 'midtempo', 'swing'];
+
+          if (!closerStyles.includes(lastSong.style)) {
+            const closerCandidates = pool.filter(s =>
+              isAvailable(s) && closerStyles.includes(s.style) && s.id !== lastSong.id
+            );
+            if (closerCandidates.length > 0) {
+              const closer = closerCandidates[Math.floor(Math.random() * closerCandidates.length)];
+              setSongs[lastIdx] = closer;
+              markUsed(closer);
+            }
+          }
+        }
+
+        const totalTime = setSongs.reduce((sum, s) => sum + (Number(s.duration) || 0), 0);
+        results.push({
+          id: genId(),
+          name: `Set ${setNum + 1}`,
+          songs: setSongs,
+          totalTime
+        });
+      }
+
+      const songsUsed = new Set(results.flatMap(r => r.songs.map(s => s.id))).size;
+      results.stats = { songsUsed, attempts: totalAttempts };
+      results.generationWarnings = Array.from(generationWarnings);
+
+      return results;
+    }
+
+    /******************* REACT COMPONENTS *******************/
+    function ErrorBoundary({ children }) {
+      const [hasError, setHasError] = useState(false);
+      const [error, setError] = useState(null);
+
+      useEffect(() => {
+        const handler = (event) => {
+          setHasError(true);
+          setError(event.error);
+        };
+        window.addEventListener('error', handler);
+        return () => window.removeEventListener('error', handler);
+      }, []);
+
+      if (hasError) {
+        return (
+          <div style={{ padding: '2rem', textAlign: 'center' }}>
+            <h2 style={{ color: 'var(--error)' }}>Something went wrong</h2>
+            <pre style={{ color: 'var(--text-muted)', marginTop: '1rem', whiteSpace: 'pre-wrap', textAlign: 'left' }}>
+              {error?.toString() || 'Unknown error'}
+            </pre>
+          </div>
+        );
+      }
+      return children;
+    }
+
+    function Toast({ message, type, onClose }) {
+      useEffect(() => {
+        const t = setTimeout(onClose, 3500);
+        return () => clearTimeout(t);
+      }, [onClose]);
+
+      return (
+        <div className="toast">
+          <span>{type === 'error' ? '❌' : type === 'success' ? '✅' : '⚠️'}</span>
+          <span>{message}</span>
+        </div>
+      );
+    }
+
+    // PHASE 3A: Active / Cold tabs + Shelf / Restore
+    function SongLibrary({
+      songs,
+      activeCount,
+      coldCount,
+      libraryTab,
+      onSetLibraryTab,
+      onAddSong,
+      onDeleteSong,
+      onShelfSong,
+      onRestoreSong,
+      onExportCSV,
+      onImportCSVRobust,
+      onDownloadSampleCSV,
+      onClearAll,
+      latestImport
+    }) {
+      const [form, setForm] = useState({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '' });
+
+      const handleAdd = () => {
+        if (!form.title || !form.artist || !form.duration) return;
+        onAddSong(form);
+        setForm({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '' });
+      };
+
+      const visibleSongs = useMemo(() => {
+        const tab = libraryTab || 'active';
+        return songs.filter(s => ((s.status || 'active') === tab));
+      }, [songs, libraryTab]);
+
+      return (
+        <div className="panel">
+          <div className="panel-header">
+            <h3 className="panel-title">
+              Song Library (Active {activeCount} • Cold {coldCount})
+            </h3>
+            <div className="toolbar">
+              <button
+                className={`btn btn-small ${libraryTab === 'active' ? 'btn-toggle-active' : ''}`}
+                onClick={() => onSetLibraryTab('active')}
+              >
+                Active
+              </button>
+              <button
+                className={`btn btn-small ${libraryTab === 'cold' ? 'btn-toggle-active' : ''}`}
+                onClick={() => onSetLibraryTab('cold')}
+              >
+                Cold
+              </button>
+            </div>
+          </div>
+
+          <div className="input-group">
+            <label>Title*</label>
+            <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Enter song title" />
+          </div>
+
+          <div className="input-group">
+            <label>Artist*</label>
+            <input value={form.artist} onChange={e => setForm({ ...form, artist: e.target.value })} placeholder="Enter artist name" />
+          </div>
+
+          <div className="set-config">
+            <div className="input-group">
+              <label>Duration*</label>
+              <input value={form.duration} onChange={e => setForm({ ...form, duration: e.target.value })} placeholder="4.5" />
+            </div>
+            <div className="input-group">
+              <label>Style</label>
+              <select value={form.style} onChange={e => setForm({ ...form, style: e.target.value })}>
+                <option value="ballad">Ballad</option>
+                <option value="uptempo">Uptempo</option>
+                <option value="midtempo">Midtempo</option>
+                <option value="funk">Funk</option>
+                <option value="shuffle">Shuffle</option>
+                <option value="swing">Swing</option>
+                <option value="groove">Groove</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="set-config">
+            <div className="input-group">
+              <label>Key</label>
+              <input value={form.key} onChange={e => setForm({ ...form, key: e.target.value })} placeholder="C" />
+            </div>
+            <div className="input-group">
+              <label>BPM</label>
+              <input value={form.bpm} onChange={e => setForm({ ...form, bpm: e.target.value })} placeholder="120" />
+            </div>
+          </div>
+
+          <button className="btn btn-primary" onClick={handleAdd} style={{ width: '100%', marginBottom: '1rem' }}>
+            Add Song (to Active)
+          </button>
+
+          <div className="toolbar" style={{ marginBottom: '1rem' }}>
+            <label className="btn btn-small" style={{ margin: 0, cursor: 'pointer' }}>
+              Import CSV
+              <input type="file" accept=".csv" onChange={onImportCSVRobust} style={{ display: 'none' }} />
+            </label>
+            <button className="btn btn-small" onClick={onExportCSV} disabled={songs.length === 0}>Export CSV</button>
+            <button className="btn btn-small" onClick={onDownloadSampleCSV}>Sample CSV</button>
+            <button className="btn btn-small" onClick={onClearAll} disabled={songs.length === 0}>Clear All</button>
+          </div>
+
+          {latestImport && (
+            <div className="alert alert-success">
+              ✅ Imported {latestImport.count} songs on {new Date(latestImport.ts).toLocaleString()}
+            </div>
+          )}
+
+          <div className="song-list">
+            {visibleSongs.length === 0 ? (
+              <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem 1rem' }}>
+                {libraryTab === 'active'
+                  ? 'No Active songs yet. Add manually or import CSV.'
+                  : 'Cold List is empty.'}
+              </div>
+            ) : (
+              visibleSongs.map(song => (
+                <div key={song.id} className="song-item">
+                  <div>
+                    <div className="song-title">{song.title}</div>
+                    <div className="song-meta">
+                      <span>{song.artist}</span>
+                      <span className={`song-badge style-${song.style}`}>{song.style}</span>
+                      <span>{parseDuration(song.duration)}min</span>
+                      {song.key && <span>{song.key}</span>}
+                      {song.bpm && <span>{song.bpm}bpm</span>}
+                    </div>
+                  </div>
+                  <div className="toolbar" style={{ justifyContent: 'flex-end' }}>
+                    {(song.status || 'active') === 'active' ? (
+                      <button className="btn btn-small" onClick={() => onShelfSong(song.id)} title="Move to Cold List">🧊 Shelf</button>
+                    ) : (
+                      <button className="btn btn-small" onClick={() => onRestoreSong(song.id)} title="Restore to Active">🔥 Restore</button>
+                    )}
+                    <button className="btn btn-small" onClick={() => onDeleteSong(song.id)}>Delete</button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, songCount, manualEditMode, onToggleManualEdit, libraryTime }) {
+      return (
+        <div className="panel">
+          <div className="panel-header">
+            <h3 className="panel-title">Setlist Configuration</h3>
+          </div>
+
+          <div className="set-config">
+            <div className="input-group">
+              <label>Number of Sets</label>
+              <input type="number" min="1" max="10" value={settings.numSets}
+                onChange={e => onChange({ ...settings, numSets: parseInt(e.target.value) || 1 })} />
+            </div>
+            <div className="input-group">
+              <label>Set Duration (min)</label>
+              <input type="number" min="15" max="180" value={settings.setDuration}
+                onChange={e => onChange({ ...settings, setDuration: parseInt(e.target.value) || 45 })} />
+            </div>
+          </div>
+
+          <div className="input-group">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '.5rem', cursor: 'pointer', textTransform: 'none' }}>
+              <input type="checkbox" checked={settings.allowSongReuse}
+                onChange={e => onChange({ ...settings, allowSongReuse: e.target.checked })}
+                style={{ width: 'auto' }} />
+              Allow Song Reuse Across Sets
+            </label>
+          </div>
+
+          <div className="input-group">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '.5rem', cursor: 'pointer', textTransform: 'none' }}>
+              <input type="checkbox" checked={settings.useEnergyCurve}
+                onChange={e => onChange({ ...settings, useEnergyCurve: e.target.checked })}
+                style={{ width: 'auto' }} />
+              Energy Curve Optimization
+            </label>
+          </div>
+
+          <div className="set-config">
+            <div className="input-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '.5rem', cursor: 'pointer', textTransform: 'none' }}>
+                <input type="checkbox" checked={settings.forceOpener}
+                  onChange={e => onChange({ ...settings, forceOpener: e.target.checked })}
+                  style={{ width: 'auto' }} />
+                Force Opener
+              </label>
+            </div>
+            <div className="input-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '.5rem', cursor: 'pointer', textTransform: 'none' }}>
+                <input type="checkbox" checked={settings.forceCloser}
+                  onChange={e => onChange({ ...settings, forceCloser: e.target.checked })}
+                  style={{ width: 'auto' }} />
+                Force Closer
+              </label>
+            </div>
+          </div>
+
+          
+{/* PHASE 3B: Tonal Gravity */}
+<div style={{ 
+  marginTop: '1rem', 
+  paddingTop: '1rem', 
+  borderTop: '1px solid var(--border)' 
+}}>
+  <div className="input-group">
+    <label style={{ 
+      display: 'flex', 
+      alignItems: 'center', 
+      gap: '.5rem', 
+      cursor: 'pointer', 
+      textTransform: 'none' 
+    }}>
+      <input
+        type="checkbox"
+        checked={!!settings.useTonalGravity}
+        onChange={e => onChange({ ...settings, useTonalGravity: e.target.checked })}
+        style={{ width: 'auto' }}
+      />
+      🎵 Tonal Gravity (Circle of Fifths)
+    </label>
+  </div>
+
+  {settings.useTonalGravity && (
+    <div style={{ marginTop: '.5rem' }}>
+      <div className="input-group">
+        <label style={{ textTransform: 'none' }}>
+          Tonal Smoothness: {settings.tonalSmoothness ?? 70}
+        </label>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={settings.tonalSmoothness ?? 70}
+          onChange={e => onChange({ ...settings, tonalSmoothness: parseInt(e.target.value, 10) || 0 })}
+        />
+        <div style={{ fontSize: '.8rem', color: 'var(--text-muted)', marginTop: '.25rem' }}>
+          {(settings.tonalSmoothness ?? 70) > 70 ? 'Smooth' :
+           (settings.tonalSmoothness ?? 70) > 50 ? 'Balanced' : 'Contrast'}
+        </div>
+      </div>
+
+      <div className="set-config">
+        <div className="input-group">
+          <label style={{ textTransform: 'none' }}>Anchor Key</label>
+          <select
+            value={settings.anchorKey || ''}
+            onChange={e => onChange({ ...settings, anchorKey: e.target.value })}
+          >
+            <option value="">Auto-detect</option>
+            <option value="C">C</option><option value="G">G</option><option value="D">D</option><option value="A">A</option>
+            <option value="E">E</option><option value="B">B</option><option value="F#">F#</option>
+            <option value="F">F</option><option value="Bb">Bb</option><option value="Eb">Eb</option>
+            <option value="Ab">Ab</option><option value="Db">Db</option>
+          </select>
+        </div>
+
+        <div className="input-group">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '.5rem', cursor: 'pointer', textTransform: 'none' }}>
+            <input
+              type="checkbox"
+              checked={!!settings.showDetailedDiagnostics}
+              onChange={e => onChange({ ...settings, showDetailedDiagnostics: e.target.checked })}
+              style={{ width: 'auto' }}
+            />
+            Detailed diagnostics
+          </label>
+        </div>
+      </div>
+    </div>
+  )}
+</div>
+
+          <button className="btn btn-primary" onClick={onGenerate} disabled={songCount === 0} style={{ width: '100%', marginTop: '.5rem' }}>
+            Generate Setlists
+          </button>
+
+          <div className="toolbar" style={{ marginTop: '1rem' }}>
+            <button className="btn btn-small" onClick={onCopy}>Copy Text</button>
+            <button className="btn btn-small" onClick={onExportPDF}>Export PDF</button>
+            <button className={`btn btn-small ${manualEditMode ? 'btn-toggle-active' : ''}`} onClick={() => onToggleManualEdit(!manualEditMode)}>
+              Manual Edit {manualEditMode ? 'ON' : 'OFF'}
+            </button>
+          </div>
+
+          <div style={{ marginTop: '1rem', fontSize: '.85rem', color: 'var(--text-muted)' }}>
+            Active Library: {songCount} songs • {Math.round(libraryTime)} min total
+          </div>
+        </div>
+      );
+    }
+
+    function SetlistView({ setIdx, setlist, locked, onToggleLock, onSwap, manualEditMode, onMoveSong }) {
+      let runningTime = 0;
+
+      return (
+        <div className="setlist">
+          <div className="setlist-header">
+            <h4>{setlist.name}</h4>
+            <div style={{ fontSize: '.9rem', color: 'var(--text-muted)' }}>
+              {setlist.songs.length} songs • {Math.round(setlist.totalTime)} min
+            </div>
+          </div>
+
+          {setlist.songs.map((song, songIdx) => {
+            const startTime = runningTime;
+            runningTime += Number(song.duration) || 0;
+            const isLocked = locked.has(`${setIdx}:${song.id}`);
+
+            return (
+              <div key={`${song.id}-${songIdx}`} className={`setlist-song ${isLocked ? 'locked' : ''}`}>
+                <div className="song-number">{songIdx + 1}</div>
+                <div>
+                  <div className="song-title">{song.title}</div>
+                  <div className="song-meta">
+                    <span>{song.artist}</span>
+                    <span className={`song-badge style-${song.style}`}>{song.style}</span>
+                    <span>{parseDuration(song.duration)}min</span>
+                  </div>
+                </div>
+                <div className="song-time">+{Math.round(startTime)}m</div>
+                <div className="song-actions">
+                  <button className={`action-btn ${isLocked ? 'locked' : ''}`} onClick={() => onToggleLock(setIdx, song.id)} title="Lock">
+                    {isLocked ? '🔒' : '🔓'}
+                  </button>
+                  <button className="action-btn" onClick={() => onSwap(setIdx, songIdx)} title="Swap" disabled={manualEditMode}>
+                    🔄
+                  </button>
+                  {manualEditMode && (
+                    <>
+                      <button className="action-btn" onClick={() => onMoveSong(setIdx, songIdx, songIdx - 1)} disabled={songIdx === 0} title="Move Up">
+                        ↑
+                      </button>
+                      <button className="action-btn" onClick={() => onMoveSong(setIdx, songIdx, songIdx + 1)} disabled={songIdx >= setlist.songs.length - 1} title="Move Down">
+                        ↓
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    function BandModal({ open, onClose, bands, onCreate, onDelete, onDuplicate }) {
+      const [form, setForm] = useState({ name: '', icon: '🎵', color: '#ff6b35' });
+      if (!open) return null;
+
+      const handleCreate = () => {
+        if (!form.name.trim()) return;
+        onCreate(form);
+        setForm({ name: '', icon: '🎵', color: '#ff6b35' });
+      };
+
+      return (
+        <div className="modal-backdrop" onClick={onClose}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="panel-header">
+              <h3 className="panel-title">Manage Bands</h3>
+              <button className="btn btn-small" onClick={onClose}>Close</button>
+            </div>
+
+            <div className="input-group">
+              <label>Band Name</label>
+              <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Enter band name" />
+            </div>
+
+            <div className="set-config">
+              <div className="input-group">
+                <label>Icon</label>
+                <input value={form.icon} onChange={e => setForm({ ...form, icon: e.target.value })} placeholder="🎵" />
+              </div>
+              <div className="input-group">
+                <label>Color</label>
+                <input type="color" value={form.color} onChange={e => setForm({ ...form, color: e.target.value })} />
+              </div>
+            </div>
+
+            <button className="btn btn-primary" onClick={handleCreate} style={{ width: '100%', marginBottom: '1rem' }}>
+              Create Band
+            </button>
+
+            <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+              {bands.map(band => (
+                <div key={band.id} className="band-row">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                    <span style={{ fontSize: '1.2rem' }}>{band.icon}</span>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{band.name}</div>
+                      <div className="band-id">{band.id}</div>
+                    </div>
+                    <span className="swatch" style={{ background: band.color, marginLeft: '.5rem', width: 12, height: 12, borderRadius: 999, border: '1px solid var(--border)' }}></span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '.5rem' }}>
+                    <button className="btn btn-small" onClick={() => onDuplicate(band)}>Duplicate</button>
+                    <button className="btn btn-small" onClick={() => onDelete(band)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function PrintView({ setlists }) {
+      return (
+        <div className="print-only">
+          {setlists.map((set) => (
+            <div key={set.id} className="set-page">
+              <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                <h1>{set.name}</h1>
+                <p>{set.songs.length} songs • {Math.round(set.totalTime)} minutes</p>
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', borderBottom: '2px solid #000', padding: '8px' }}>#</th>
+                    <th style={{ textAlign: 'left', borderBottom: '2px solid #000', padding: '8px' }}>Title</th>
+                    <th style={{ textAlign: 'left', borderBottom: '2px solid #000', padding: '8px' }}>Artist</th>
+                    <th style={{ textAlign: 'left', borderBottom: '2px solid #000', padding: '8px' }}>Duration</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {set.songs.map((song, idx) => (
+                    <tr key={`print-${song.id}-${idx}`}>
+                      <td style={{ padding: '8px', borderBottom: '1px solid #ccc' }}>{idx + 1}</td>
+                      <td style={{ padding: '8px', borderBottom: '1px solid #ccc' }}>{song.title}</td>
+                      <td style={{ padding: '8px', borderBottom: '1px solid #ccc' }}>{song.artist}</td>
+                      <td style={{ padding: '8px', borderBottom: '1px solid #ccc' }}>{parseDuration(song.duration)} min</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    /******************* MAIN APP *******************/
+    function App() {
+      const [bands, setBands] = useState([]);
+      const [activeBandId, setActiveBandId] = useState(null);
+
+      const [songs, setSongs] = useState([]);
+      const [settings, setSettings] = useState({ numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false });
+      const [setlists, setSetlists] = useState([]);
+      const [locked, setLocked] = useState(new Set());
+      const [manualEditMode, setManualEditMode] = useState(false);
+
+      const [bandModal, setBandModal] = useState(false);
+      const [toast, setToast] = useState(null);
+      const [lastGenerationStats, setLastGenerationStats] = useState(null);
+      const [imports, setImports] = useState([]);
+
+      // PHASE 3A: active/cold library tab
+      const [libraryTab, setLibraryTab] = useState('active');
+
+      const showToast = (message, type = 'success') => setToast({ message, type });
+
+      const activeBand = useMemo(() => bands.find(b => b.id === activeBandId), [bands, activeBandId]);
+
+      // PHASE 3A: derived active/cold
+      const activeSongs = useMemo(() => songs.filter(s => (s.status || 'active') === 'active'), [songs]);
+      const coldSongs = useMemo(() => songs.filter(s => (s.status || 'active') === 'cold'), [songs]);
+
+      const activeLibraryTime = useMemo(
+        () => activeSongs.reduce((sum, s) => sum + parseDuration(s.duration), 0),
+        [activeSongs]
+      );
+
+      // LOAD BANDS FROM STORAGE
+      useEffect(() => {
+        const stored = LS.get(LS_KEYS.bands);
+        if (stored && Array.isArray(stored) && stored.length > 0) {
+          setBands(stored);
+          const activeId = LS.get(LS_KEYS.active) || stored[0].id;
+          setActiveBandId(activeId);
+        } else {
+          const defaultBand = {
+            id: genId(),
+            name: 'Default Band',
+            icon: '🎵',
+            color: '#ff6b35'
+          };
+          setBands([defaultBand]);
+          setActiveBandId(defaultBand.id);
+          LS.set(LS_KEYS.bands, [defaultBand]);
+          LS.set(LS_KEYS.active, defaultBand.id);
+        }
+      }, []);
+
+      // SAVE BANDS TO STORAGE
+      useEffect(() => {
+        if (bands.length > 0) LS.set(LS_KEYS.bands, bands);
+      }, [bands]);
+
+      // LOAD ACTIVE BAND DATA
+      useEffect(() => {
+        if (!activeBandId) return;
+
+        const storedSongsRaw = LS.get(LS_KEYS.bandSongs(activeBandId)) || [];
+        // PHASE 3A: normalize status for older data
+        const normalizedSongs = storedSongsRaw.map(s => ({ ...s, status: (s.status || 'active') }));
+
+        const storedSettings = LS.get(LS_KEYS.bandSettings(activeBandId)) || { numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false };
+        const storedImports = LS.get(LS_KEYS.bandImports(activeBandId)) || [];
+
+        setSongs(normalizedSongs);
+        setSettings(storedSettings);
+        setImports(storedImports);
+
+        setSetlists([]);
+        setLocked(new Set());
+        setManualEditMode(false);
+        setLibraryTab('active');
+      }, [activeBandId]);
+
+      // SAVE ACTIVE BAND DATA
+      useEffect(() => {
+        if (activeBandId) LS.set(LS_KEYS.bandSongs(activeBandId), songs);
+      }, [songs, activeBandId]);
+
+      useEffect(() => {
+        if (activeBandId) LS.set(LS_KEYS.bandSettings(activeBandId), settings);
+      }, [settings, activeBandId]);
+
+      // PHASE 2: Build lock plan from current setlists
+      const buildLockPlanFromCurrentSetlists = () => {
+        if (!setlists || setlists.length === 0 || locked.size === 0) return null;
+
+        const plan = [];
+        for (let setIdx = 0; setIdx < setlists.length; setIdx++) {
+          const set = setlists[setIdx];
+          if (!set) { plan.push([]); continue; }
+
+          const lockedEntries = [];
+          set.songs.forEach((song, idx) => {
+            if (song && locked.has(`${setIdx}:${song.id}`)) {
+              lockedEntries.push({ index: idx, song });
+            }
+          });
+          plan.push(lockedEntries);
+        }
+        return plan;
+      };
+
+      const generate = () => {
+        // PHASE 3A: generator uses ACTIVE only
+        const lockPlan = buildLockPlanFromCurrentSetlists();
+        const generatorFn = settings.useTonalGravity ? generateSetlistsCore_WithTonalGravity : generateSetlistsCore;
+        const out = generatorFn(activeSongs, {
+          ...settings,
+          lockPlan: lockPlan || null
+        });
+        setSetlists(out);
+        setLastGenerationStats(out.stats);
+
+        const history = LS.get(LS_KEYS.bandHistory(activeBandId)) || [];
+        const newEntry = { ts: Date.now(), settings, setlists: out };
+        LS.set(LS_KEYS.bandHistory(activeBandId), [newEntry, ...history].slice(0, 50));
+
+        if (out.generationWarnings && out.generationWarnings.length) {
+          showToast(out.generationWarnings[0], 'warning');
+        } else {
+          showToast(`Generated ${settings.numSets} set(s)`, 'success');
+        }
+      };
+
+      const addSong = (songData) => {
+        const newSong = { id: genId(), status: 'active', ...songData };
+        setSongs([...songs, newSong]);
+        showToast('Song added (Active)', 'success');
+      };
+
+      const deleteSong = (id) => {
+        setSongs(songs.filter(s => s.id !== id));
+        showToast('Song deleted', 'warning');
+      };
+
+      // PHASE 3A: shelf/restore
+      const shelfSong = (id) => {
+        setSongs(songs.map(s => s.id === id ? { ...s, status: 'cold' } : s));
+        // remove from setlists + locks if it appears (optional safety)
+        setLocked(prev => {
+          const next = new Set(prev);
+          [...next].forEach(k => {
+            const [, songId] = k.split(':');
+            if (songId === id) next.delete(k);
+          });
+          return next;
+        });
+        showToast('Shelved to Cold List', 'success');
+      };
+
+      const restoreSong = (id) => {
+        setSongs(songs.map(s => s.id === id ? { ...s, status: 'active' } : s));
+        showToast('Restored to Active', 'success');
+      };
+
+      const clearAllSongs = () => {
+        if (!window.confirm('Delete all songs? This cannot be undone.')) return;
+        setSongs([]);
+        setSetlists([]);
+        setLocked(new Set());
+        setLastGenerationStats(null);
+        showToast('All songs deleted', 'warning');
+      };
+
+      // PHASE 2: CSV Export with proper quoting
+      const exportSongs = () => {
+        const headers = ['Title', 'Artist', 'Duration', 'Style', 'Key', 'BPM'];
+        const rows = songs.map(s => ([
+          csvEscapeCell(s.title),
+          csvEscapeCell(s.artist),
+          csvEscapeCell(s.duration ?? ''),
+          csvEscapeCell(s.style ?? ''),
+          csvEscapeCell(s.key ?? ''),
+          csvEscapeCell(s.bpm ?? '')
+        ]));
+        const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `songs-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
+      };
+
+      const importCSVRobust = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const text = ev.target?.result;
+          if (!text) return;
+
+          const lines = String(text).split(/\r?\n/).filter(l => l.trim());
+          if (lines.length < 2) return showToast('CSV empty or invalid', 'error');
+
+          const imported = [];
+          for (let i = 1; i < lines.length; i++) {
+            // NOTE: basic CSV split (kept as-is for this build)
+            const parts = lines[i].split(',').map(p => p.trim().replace(/^"|"$/g, ''));
+            if (parts.length < 3) continue;
+
+            const [title, artist, duration, style, key, bpm] = parts;
+            if (!title || !artist || !duration) continue;
+
+            imported.push({
+              id: genId(),
+              status: 'active',
+              title: sanitizeInput(title),
+              artist: sanitizeInput(artist),
+              duration: parseDuration(duration),
+              style: style || 'midtempo',
+              key: key || '',
+              bpm: bpm || ''
+            });
+          }
+
+          if (imported.length === 0) return showToast('No valid songs found', 'error');
+
+          setSongs([...songs, ...imported]);
+          const newImport = { ts: Date.now(), count: imported.length, filename: file.name };
+          const updatedImports = [newImport, ...imports].slice(0, 10);
+          setImports(updatedImports);
+          LS.set(LS_KEYS.bandImports(activeBandId), updatedImports);
+          showToast(`Imported ${imported.length} songs`, 'success');
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+      };
+
+      const downloadSampleCSV = () => {
+        const sample =
+`Title,Artist,Duration,Style,Key,BPM
+"Come Together","The Beatles",4.5,groove,Dm,82
+"Sweet Home Alabama","Lynyrd Skynyrd",4.75,midtempo,D,100
+"Billie Jean","Michael Jackson",4.25,uptempo,F#m,117`;
+        const blob = new Blob([sample], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'sample-setlist.csv';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
+      };
+
+      const copyToClipboard = () => {
+        const text = setlists.map((set) => {
+          const header = `${set.name} (${set.songs.length} songs, ${Math.round(set.totalTime)} min)\n${'='.repeat(50)}`;
+          const songList = set.songs.map((s, idx) => `${idx + 1}. ${s.title} - ${s.artist} (${parseDuration(s.duration)} min)`).join('\n');
+          return `${header}\n${songList}`;
+        }).join('\n\n');
+
+        navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard', 'success'));
+      };
+
+      const exportPDF = () => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        let yPos = 20;
+
+        setlists.forEach((set, i) => {
+          if (i > 0) doc.addPage();
+          doc.setFontSize(16);
+          doc.text(set.name, 20, yPos);
+          yPos += 10;
+          doc.setFontSize(10);
+          doc.text(`${set.songs.length} songs • ${Math.round(set.totalTime)} minutes`, 20, yPos);
+          yPos += 10;
+
+          set.songs.forEach((song, idx) => {
+            if (yPos > 270) {
+              doc.addPage();
+              yPos = 20;
+            }
+            doc.text(`${idx + 1}. ${song.title} - ${song.artist} (${parseDuration(song.duration)} min)`, 20, yPos);
+            yPos += 7;
+          });
+          yPos = 20;
+        });
+
+        doc.save(`setlist-${new Date().toISOString().slice(0, 10)}.pdf`);
+      };
+
+      const toggleLock = (setIdx, songId) => {
+        const key = `${setIdx}:${songId}`;
+        const newLocked = new Set(locked);
+        if (newLocked.has(key)) newLocked.delete(key);
+        else newLocked.add(key);
+        setLocked(newLocked);
+      };
+
+      // PHASE 2: Swap with closest-duration fallback
+      const swapSong = (setIdx, songIdx) => {
+        const set = setlists[setIdx];
+        if (!set) return;
+
+        const songToReplace = set.songs[songIdx];
+        if (locked.has(`${setIdx}:${songToReplace.id}`)) return showToast('Cannot swap locked song', 'warning');
+
+        // PHASE 3A: candidates should come from ACTIVE songs only
+        const candidatePool = activeSongs;
+
+        const globalUsedSongKeys = new Set();
+        setlists.forEach((s, i) => {
+          if (i !== setIdx || !settings.allowSongReuse) {
+            s.songs.forEach(song => {
+              globalUsedSongKeys.add(`id:${song.id}`);
+              if (song.title && song.artist) {
+                globalUsedSongKeys.add(`ta:${song.title.toLowerCase().trim()}|${song.artist.toLowerCase().trim()}`);
+              }
+            });
+          }
+        });
+
+        const getSongDedupKeys = (s) => {
+          const k = [];
+          if (s.id) k.push(`id:${s.id}`);
+          if (s.title && s.artist) k.push(`ta:${s.title.toLowerCase().trim()}|${s.artist.toLowerCase().trim()}`);
+          return k;
+        };
+
+        let candidates = candidatePool.filter(s =>
+          s.id !== songToReplace.id &&
+          !set.songs.some(x => x.id === s.id) &&
+          (settings.allowSongReuse ? true : !getSongDedupKeys(s).some(key => globalUsedSongKeys.has(key)))
+        );
+
+        candidates = candidates
+          .map(s => ({ s, diff: Math.abs((Number(parseDuration(s.duration)) || 0) - (Number(parseDuration(songToReplace.duration)) || 0)) }))
+          .sort((a, b) => a.diff - b.diff)
+          .slice(0, 20)
+          .map(x => x.s);
+
+        const pick = candidates.length ? candidates[Math.floor(Math.random() * Math.min(6, candidates.length))] : null;
+        if (!pick) return showToast('No suitable replacement', 'warning');
+
+        const newSetlists = [...setlists];
+        const newSongsArr = set.songs.map((s, i) => i === songIdx ? pick : s);
+        newSetlists[setIdx] = {
+          ...set,
+          songs: newSongsArr,
+          totalTime: newSongsArr.reduce((sum, s) => sum + (Number(parseDuration(s.duration)) || 0), 0)
+        };
+        setSetlists(newSetlists);
+        showToast('Song swapped', 'success');
+      };
+
+      const moveSong = (setIdx, fromIdx, toIdx) => {
+        const set = setlists[setIdx];
+        if (!set || toIdx < 0 || toIdx >= set.songs.length) return;
+
+        const newSongs = [...set.songs];
+        const [moved] = newSongs.splice(fromIdx, 1);
+        newSongs.splice(toIdx, 0, moved);
+
+        const newSetlists = [...setlists];
+        newSetlists[setIdx] = { ...set, songs: newSongs };
+        setSetlists(newSetlists);
+      };
+
+      const switchBand = (bandId) => {
+        setActiveBandId(bandId);
+        LS.set(LS_KEYS.active, bandId);
+      };
+
+      const createBand = (form) => {
+        const newBand = { id: genId(), ...form };
+        setBands([...bands, newBand]);
+        setActiveBandId(newBand.id);
+        LS.set(LS_KEYS.active, newBand.id);
+        showToast('Band created', 'success');
+      };
+
+      // Band deletion cleanup
+      const deleteBand = (band) => {
+        if (bands.length === 1) return showToast('Cannot delete the last band', 'error');
+        if (!window.confirm(`Delete "${band.name}"? This cannot be undone.`)) return;
+
+        const next = bands.filter(b => b.id !== band.id);
+        setBands(next);
+
+        LS.remove(LS_KEYS.bandSongs(band.id));
+        LS.remove(LS_KEYS.bandSettings(band.id));
+        LS.remove(LS_KEYS.bandHistory(band.id));
+        LS.remove(LS_KEYS.bandImports(band.id));
+
+        if (activeBandId === band.id && next.length) {
+          setActiveBandId(next[0].id);
+          LS.set(LS_KEYS.active, next[0].id);
+        }
+
+        showToast('Band deleted', 'warning');
+      };
+
+      const duplicateBand = (band) => {
+        const newBand = {
+          id: genId(),
+          name: `${band.name} (Copy)`,
+          icon: band.icon,
+          color: band.color
+        };
+        setBands([...bands, newBand]);
+        // note: songs/settings are stored per-band in localStorage and will load based on activeBandId
+        showToast('Band duplicated (band profile only)', 'success');
+      };
+
+      return (
+        <>
+          <div className="app-container no-print">
+            {toast && (
+              <div className="toast-container">
+                <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+              </div>
+            )}
+
+            <header className="header">
+              <h1>SETLIST GENERATOR</h1>
+              <div className="subtitle">v3.3.0 — Phase 2 Optimized • Phase 3A: Cold List</div>
+            </header>
+
+            <div className="band-bar">
+              <div className="band-left">
+                <div className="band-pill">
+                  <span style={{ fontSize: '1.2rem' }}>{activeBand?.icon || '🎵'}</span>
+                  <strong>{activeBand?.name || 'No Band'}</strong>
+                  <span className="swatch" style={{ background: activeBand?.color || '#ff6b35' }}></span>
+                </div>
+                <button className="btn btn-small" onClick={() => setBandModal(true)}>Manage Bands</button>
+              </div>
+              <div className="toolbar">
+                <select value={activeBandId || ''} onChange={(e) => switchBand(e.target.value)}>
+                  {bands.map(b => <option key={b.id} value={b.id}>{b.icon || '🎵'} {b.name}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="main-grid">
+              <SongLibrary
+                songs={songs}
+                activeCount={activeSongs.length}
+                coldCount={coldSongs.length}
+                libraryTab={libraryTab}
+                onSetLibraryTab={setLibraryTab}
+                onAddSong={addSong}
+                onDeleteSong={deleteSong}
+                onShelfSong={shelfSong}
+                onRestoreSong={restoreSong}
+                onExportCSV={exportSongs}
+                onImportCSVRobust={importCSVRobust}
+                onDownloadSampleCSV={downloadSampleCSV}
+                onClearAll={clearAllSongs}
+                latestImport={imports[0] || null}
+              />
+
+              <SetConfiguration
+                settings={settings}
+                onChange={setSettings}
+                onGenerate={generate}
+                onCopy={copyToClipboard}
+                onExportPDF={exportPDF}
+                songCount={activeSongs.length}
+                manualEditMode={manualEditMode}
+                onToggleManualEdit={setManualEditMode}
+                libraryTime={activeLibraryTime}
+              />
+            </div>
+
+            {setlists.length === 0 ? (
+              <div className="panel" style={{ marginTop: '1rem' }}>
+                <div className="alert alert-warning">
+                  No setlists yet. Configure your settings and click <strong>Generate Setlists</strong>.
+                  <div style={{ marginTop: '.4rem', color: 'var(--text-muted)', fontSize: '.85rem' }}>
+                    Note: Generator uses <strong>Active</strong> songs only (Cold List excluded).
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem' }}>
+                  <h3 className="panel-title">Generated Setlists</h3>
+                  <div className="toolbar">
+                    <button className="btn btn-small" onClick={generate} disabled={manualEditMode}>Regenerate</button>
+                    <button className="btn btn-small" onClick={() => { setSetlists([]); setLocked(new Set()); setLastGenerationStats(null); }}>Clear</button>
+                  </div>
+                </div>
+
+                {lastGenerationStats && (
+                  <div className="generation-stats">
+                    <strong>{lastGenerationStats.songsUsed}</strong> songs used •
+                    <strong> {lastGenerationStats.attempts}</strong> selection attempts
+                  </div>
+                )}
+
+                <div className="setlists-container">
+                  {setlists.map((set, i) => (
+                    <SetlistView
+                      key={set.id}
+                      setIdx={i}
+                      setlist={set}
+                      locked={locked}
+                      onToggleLock={toggleLock}
+                      onSwap={swapSong}
+                      manualEditMode={manualEditMode}
+                      onMoveSong={moveSong}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+
+            <BandModal
+              open={bandModal}
+              onClose={() => setBandModal(false)}
+              bands={bands}
+              onCreate={createBand}
+              onDelete={deleteBand}
+              onDuplicate={duplicateBand}
+            />
+          </div>
+
+          <PrintView setlists={setlists} />
+        </>
+      );
+    }
+
+    const container = document.getElementById('root');
+    const root = ReactDOM.createRoot(container);
+    root.render(<ErrorBoundary><App /></ErrorBoundary>);
+  </script>
+</body>
+</html>
