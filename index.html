@@ -233,6 +233,17 @@
       return /^[=+\-@]/.test(str) ? `'${str}` : str;
     };
 
+    // Define tuning constants for algorithm thresholds.
+    // MAX_GUARD sets an upper bound on loop iterations when filling a set to avoid infinite loops.
+    // DURATION_TOLERANCE_POSITIVE and DURATION_TOLERANCE_NEGATIVE expand the acceptable range when
+    // choosing songs to fill a remaining duration. DEFAULT_PASSES controls the number of
+    // refinement passes when optimizing tonal smoothness. Expose these as constants for easy
+    // tuning rather than embedding magic numbers throughout the code.
+    const MAX_GUARD = 10000;
+    const DURATION_TOLERANCE_POSITIVE = 2.0;
+    const DURATION_TOLERANCE_NEGATIVE = 6.0;
+    const DEFAULT_PASSES = 2;
+
     // PHASE 2: CSV Quoting Fix
     function csvEscapeCell(value) {
       const s = guardCSVCell(value == null ? '' : String(value));
@@ -240,19 +251,51 @@
       return s;
     }
 
+    // Default song duration in minutes used when a duration is missing or zero.
+    const DEFAULT_DURATION_MINUTES = 4;
+
+    /**
+     * Parse a duration string or number into minutes. Supports "m:ss" format or plain
+     * numbers. If the value is missing, invalid, or evaluates to zero, a default
+     * duration is returned. This prevents zero-length songs from consuming an entire
+     * setlist in the generator.
+     *
+     * @param {string|number|null|undefined} v The raw duration value.
+     * @returns {number} Duration in minutes, with a sensible default when necessary.
+     */
     const parseDuration = (v) => {
-      if (typeof v === 'number') return v;
-      if (typeof v !== 'string') return 0;
-      const cleaned = v.replace(/[^\d.:]/g, '');
-      if (cleaned.includes(':')) {
-        const [mins, secs] = cleaned.split(':').map(Number);
-        return (mins || 0) + ((secs || 0) / 60);
+      // If a positive number is provided directly, use it.
+      if (typeof v === 'number') {
+        return v > 0 ? v : DEFAULT_DURATION_MINUTES;
       }
-      return parseFloat(cleaned) || 0;
+      // Non-string values return the default duration.
+      if (typeof v !== 'string') return DEFAULT_DURATION_MINUTES;
+      const cleaned = v.replace(/[^\d.:]/g, '').trim();
+      if (!cleaned) {
+        return DEFAULT_DURATION_MINUTES;
+      }
+      if (cleaned.includes(':')) {
+        const [minsStr, secsStr] = cleaned.split(':');
+        const mins = Number(minsStr);
+        const secs = Number(secsStr);
+        const total = (mins || 0) + ((secs || 0) / 60);
+        return total > 0 ? total : DEFAULT_DURATION_MINUTES;
+      }
+      const parsed = parseFloat(cleaned);
+      return (parsed && parsed > 0) ? parsed : DEFAULT_DURATION_MINUTES;
     };
 
     const LS = {
-      get: (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+      // Add logging for localStorage getter failures. Swallowing exceptions silently hides
+      // corrupted data or JSON parse errors. Logging aids debugging without breaking runtime.
+      get: (k) => {
+        try {
+          return JSON.parse(localStorage.getItem(k));
+        } catch (err) {
+          console.warn('LS.get error:', err);
+          return null;
+        }
+      },
       set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (err) { console.error('LS.set error:', err); } },
       remove: (k) => { try { localStorage.removeItem(k); } catch (err) { console.error('LS.remove error:', err); } }
     };
@@ -658,7 +701,11 @@ function calculateTonalTransitionScore_TG(prevSong, nextSong, pos, setLen, tonal
   return base + modeBonus + repetitionPenalty;
 }
 
-function generateTonalDiagnostics_TG(setlists, anchorKey, tonalSmoothness) {
+// generateTonalDiagnostics_TG analyses tonal transitions across the provided setlists.
+// Previously unused parameters anchorKey and tonalSmoothness were removed to simplify
+// the signature. The function now derives all needed context from the setlists
+// themselves.
+function generateTonalDiagnostics_TG(setlists) {
   const out = [];
   for (let setIdx = 0; setIdx < setlists.length; setIdx++) {
     const set = setlists[setIdx];
@@ -716,7 +763,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     if (len < 3) return;
 
     // multiple passes for a little more convergence
-    const PASSES = 2;
+    // Use configurable DEFAULT_PASSES rather than hard-coded passes.
+    const PASSES = DEFAULT_PASSES;
     for (let pass = 0; pass < PASSES; pass++) {
       for (let i = 1; i < len - 1; i++) {
         const prev = set.songs[i - 1];
@@ -743,7 +791,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
   // Attach diagnostics (non-breaking) when enabled
   try {
     const anchor = determineAnchorKey_TG(enriched, opts.anchorKey || '');
-    base.diagnostics = generateTonalDiagnostics_TG(base, anchor, opts.tonalSmoothness ?? 70);
+    base.diagnostics = generateTonalDiagnostics_TG(base);
     base.anchorKey = anchor?.displayTonic || anchor?.tonic || null;
   } catch (e) {
     console.warn('[TonalGravity] Diagnostics failed:', e);
@@ -842,7 +890,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         };
 
         let guard = 0;
-        const maxGuard = 10000;
+        // Use global MAX_GUARD to control max iterations when filling a set.
+        const maxGuard = MAX_GUARD;
 
         while (current < setDuration - 0.5 && guard < maxGuard) {
           guard++;
@@ -856,7 +905,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             if (setArr.some(x => x && x.id === song.id)) return false;
 
             const dur = Number(song.duration) || 0;
-            if (dur <= remaining + 2.0 && dur >= Math.max(0.5, remaining - 6.0)) return true;
+            // Accept songs whose durations fall within a tolerance window relative to the remaining time.
+            if (dur <= remaining + DURATION_TOLERANCE_POSITIVE && dur >= Math.max(0.5, remaining - DURATION_TOLERANCE_NEGATIVE)) {
+              return true;
+            }
             return false;
           });
 
