@@ -1,26 +1,78 @@
-Agent Report: Setlist Generator App Update
+Agent Report: Setlist Generator App v3.5.0 Update (2026-02-09)
 
-Summary of Changes
-	1.	Default duration for zero-duration songs: Implemented a fallback in parseDuration so that any song with a missing or zero duration is treated as 4 minutes by default. This prevents all songs from being packed into a single set when their durations are undefined.
-	2.	Removed unused parameters from diagnostics: The function generateTonalDiagnostics_TG previously accepted anchorKey and tonalSmoothness, which were not used. These parameters were removed to simplify the signature, and the call sites were updated accordingly.
-	3.	Added configurable constants: Introduced named constants to replace magic numbers throughout the generation algorithm:
-	•	MAX_GUARD (set to 10,000) to limit loop iterations when filling sets.
-	•	DURATION_TOLERANCE_POSITIVE (2.0) and DURATION_TOLERANCE_NEGATIVE (6.0) to control how closely song durations must match the remaining time in a set.
-	•	DEFAULT_PASSES (2) to control the number of refinement passes in the tonal smoothing process.
-	4.	Improved localStorage error handling: Enhanced the LS.get method by adding a catch block that logs errors to the console. This prevents silent failures when parsing corrupted or malformed data from localStorage.
-	5.	Updated duration filter logic: Replaced hard-coded threshold values with the newly defined duration tolerance constants. This change ensures that the algorithm’s acceptance window for song durations is easy to adjust.
-	6.	Unified refinement pass count: Replaced hard-coded use of PASSES = 2 in the tonal smoothing loop with DEFAULT_PASSES, ensuring that the number of passes is configurable via a single constant.
-	7.	Updated build and tested functionality: Built the updated HTML file and verified that the generator correctly distributes songs across multiple sets when durations are missing. Previously, sets 2 and 3 remained empty; after the fix, songs are distributed as expected across all configured sets.
+## Summary of Changes — v3.5.0
 
-Current Status
-	•	Bug fix verification: After applying the default-duration fix, songs with zero or missing durations are treated as 4 minutes. When generating three sets of five minutes each using three songs, Set 1 contains two songs, Set 2 contains one song, and Set 3 is empty only because there are no remaining songs, confirming correct behavior.
-	•	Functionality: Adding songs, generating setlists, importing/exporting CSVs, and tonal smoothing all operate normally. The app is stable and responsive, and no runtime errors are observed during testing.
-	•	Pending issues: Some recommendations from the audit—such as consolidating duplicate deduplication logic, standardizing null checks, and adding cleanup in useEffect hooks—are still outstanding. These improvements would enhance maintainability but are not currently blocking functionality.
+### TASK 1: Critical Bug Fixes (Duplicate Generation)
 
-Recommended Next Steps
-	1.	Integrate new song lists: Import songs from the provided PDFs (Zemba Music Master Song list Aug 2025 and DSJ MASTER ACTIVE SONG LIST) into the application’s library to expand the available catalog.
-	2.	Refactor duplicate logic: Extract song deduplication and normalization logic into shared helper functions to avoid maintaining the same code in multiple places.
-	3.	Improve input sanitization: Enhance the sanitizeInput function to cover more XSS vectors and consider using a dedicated library for HTML sanitization.
-	4.	Add cleanup functions: Where appropriate, add cleanup functions to useEffect hooks to avoid stale state or memory leaks during rapid navigation.
+Two root-cause bugs causing duplicate songs in generated setlists have been fixed:
 
-These steps would further harden the application and improve maintainability while preserving its current functionality.
+1. **Force Closer Duplicate Leak (FIXED)**: When the generator replaced the last song in a set with a closer-style song, the original song remained marked as "used" in the global dedup map. This prevented it from appearing in later sets AND could allow the closer to duplicate a song already in the set. Fix: `unmarkUsed()` is now called on the replaced song before selecting a closer, and the closer is properly marked after insertion.
+
+2. **Cross-Set Exhaustion Fallback (FIXED)**: When the candidate pool was exhausted mid-generation, the code would `break` the inner loop but continue generating subsequent sets. This could lead to partial sets and reuse of songs from earlier sets. Fix: Added `generationAborted` flag that halts the outer set loop when unique songs are exhausted with `allowSongReuse === false`.
+
+3. **Added `unmarkUsed()` helper**: Symmetric counterpart to `markUsed()` that properly decrements the usage counter in the dedup Map.
+
+### TASK 2: Performance Optimizations
+
+1. **Set-based dedup in generator inner loop**: Replaced O(n) `setArr.some(x => x && x.id === song.id)` calls with O(1) `setUsedIds.has(song.id)` using a per-set `Set`. This eliminates the primary bottleneck in the candidate filtering hot path, particularly noticeable with large song libraries (50+ songs).
+
+2. **Algorithmic complexity improvement**: The candidate filtering loop previously had O(n*m) complexity per iteration (n=pool size, m=set size). With the Set-based lookup, it's now O(n) per iteration.
+
+### TASK 3: PDF Import & Universal File Upload
+
+1. **PDF.js integration**: Added pdf.js v3.11.174 for client-side PDF text extraction.
+
+2. **PDF parsing engine**: New functions:
+   - `pdfExtractText()`: Extracts text from PDF files, grouping items by Y-position to reconstruct rows
+   - `pdfParseBandListLine()`: Smart parser that detects numbered song rows with heuristic field detection (title, artist, vocalist, duration in M:SS, key, BPM)
+   - `pdfParseAllPages()`: Multi-page PDF concatenation and parsing
+   - `pdfSongsToCSV()`: Converts parsed PDF songs to standard CSV format
+
+3. **Universal file import**: Both Quick Import and Import + Normalize modal now accept PDF, CSV, TSV, and TXT files. PDF files are automatically parsed and fed into the existing normalization pipeline.
+
+4. **Updated sample CSV**: Now includes Vocalist column and sample songs matching the Down South Jukers format.
+
+5. **CSV export updated**: Now includes Vocalist column in exported CSV files.
+
+### TASK 4: Enhanced UX — Manual Arrange, Lock/Swap, Gig Profiles
+
+1. **Improved Manual Edit Mode**: Cleaner UI separation — in manual mode, shows Move Up/Down and Remove buttons; in normal mode, shows Lock and Swap buttons. No more cramped button row.
+
+2. **Remove from setlist → Cold List**: New "Remove" button (red X) in manual edit mode removes a song from the generated setlist and automatically shelves it to the Cold List. Duration is recalculated.
+
+3. **Lock Entire Set**: New "Lock Set" / "Unlock Set" button on each set header. One click locks or unlocks all songs in a set. Visual indicator shows when all songs are locked.
+
+4. **Gig Profiles**: New feature under each band profile:
+   - Create gig profiles with name, venue, date, and notes
+   - Save current generated setlists to a gig profile
+   - Load saved setlists from a gig profile
+   - Delete gig profiles
+   - Data stored per-band in localStorage (`setlist_band_gigs_v3_{bandId}`)
+   - Accessible via "Gig Profiles" button in the band bar
+
+5. **Version bump**: v3.4.0 → v3.5.0
+
+## Previous Changes (v3.4.0)
+
+1. Default duration for zero-duration songs: 4 minutes fallback in `parseDuration`.
+2. Removed unused parameters from `generateTonalDiagnostics_TG()`.
+3. Added configurable constants: MAX_GUARD, DURATION_TOLERANCE_POSITIVE/NEGATIVE, DEFAULT_PASSES.
+4. Improved localStorage error handling with catch blocks.
+5. Updated duration filter logic with tolerance constants.
+6. Unified refinement pass count with DEFAULT_PASSES.
+
+## Current Status
+
+- **Bug fixes verified**: Both duplicate-generation leaks (Force Closer + Cross-Set Exhaustion) are patched. The `unmarkUsed()` / `generationAborted` pattern ensures correctness.
+- **PDF import operational**: PDF files from band management apps (BandHelper format) can be uploaded directly.
+- **Gig profiles functional**: Per-band gig management with save/load setlist capability.
+- **All existing features intact**: Song library (Active/Cold), CSV import/export, tonal gravity, energy curves, printing.
+
+## Recommended Next Steps
+
+1. **Drag-and-drop reorder**: Replace up/down buttons with HTML5 drag-and-drop or touch-friendly sortable for mobile use.
+2. **PDF parser refinement**: Test with additional PDF formats beyond BandHelper. May need format-specific adapters for other band management apps.
+3. **Gig calendar view**: Add a timeline/calendar view for gig profiles to help with scheduling.
+4. **Refactor dedup logic**: Extract shared `getSongDedupKeys` into a single utility (currently duplicated in `generateSetlistsCore` and `swapSong`).
+5. **Improve input sanitization**: Consider using a dedicated library for HTML sanitization beyond regex-based `sanitizeInput`.
+6. **Add useEffect cleanup**: Prevent stale state on rapid band switching.
