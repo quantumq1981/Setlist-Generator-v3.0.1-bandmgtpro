@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Setlist Generator v3.3.0 — Phase 2 Optimized (Phase 3A: Cold List)</title>
+  <title>Setlist Generator v3.4.0 — Phase 2 Optimized (Phase 3A: Cold List + CSV Import Pipeline)</title>
 
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
 
@@ -159,6 +160,46 @@
       }
       .set-page:last-child { page-break-after: auto; break-after: auto; }
     }
+    /* Import Modal Styles */
+    .import-modal { width: min(720px, 95vw); max-height: 90vh; overflow-y: auto; background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
+    .import-steps { display: flex; gap: .5rem; margin-bottom: 1rem; }
+    .import-step { flex: 1; text-align: center; padding: .5rem; border-radius: 8px; font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; background: var(--primary); color: var(--text-muted); border: 1px solid var(--border); }
+    .import-step.active { border-color: var(--accent); color: var(--accent); }
+    .import-step.completed { border-color: var(--success); color: var(--success); }
+    .import-tabs { display: flex; gap: .5rem; margin-bottom: 1rem; }
+    .import-tab { padding: .5rem .75rem; border: 1px solid var(--border); border-radius: 8px; background: var(--primary); color: var(--text-muted); font-size: .8rem; font-weight: 600; cursor: pointer; }
+    .import-tab.active { border-color: var(--accent); color: var(--text); }
+    .import-preview-table { width: 100%; border-collapse: collapse; font-size: .8rem; margin: .75rem 0; }
+    .import-preview-table th, .import-preview-table td { padding: .4rem .5rem; border: 1px solid var(--border); text-align: left; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .import-preview-table th { background: var(--primary); color: var(--accent); font-weight: 700; text-transform: uppercase; font-size: .7rem; letter-spacing: .05em; }
+    .import-preview-table tr:nth-child(even) td { background: rgba(255,255,255,.02); }
+    .import-mapping-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin: .75rem 0; }
+    .import-mapping-item label { margin-bottom: .25rem; }
+    .import-mapping-item .confidence { font-size: .7rem; color: var(--success); margin-left: .5rem; }
+    .import-options { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin: .75rem 0; }
+    .import-option { display: flex; align-items: center; gap: .5rem; font-size: .8rem; color: var(--text-muted); cursor: pointer; }
+    .import-option input[type="checkbox"] { width: auto; accent-color: var(--accent); }
+    .import-results-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; margin: .75rem 0; }
+    .import-stat { background: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: .75rem; text-align: center; }
+    .import-stat .number { font-size: 1.5rem; font-weight: 700; font-family: 'Space Mono', monospace; }
+    .import-stat .label { font-size: .7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+    .import-stat.success .number { color: var(--success); }
+    .import-stat.warning .number { color: var(--warning); }
+    .import-stat.error .number { color: var(--error); }
+    .import-warnings-list { max-height: 200px; overflow-y: auto; margin: .75rem 0; }
+    .import-warning-item { display: flex; gap: .5rem; align-items: baseline; padding: .35rem .5rem; font-size: .8rem; border-bottom: 1px solid var(--border); }
+    .import-warning-item:last-child { border-bottom: none; }
+    .import-warning-code { font-family: 'Space Mono', monospace; font-size: .7rem; color: var(--warning); min-width: 160px; }
+    .import-guardrail { background: rgba(74,222,128,.08); border: 1px solid var(--success); border-radius: 8px; padding: .75rem; margin: .75rem 0; font-size: .85rem; color: var(--success); }
+    .import-rejected-table { width: 100%; border-collapse: collapse; font-size: .8rem; margin: .5rem 0; }
+    .import-rejected-table th, .import-rejected-table td { padding: .35rem .5rem; border: 1px solid var(--border); text-align: left; }
+    .import-rejected-table th { background: rgba(239,68,68,.15); color: var(--error); font-size: .7rem; text-transform: uppercase; }
+    .import-footer { display: flex; gap: .75rem; justify-content: flex-end; margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--border); }
+    .import-textarea { width: 100%; min-height: 150px; font-family: 'Space Mono', monospace; font-size: .8rem; resize: vertical; }
+    .import-drop-zone { border: 2px dashed var(--border); border-radius: 12px; padding: 2rem; text-align: center; color: var(--text-muted); cursor: pointer; transition: .2s; }
+    .import-drop-zone:hover, .import-drop-zone.dragover { border-color: var(--accent); color: var(--text); }
+    .import-drop-zone input[type="file"] { display: none; }
+
     @media (max-width: 1100px){ .main-grid{ grid-template-columns: 1fr; } }
     @media (max-width: 700px){
       h1{ font-size: 1.8rem; }
@@ -229,6 +270,263 @@
       ballad: 2, uptempo: 6, midtempo: 4, funk: 5, shuffle: 5, swing: 4, groove: 5
     };
 
+
+    /******************* CSV IMPORT: NORMALIZATION ENGINE *******************/
+
+    const IMPORT_VALID_KEYS = new Set([
+      "C","Db","D","Eb","E","F","F#","G","Ab","A","Bb","B",
+      "Cm","Dbm","Dm","Ebm","Em","Fm","F#m","Gm","Abm","Am","Bbm","Bm"
+    ]);
+
+    const IMPORT_DESCRIPTOR_TOKENS = [
+      "instrumental","slow","blues","shuffle","ballad","funk","reggae",
+      "dom","dominant","mixolydian","dorian","phrygian","lydian","locrian",
+      "major","minor","maj","min"
+    ];
+
+    const IMPORT_COLUMN_SYNONYMS = {
+      title: ["title","song","song title","name","tune","track"],
+      key: ["key","tonality","pitch","root"],
+      tempo: ["tempo","bpm","speed"],
+      vocalist: ["vocalist","singer","lead","vox","vocal"]
+    };
+
+    function importNormalizeWhitespace(s) {
+      const original = s ?? "";
+      const trimmed = String(original).replace(/\s+/g, " ").trim();
+      const warnings = [];
+      if (trimmed !== original) warnings.push("title_trimmed");
+      return { value: trimmed, warnings, original };
+    }
+
+    function importNormalizeSmartPunct(s) {
+      const original = s ?? "";
+      const converted = String(original)
+        .replace(/[\u201C\u201D]/g, '"')
+        .replace(/[\u2018\u2019]/g, "'")
+        .replace(/[\u2014\u2013]/g, "-")
+        .replace(/\u00A0/g, " ");
+      const warnings = [];
+      if (converted !== original) warnings.push("title_smart_punct");
+      return { value: converted, warnings, original };
+    }
+
+    function importStripMetaParenEnd(title) {
+      const original = title ?? "";
+      const metaRe = /\s*\((demo|live|alt\.?\s*version|version|edit|radio\s*edit|\d{4})\)\s*$/i;
+      const stripped = String(original).replace(metaRe, "").trim();
+      const warnings = [];
+      if (stripped !== original) warnings.push("title_meta_paren_stripped");
+      return { value: stripped, warnings, original };
+    }
+
+    function importNormalizeTitle(title, opts) {
+      const res1 = importNormalizeWhitespace(title);
+      const res2 = importNormalizeSmartPunct(res1.value);
+      let warnings = [...res1.warnings, ...res2.warnings];
+      let val = res2.value;
+      if (opts.stripMetaParen) {
+        const res3 = importStripMetaParenEnd(val);
+        val = res3.value;
+        warnings.push(...res3.warnings);
+      }
+      return { value: val, warnings, original: title ?? "" };
+    }
+
+    function importNormalizeKeySingle(k) {
+      const original = k ?? "";
+      let s = String(original).replace(/\s+/g, " ").trim();
+      const warnings = [];
+      if (!s) return { value: "", warnings, original };
+      s = s.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+      const tokens = s.split(" ").filter(Boolean);
+      const cleaned = tokens.filter(t => !IMPORT_DESCRIPTOR_TOKENS.includes(t.toLowerCase()));
+      s = cleaned.join(" ").trim();
+      s = s.replace(/maj(or)?$/i, "");
+      s = s.replace(/min(or)?$/i, "m");
+      const m = s.match(/^([A-Ga-g])\s*(#|b)?\s*(m)?$/);
+      if (!m) return { value: "", warnings, original };
+      let root = m[1].toUpperCase();
+      let accidental = m[2] ? m[2] : "";
+      let minor = m[3] ? "m" : "";
+      const out = root + (accidental === "b" ? "b" : accidental) + minor;
+      if (!IMPORT_VALID_KEYS.has(out)) return { value: "", warnings, original };
+      return { value: out, warnings, original };
+    }
+
+    function importNormalizeKey(rawKey) {
+      const original = rawKey ?? "";
+      let s = String(original).trim();
+      const warnings = [];
+      if (!s) return { value: "", warnings, original };
+      const parts = s.replace(/\bor\b/gi, "/").split(/[/,;|]+/).map(p => p.trim()).filter(Boolean);
+      for (let i = 0; i < parts.length; i++) {
+        const candidate = importNormalizeKeySingle(parts[i]);
+        if (candidate.value) {
+          if (parts.length > 1) warnings.push("multi_key_first_selected");
+          return { value: candidate.value, warnings: [...warnings, ...candidate.warnings], original };
+        }
+      }
+      warnings.push("key_invalid");
+      return { value: "", warnings, original };
+    }
+
+    function importNormalizeTempo(rawTempo, opts) {
+      const original = rawTempo ?? "";
+      const warnings = [];
+      let s = String(original).trim();
+      if (!s) {
+        if (opts.defaultTempo != null) {
+          warnings.push("tempo_default_applied");
+          return { value: String(opts.defaultTempo), warnings, original };
+        }
+        return { value: "", warnings, original };
+      }
+      const rangeMatch = s.match(/(\d+)\s*[-\u2013]\s*(\d+)/);
+      if (rangeMatch) {
+        warnings.push("tempo_range_first_selected");
+        s = rangeMatch[1];
+      }
+      const intMatch = s.match(/(\d+)/);
+      if (!intMatch) {
+        if (opts.defaultTempo != null) {
+          warnings.push("tempo_default_applied");
+          return { value: String(opts.defaultTempo), warnings, original };
+        }
+        return { value: "", warnings, original };
+      }
+      const bpm = parseInt(intMatch[1], 10);
+      if (bpm < 1 || bpm > 300) {
+        warnings.push("tempo_out_of_range");
+        return { value: "", warnings, original };
+      }
+      return { value: String(bpm), warnings, original };
+    }
+
+    function importNormalizeVocalist(rawVox, opts) {
+      const original = rawVox ?? "";
+      const warnings = [];
+      let s = String(original).trim();
+      if (!s) {
+        warnings.push("vocalist_default_all");
+        return { value: opts.defaultVocalist || "ALL", warnings, original };
+      }
+      if (/[/,&]+/.test(s)) {
+        warnings.push("multi_vocalist_first_selected");
+        s = s.split(/[/,&]+/)[0].trim();
+      }
+      return { value: s, warnings, original };
+    }
+
+    function importNormalizeRow(rowObj, mapping, opts) {
+      const warnings = [];
+      const changes = [];
+      const rawTitle = rowObj[mapping.titleCol] ?? "";
+      const rawKey = mapping.keyCol != null ? (rowObj[mapping.keyCol] ?? "") : "";
+      const rawTempo = mapping.tempoCol != null ? (rowObj[mapping.tempoCol] ?? "") : "";
+      const rawVox = mapping.vocalistCol != null ? (rowObj[mapping.vocalistCol] ?? "") : "";
+
+      const t = importNormalizeTitle(rawTitle, opts);
+      warnings.push(...t.warnings);
+      if (t.original !== t.value) changes.push({ field: "title", original: t.original, normalized: t.value });
+
+      const k = opts.normalizeKeys ? importNormalizeKey(rawKey) : { value: String(rawKey).trim(), warnings: [], original: String(rawKey) };
+      warnings.push(...k.warnings);
+      if (k.original !== k.value) changes.push({ field: "key", original: k.original, normalized: k.value });
+
+      const p = opts.normalizeTempo ? importNormalizeTempo(rawTempo, opts) : { value: String(rawTempo).trim(), warnings: [], original: String(rawTempo) };
+      warnings.push(...p.warnings);
+      if (p.original !== p.value) changes.push({ field: "tempo", original: p.original, normalized: p.value });
+
+      const v = opts.normalizeVocalist ? importNormalizeVocalist(rawVox, opts) : { value: String(rawVox).trim(), warnings: [], original: String(rawVox) };
+      warnings.push(...v.warnings);
+      if (v.original !== v.value) changes.push({ field: "vocalist", original: v.original, normalized: v.value });
+
+      const out = { title: t.value, key: k.value, tempo: p.value, vocalist: v.value };
+      const rejectReason = !out.title ? "empty_title" : null;
+      return { out, rejectReason, warnings, changes };
+    }
+
+    function importNormalizeAll(parsedRows, mapping, opts) {
+      const rows = [];
+      const rejected = [];
+      const warningCounts = {};
+      const rowChanges = [];
+      parsedRows.forEach((rowObj, idx) => {
+        const res = importNormalizeRow(rowObj, mapping, opts);
+        res.warnings.forEach(w => warningCounts[w] = (warningCounts[w] || 0) + 1);
+        if (res.rejectReason) {
+          rejected.push({ rowIndex: idx + 1, reason: res.rejectReason, raw: rowObj });
+          return;
+        }
+        rows.push(res.out);
+        if (rowChanges.length < 200 && res.changes.length) {
+          rowChanges.push({ rowIndex: idx + 1, changes: res.changes });
+        }
+      });
+      return {
+        rows, rejected,
+        report: { rowsParsed: parsedRows.length, rowsImported: rows.length, rowsRejected: rejected.length, warningCounts, sampleChanges: rowChanges }
+      };
+    }
+
+    function importToCanonicalCSV(rows) {
+      const header = ["title","key","tempo","vocalist"];
+      const esc = (s) => `"${String(s ?? "").replace(/"/g,'""')}"`;
+      const lines = [header.join(",")];
+      for (const r of rows) {
+        lines.push([esc(r.title), esc(r.key), r.tempo ? String(parseInt(r.tempo, 10)) : "", esc(r.vocalist)].join(","));
+      }
+      return lines.join("\n");
+    }
+
+    function importDetectDelimiter(text) {
+      const lines = text.split(/\r?\n/).slice(0, 10).filter(l => l.trim());
+      const delimiters = [",", "\t", "|", ";"];
+      let best = ",";
+      let bestScore = -1;
+      for (const d of delimiters) {
+        const counts = lines.map(l => l.split(d).length - 1);
+        if (counts.length === 0) continue;
+        const min = Math.min(...counts);
+        const max = Math.max(...counts);
+        const stability = min > 0 && (max - min) <= 1 ? 1 : 0;
+        const score = min * 10 + stability * 100;
+        if (score > bestScore) { bestScore = score; best = d; }
+      }
+      return best;
+    }
+
+    function importAutoMapColumns(headers) {
+      const mapping = { titleCol: null, keyCol: null, tempoCol: null, vocalistCol: null };
+      const confidences = {};
+      const used = new Set();
+
+      for (const [field, synonyms] of Object.entries(IMPORT_COLUMN_SYNONYMS)) {
+        let bestIdx = null;
+        let bestScore = 0;
+        headers.forEach((h, idx) => {
+          if (used.has(idx)) return;
+          const lh = h.toLowerCase().trim();
+          let score = 0;
+          for (const syn of synonyms) {
+            if (lh === syn) { score = Math.max(score, 100); break; }
+            if (lh.startsWith(syn)) score = Math.max(score, 70);
+            else if (lh.includes(syn)) score = Math.max(score, 60);
+          }
+          if (score > bestScore) { bestScore = score; bestIdx = idx; }
+        });
+        if (bestIdx !== null && bestScore >= 50) {
+          const colKey = field + "Col";
+          mapping[colKey] = bestIdx;
+          confidences[colKey] = bestScore;
+          used.add(bestIdx);
+        }
+      }
+      return { mapping, confidences };
+    }
+
+    /******************* END CSV IMPORT ENGINE *******************/
 
 
 /******************* PHASE 3B: TONAL GRAVITY (CIRCLE OF FIFTHS) *******************/
@@ -700,6 +998,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       onRestoreSong,
       onExportCSV,
       onImportCSVRobust,
+      onOpenImportModal,
       onDownloadSampleCSV,
       onClearAll,
       latestImport
@@ -785,9 +1084,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
           <div className="toolbar" style={{ marginBottom: '1rem' }}>
             <label className="btn btn-small" style={{ margin: 0, cursor: 'pointer' }}>
-              Import CSV
+              Quick Import
               <input type="file" accept=".csv" onChange={onImportCSVRobust} style={{ display: 'none' }} />
             </label>
+            <button className="btn btn-small" onClick={onOpenImportModal} style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>Import + Normalize</button>
             <button className="btn btn-small" onClick={onExportCSV} disabled={songs.length === 0}>Export CSV</button>
             <button className="btn btn-small" onClick={onDownloadSampleCSV}>Sample CSV</button>
             <button className="btn btn-small" onClick={onClearAll} disabled={songs.length === 0}>Clear All</button>
@@ -1040,6 +1340,449 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
+    /******************* IMPORT SONGS MODAL *******************/
+    function ImportSongsModal({ open, onClose, onImport, existingSongs }) {
+      const STEPS = ["input", "map", "normalize", "import"];
+      const STEP_LABELS = { input: "1. Input", map: "2. Map Columns", normalize: "3. Review", import: "4. Import" };
+
+      const [step, setStep] = useState("input");
+      const [inputTab, setInputTab] = useState("upload");
+      const [rawText, setRawText] = useState("");
+      const [fileName, setFileName] = useState("");
+      const [hasHeaders, setHasHeaders] = useState(true);
+      const [delimiter, setDelimiter] = useState("auto");
+
+      // Parsed data
+      const [parsedColumns, setParsedColumns] = useState([]);
+      const [parsedRows, setParsedRows] = useState([]);
+
+      // Mapping
+      const [mapping, setMapping] = useState({ titleCol: null, keyCol: null, tempoCol: null, vocalistCol: null });
+      const [confidences, setConfidences] = useState({});
+
+      // Options
+      const [opts, setOpts] = useState({
+        trimWhitespace: true, normalizeKeys: true, normalizeTempo: true, normalizeVocalist: true,
+        stripMetaParen: false, defaultTempo: null, defaultVocalist: "ALL"
+      });
+
+      // Results
+      const [normalizedResult, setNormalizedResult] = useState(null);
+      const [dragover, setDragover] = useState(false);
+
+      if (!open) return null;
+
+      const reset = () => {
+        setStep("input"); setInputTab("upload"); setRawText(""); setFileName("");
+        setHasHeaders(true); setDelimiter("auto");
+        setParsedColumns([]); setParsedRows([]);
+        setMapping({ titleCol: null, keyCol: null, tempoCol: null, vocalistCol: null });
+        setConfidences({});
+        setNormalizedResult(null);
+      };
+
+      const handleClose = () => { reset(); onClose(); };
+
+      const parseText = (text, fname) => {
+        if (!text || !text.trim()) return;
+        const effectiveDelimiter = delimiter === "auto" ? importDetectDelimiter(text) : delimiter;
+        const result = Papa.parse(text, {
+          delimiter: effectiveDelimiter, header: hasHeaders, skipEmptyLines: "greedy", dynamicTyping: false
+        });
+        if (!result.data || result.data.length === 0) return;
+
+        let columns, rows;
+        if (hasHeaders && result.meta && result.meta.fields) {
+          columns = result.meta.fields;
+          rows = result.data;
+        } else {
+          const maxCols = result.data.reduce((max, row) => Math.max(max, Array.isArray(row) ? row.length : 0), 0);
+          columns = Array.from({ length: maxCols }, (_, i) => `Column ${i + 1}`);
+          rows = result.data.map(row => {
+            if (Array.isArray(row)) {
+              const obj = {};
+              columns.forEach((c, i) => obj[c] = row[i] ?? "");
+              return obj;
+            }
+            return row;
+          });
+        }
+
+        setParsedColumns(columns);
+        setParsedRows(rows);
+        if (fname) setFileName(fname);
+
+        // Auto-map
+        const autoMap = importAutoMapColumns(columns);
+        setMapping(autoMap.mapping);
+        setConfidences(autoMap.confidences);
+        setStep("map");
+      };
+
+      const handleFileUpload = (file) => {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const text = ev.target?.result;
+          if (text) parseText(String(text), file.name);
+        };
+        reader.readAsText(file);
+      };
+
+      const handleDrop = (e) => {
+        e.preventDefault(); setDragover(false);
+        const file = e.dataTransfer?.files?.[0];
+        if (file) handleFileUpload(file);
+      };
+
+      const runNormalization = () => {
+        if (mapping.titleCol == null) return;
+        // Convert column indices to column names
+        const colMapping = {
+          titleCol: parsedColumns[mapping.titleCol],
+          keyCol: mapping.keyCol != null ? parsedColumns[mapping.keyCol] : null,
+          tempoCol: mapping.tempoCol != null ? parsedColumns[mapping.tempoCol] : null,
+          vocalistCol: mapping.vocalistCol != null ? parsedColumns[mapping.vocalistCol] : null
+        };
+        const result = importNormalizeAll(parsedRows, colMapping, opts);
+        setNormalizedResult(result);
+        setStep("normalize");
+      };
+
+      const handleImport = () => {
+        if (!normalizedResult || normalizedResult.rows.length === 0) return;
+        onImport(normalizedResult.rows, normalizedResult.report);
+        handleClose();
+      };
+
+      const downloadCanonicalCSV = () => {
+        if (!normalizedResult) return;
+        const csv = importToCanonicalCSV(normalizedResult.rows);
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `canonical-import-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
+      };
+
+      const stepIndex = STEPS.indexOf(step);
+      const sampleRows = parsedRows.slice(0, 5);
+
+      const WARNING_LABELS = {
+        multi_key_first_selected: "Multiple keys found, used first valid",
+        key_invalid: "Key could not be recognized",
+        tempo_range_first_selected: "Tempo range found, used first value",
+        tempo_out_of_range: "Tempo out of range (1-300)",
+        tempo_default_applied: "Default tempo applied",
+        vocalist_default_all: "Empty vocalist defaulted to ALL",
+        multi_vocalist_first_selected: "Multiple vocalists, used first",
+        title_trimmed: "Title whitespace trimmed",
+        title_smart_punct: "Smart punctuation converted",
+        title_meta_paren_stripped: "Meta parenthetical stripped"
+      };
+
+      return (
+        <div className="modal-backdrop" onClick={handleClose}>
+          <div className="import-modal" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: ".75rem" }}>
+              <h3 className="panel-title">Import Songs</h3>
+              <button className="btn btn-small" onClick={handleClose}>Close</button>
+            </div>
+
+            {/* Step indicators */}
+            <div className="import-steps">
+              {STEPS.map((s, i) => (
+                <div key={s} className={`import-step ${s === step ? "active" : ""} ${i < stepIndex ? "completed" : ""}`}>
+                  {STEP_LABELS[s]}
+                </div>
+              ))}
+            </div>
+
+            {/* STEP 1: INPUT */}
+            {step === "input" && (
+              <div>
+                <div className="import-tabs">
+                  <button className={`import-tab ${inputTab === "upload" ? "active" : ""}`} onClick={() => setInputTab("upload")}>Upload File</button>
+                  <button className={`import-tab ${inputTab === "paste" ? "active" : ""}`} onClick={() => setInputTab("paste")}>Paste Text</button>
+                </div>
+
+                {inputTab === "upload" && (
+                  <div
+                    className={`import-drop-zone ${dragover ? "dragover" : ""}`}
+                    onDragOver={(e) => { e.preventDefault(); setDragover(true); }}
+                    onDragLeave={() => setDragover(false)}
+                    onDrop={handleDrop}
+                    onClick={() => document.getElementById("import-file-input")?.click()}
+                  >
+                    <div style={{ fontSize: "2rem", marginBottom: ".5rem" }}>Drop file here or click to browse</div>
+                    <div style={{ fontSize: ".85rem" }}>Supports CSV, TSV, TXT</div>
+                    <input id="import-file-input" type="file" accept=".csv,.tsv,.txt,.tab" onChange={(e) => handleFileUpload(e.target.files?.[0])} />
+                  </div>
+                )}
+
+                {inputTab === "paste" && (
+                  <div>
+                    <textarea
+                      className="import-textarea"
+                      placeholder={"Paste your song data here...\n\nExamples:\ntitle,key,tempo,vocalist\nCome Together,Dm,82,John\nSweet Home Alabama,D,100,ALL"}
+                      value={rawText}
+                      onChange={(e) => setRawText(e.target.value)}
+                    />
+                    <div className="import-footer">
+                      <button className="btn btn-primary" onClick={() => parseText(rawText, "pasted-text")} disabled={!rawText.trim()}>
+                        Parse Text
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="set-config" style={{ marginTop: ".75rem" }}>
+                  <div className="input-group">
+                    <label>Delimiter</label>
+                    <select value={delimiter} onChange={(e) => setDelimiter(e.target.value)}>
+                      <option value="auto">Auto-detect</option>
+                      <option value=",">Comma (,)</option>
+                      <option value="&#9;">Tab</option>
+                      <option value="|">Pipe (|)</option>
+                      <option value=";">Semicolon (;)</option>
+                    </select>
+                  </div>
+                  <div className="input-group">
+                    <label style={{ display: "flex", alignItems: "center", gap: ".5rem" }}>
+                      <input type="checkbox" checked={hasHeaders} onChange={(e) => setHasHeaders(e.target.checked)} style={{ width: "auto" }} />
+                      First row is headers
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 2: MAP COLUMNS */}
+            {step === "map" && (
+              <div>
+                <div style={{ marginBottom: ".75rem", fontSize: ".85rem", color: "var(--text-muted)" }}>
+                  Parsed <strong style={{ color: "var(--accent)" }}>{parsedRows.length}</strong> rows with <strong style={{ color: "var(--accent)" }}>{parsedColumns.length}</strong> columns
+                  {fileName && <span> from <strong>{fileName}</strong></span>}
+                </div>
+
+                {/* Preview table */}
+                <div style={{ overflowX: "auto" }}>
+                  <table className="import-preview-table">
+                    <thead>
+                      <tr>{parsedColumns.map((c, i) => <th key={i}>{c}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {sampleRows.map((row, ri) => (
+                        <tr key={ri}>{parsedColumns.map((c, ci) => <td key={ci}>{String(row[c] ?? "")}</td>)}</tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Column mapping */}
+                <h4 style={{ color: "var(--accent)", margin: ".75rem 0 .5rem", fontSize: ".9rem" }}>Column Mapping</h4>
+                <div className="import-mapping-grid">
+                  {[
+                    { key: "titleCol", label: "Title *", required: true },
+                    { key: "keyCol", label: "Key" },
+                    { key: "tempoCol", label: "Tempo / BPM" },
+                    { key: "vocalistCol", label: "Vocalist" }
+                  ].map(({ key, label, required }) => (
+                    <div key={key} className="import-mapping-item">
+                      <label>
+                        {label}
+                        {confidences[key] && <span className="confidence">{confidences[key]}% match</span>}
+                      </label>
+                      <select
+                        value={mapping[key] ?? "none"}
+                        onChange={(e) => setMapping({ ...mapping, [key]: e.target.value === "none" ? null : parseInt(e.target.value) })}
+                      >
+                        <option value="none">{required ? "-- Select --" : "None"}</option>
+                        {parsedColumns.map((c, i) => <option key={i} value={i}>{c}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Normalization options */}
+                <h4 style={{ color: "var(--accent)", margin: ".75rem 0 .5rem", fontSize: ".9rem" }}>Normalization Options</h4>
+                <div className="import-options">
+                  {[
+                    { key: "normalizeKeys", label: "Normalize keys (Cmaj -> C)" },
+                    { key: "normalizeTempo", label: "Normalize tempo" },
+                    { key: "normalizeVocalist", label: "Normalize vocalist" },
+                    { key: "stripMetaParen", label: "Strip meta parens e.g. (demo)" }
+                  ].map(({ key, label }) => (
+                    <label key={key} className="import-option">
+                      <input type="checkbox" checked={opts[key]} onChange={(e) => setOpts({ ...opts, [key]: e.target.checked })} />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+
+                <div className="set-config" style={{ marginTop: ".5rem" }}>
+                  <div className="input-group">
+                    <label>Default Tempo (blank = none)</label>
+                    <input
+                      type="number" min="1" max="300" placeholder="e.g. 120"
+                      value={opts.defaultTempo ?? ""}
+                      onChange={(e) => setOpts({ ...opts, defaultTempo: e.target.value ? parseInt(e.target.value) : null })}
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label>Default Vocalist</label>
+                    <input
+                      value={opts.defaultVocalist}
+                      onChange={(e) => setOpts({ ...opts, defaultVocalist: e.target.value || "ALL" })}
+                    />
+                  </div>
+                </div>
+
+                <div className="import-footer">
+                  <button className="btn btn-small" onClick={() => { setStep("input"); }}>Back</button>
+                  <button className="btn btn-primary" onClick={runNormalization} disabled={mapping.titleCol == null}>
+                    Normalize & Preview
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3: NORMALIZE / REVIEW */}
+            {step === "normalize" && normalizedResult && (
+              <div>
+                {/* Guardrail banner */}
+                <div className="import-guardrail">
+                  Nothing is silently dropped. Only rows with empty titles are rejected. All other rows are imported even if key/tempo/vocalist are blank.
+                </div>
+
+                {/* Summary stats */}
+                <div className="import-results-summary">
+                  <div className="import-stat success">
+                    <div className="number">{normalizedResult.report.rowsParsed}</div>
+                    <div className="label">Rows Parsed</div>
+                  </div>
+                  <div className="import-stat success">
+                    <div className="number">{normalizedResult.report.rowsImported}</div>
+                    <div className="label">Will Import</div>
+                  </div>
+                  <div className={`import-stat ${normalizedResult.report.rowsRejected > 0 ? "error" : "success"}`}>
+                    <div className="number">{normalizedResult.report.rowsRejected}</div>
+                    <div className="label">Rejected</div>
+                  </div>
+                </div>
+
+                {/* Equation check */}
+                <div style={{ textAlign: "center", fontSize: ".8rem", color: "var(--text-muted)", margin: ".25rem 0 .75rem" }}>
+                  {normalizedResult.report.rowsParsed} parsed = {normalizedResult.report.rowsImported} imported + {normalizedResult.report.rowsRejected} rejected
+                  {normalizedResult.report.rowsParsed === normalizedResult.report.rowsImported + normalizedResult.report.rowsRejected
+                    ? <span style={{ color: "var(--success)", marginLeft: ".5rem" }}>&#10003; Verified</span>
+                    : <span style={{ color: "var(--error)", marginLeft: ".5rem" }}>Mismatch!</span>
+                  }
+                </div>
+
+                {/* Warning counts */}
+                {Object.keys(normalizedResult.report.warningCounts).length > 0 && (
+                  <div>
+                    <h4 style={{ color: "var(--warning)", fontSize: ".85rem", marginBottom: ".5rem" }}>Normalization Warnings</h4>
+                    <div className="import-warnings-list">
+                      {Object.entries(normalizedResult.report.warningCounts).map(([code, count]) => (
+                        <div key={code} className="import-warning-item">
+                          <span className="import-warning-code">{code}</span>
+                          <span>{WARNING_LABELS[code] || code}</span>
+                          <span style={{ marginLeft: "auto", color: "var(--accent)", fontWeight: 700 }}>x{count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sample changes */}
+                {normalizedResult.report.sampleChanges.length > 0 && (
+                  <div style={{ marginTop: ".75rem" }}>
+                    <h4 style={{ color: "var(--accent)", fontSize: ".85rem", marginBottom: ".5rem" }}>
+                      Sample Changes (showing {Math.min(normalizedResult.report.sampleChanges.length, 20)} of {normalizedResult.report.sampleChanges.length})
+                    </h4>
+                    <div style={{ maxHeight: "160px", overflowY: "auto" }}>
+                      <table className="import-preview-table">
+                        <thead><tr><th>Row</th><th>Field</th><th>Original</th><th>Normalized</th></tr></thead>
+                        <tbody>
+                          {normalizedResult.report.sampleChanges.slice(0, 20).flatMap((rc) =>
+                            rc.changes.map((c, ci) => (
+                              <tr key={`${rc.rowIndex}-${ci}`}>
+                                <td>{rc.rowIndex}</td>
+                                <td>{c.field}</td>
+                                <td style={{ color: "var(--error)" }}>{c.original || "(empty)"}</td>
+                                <td style={{ color: "var(--success)" }}>{c.normalized || "(empty)"}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Rejected rows */}
+                {normalizedResult.rejected.length > 0 && (
+                  <div style={{ marginTop: ".75rem" }}>
+                    <h4 style={{ color: "var(--error)", fontSize: ".85rem", marginBottom: ".5rem" }}>
+                      Rejected Rows ({normalizedResult.rejected.length})
+                    </h4>
+                    <table className="import-rejected-table">
+                      <thead><tr><th>Row #</th><th>Reason</th><th>Raw Data</th></tr></thead>
+                      <tbody>
+                        {normalizedResult.rejected.map((r, i) => (
+                          <tr key={i}>
+                            <td>{r.rowIndex}</td>
+                            <td>{r.reason}</td>
+                            <td style={{ maxWidth: "300px", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {JSON.stringify(r.raw).slice(0, 100)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Normalized data preview */}
+                <div style={{ marginTop: ".75rem" }}>
+                  <h4 style={{ color: "var(--accent)", fontSize: ".85rem", marginBottom: ".5rem" }}>
+                    Import Preview (first 10 rows)
+                  </h4>
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="import-preview-table">
+                      <thead><tr><th>Title</th><th>Key</th><th>Tempo</th><th>Vocalist</th></tr></thead>
+                      <tbody>
+                        {normalizedResult.rows.slice(0, 10).map((r, i) => (
+                          <tr key={i}>
+                            <td>{r.title}</td>
+                            <td>{r.key}</td>
+                            <td>{r.tempo}</td>
+                            <td>{r.vocalist}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="import-footer">
+                  <button className="btn btn-small" onClick={() => setStep("map")}>Back</button>
+                  <button className="btn btn-small" onClick={downloadCanonicalCSV}>Download Canonical CSV</button>
+                  <button className="btn btn-primary" onClick={handleImport} disabled={normalizedResult.rows.length === 0}>
+                    Import {normalizedResult.rows.length} Songs
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     function BandModal({ open, onClose, bands, onCreate, onDelete, onDuplicate }) {
       const [form, setForm] = useState({ name: '', icon: '🎵', color: '#ff6b35' });
       if (!open) return null;
@@ -1148,6 +1891,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [manualEditMode, setManualEditMode] = useState(false);
 
       const [bandModal, setBandModal] = useState(false);
+      const [importModal, setImportModal] = useState(false);
       const [toast, setToast] = useState(null);
       const [lastGenerationStats, setLastGenerationStats] = useState(null);
       const [imports, setImports] = useState([]);
@@ -1388,6 +2132,64 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         setTimeout(() => URL.revokeObjectURL(url), 3000);
       };
 
+      // Canonical import with dedup
+      const importCanonicalRows = (rows, report) => {
+        const existingKeys = new Set(
+          songs.map(s => (s.title || "").toLowerCase().trim())
+        );
+        const imported = [];
+        let dupeCount = 0;
+
+        for (const row of rows) {
+          const dedupKey = (row.title || "").toLowerCase().trim();
+          if (existingKeys.has(dedupKey)) {
+            // Merge missing fields into existing
+            const idx = songs.findIndex(s => (s.title || "").toLowerCase().trim() === dedupKey);
+            if (idx >= 0) {
+              const existing = songs[idx];
+              let updated = false;
+              const merged = { ...existing };
+              if (!merged.key && row.key) { merged.key = row.key; updated = true; }
+              if (!merged.bpm && row.tempo) { merged.bpm = row.tempo; updated = true; }
+              if (updated) {
+                const newSongs = [...songs];
+                newSongs[idx] = merged;
+                setSongs(newSongs);
+              }
+            }
+            dupeCount++;
+            continue;
+          }
+
+          existingKeys.add(dedupKey);
+          imported.push({
+            id: genId(),
+            status: 'active',
+            title: sanitizeInput(row.title),
+            artist: '',
+            duration: 0,
+            style: 'midtempo',
+            key: row.key || '',
+            bpm: row.tempo || '',
+            vocalist: row.vocalist || ''
+          });
+        }
+
+        if (imported.length > 0) {
+          setSongs(prev => [...prev, ...imported]);
+        }
+
+        const newImport = { ts: Date.now(), count: imported.length, filename: 'canonical-import', dupes: dupeCount };
+        const updatedImports = [newImport, ...imports].slice(0, 10);
+        setImports(updatedImports);
+        LS.set(LS_KEYS.bandImports(activeBandId), updatedImports);
+
+        let msg = `Imported ${imported.length} songs`;
+        if (dupeCount > 0) msg += ` (${dupeCount} duplicates merged/skipped)`;
+        msg += ` | Parsed: ${report.rowsParsed}, Rejected: ${report.rowsRejected}`;
+        showToast(msg, 'success');
+      };
+
       const copyToClipboard = () => {
         const text = setlists.map((set) => {
           const header = `${set.name} (${set.songs.length} songs, ${Math.round(set.totalTime)} min)\n${'='.repeat(50)}`;
@@ -1560,7 +2362,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
             <header className="header">
               <h1>SETLIST GENERATOR</h1>
-              <div className="subtitle">v3.3.0 — Phase 2 Optimized • Phase 3A: Cold List</div>
+              <div className="subtitle">v3.4.0 — Phase 2 Optimized • Phase 3A: Cold List • CSV Import Pipeline</div>
             </header>
 
             <div className="band-bar">
@@ -1592,6 +2394,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 onRestoreSong={restoreSong}
                 onExportCSV={exportSongs}
                 onImportCSVRobust={importCSVRobust}
+                onOpenImportModal={() => setImportModal(true)}
                 onDownloadSampleCSV={downloadSampleCSV}
                 onClearAll={clearAllSongs}
                 latestImport={imports[0] || null}
@@ -1660,6 +2463,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               onCreate={createBand}
               onDelete={deleteBand}
               onDuplicate={duplicateBand}
+            />
+
+            <ImportSongsModal
+              open={importModal}
+              onClose={() => setImportModal(false)}
+              onImport={importCanonicalRows}
+              existingSongs={songs}
             />
           </div>
 
