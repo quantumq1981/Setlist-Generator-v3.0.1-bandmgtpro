@@ -619,12 +619,132 @@
       return pages;
     }
 
+    // Known style values for BandHelper / Zemba-style PDFs
+    const PDF_KNOWN_STYLES = new Set([
+      'uptempo','ballad','midtempo','groove','shuffle','swing','funk',
+      'slow blues','rock','blues','country','jazz','reggae','latin','pop'
+    ]);
+
     /**
-     * Parse a line from a band setlist PDF like the Down South Jukers format.
-     * Expected patterns:
-     *   "1  Song Title  Artist Name  Vocalist  M:SS  Key  BPM"
-     *   or numbered row with tab/multi-space separation
-     * Returns { number, title, artist, vocalist, duration, key, bpm } or null
+     * Detect column header row and return column index mapping.
+     * Matches headers like: "# TITLE ARTIST DURATION STYLE KEY BPM VOCALIST"
+     * Returns { detected: true, map: { title, artist, duration, style, key, bpm, vocalist } }
+     * or { detected: false }
+     */
+    function pdfDetectHeaderRow(allLines) {
+      for (let i = 0; i < Math.min(allLines.length, 15); i++) {
+        const line = allLines[i];
+        const parts = line.split(/\t/).map(s => s.trim().toLowerCase());
+        // Need at least title and one other recognizable column
+        const titleIdx = parts.findIndex(p => /^(title|song|song\s*title|tune)$/.test(p));
+        if (titleIdx < 0) continue;
+
+        const artistIdx = parts.findIndex(p => /^(artist|band|performer)$/.test(p));
+        const durationIdx = parts.findIndex(p => /^(duration|dur|time|length)$/.test(p));
+        const styleIdx = parts.findIndex(p => /^(style|genre|type|feel)$/.test(p));
+        const keyIdx = parts.findIndex(p => /^(key|tonality|pitch)$/.test(p));
+        const bpmIdx = parts.findIndex(p => /^(bpm|tempo|speed)$/.test(p));
+        const vocalistIdx = parts.findIndex(p => /^(vocalist|singer|vox|vocal|vocals|lead)$/.test(p));
+        const numIdx = parts.findIndex(p => /^(#|no\.?|number|num)$/.test(p));
+
+        // Must have at least title + artist or title + 2 other columns
+        const found = [artistIdx, durationIdx, styleIdx, keyIdx, bpmIdx].filter(i => i >= 0).length;
+        if (found < 1) continue;
+
+        return {
+          detected: true,
+          headerLineIdx: i,
+          map: {
+            num: numIdx,
+            title: titleIdx,
+            artist: artistIdx,
+            duration: durationIdx,
+            style: styleIdx,
+            key: keyIdx,
+            bpm: bpmIdx,
+            vocalist: vocalistIdx
+          }
+        };
+      }
+      return { detected: false };
+    }
+
+    /**
+     * Parse a row using detected column positions (header-mapped mode).
+     * Used for BandHelper / Zemba-style PDFs with clear column structure.
+     */
+    function pdfParseWithColumnMap(line, colMap) {
+      const trimmed = line.trim();
+      if (!trimmed) return null;
+
+      const parts = trimmed.split(/\t/).map(s => s.trim());
+      if (parts.length < 2) return null;
+
+      // Get title - required
+      const title = colMap.title >= 0 && colMap.title < parts.length ? parts[colMap.title] : '';
+      if (!title || /^(title|#|number)\b/i.test(title)) return null;
+
+      // Skip non-data rows (headers repeated on new pages, summary rows)
+      if (/^\d+\s+songs?[,\s]/i.test(trimmed)) return null;
+
+      const get = (idx) => (idx >= 0 && idx < parts.length) ? parts[idx] : '';
+
+      const artist = get(colMap.artist);
+      const rawDuration = get(colMap.duration);
+      const style = get(colMap.style);
+      const rawKey = get(colMap.key);
+      const rawBpm = get(colMap.bpm);
+      const vocalist = get(colMap.vocalist);
+
+      // Parse duration: could be M:SS, plain minutes, or decimal
+      let duration = '';
+      if (rawDuration) {
+        if (/^\d{1,2}:\d{2}$/.test(rawDuration)) {
+          const [m, s] = rawDuration.split(':').map(Number);
+          duration = String(Math.round((m + s / 60) * 100) / 100);
+        } else {
+          const num = parseFloat(rawDuration);
+          if (num > 0) duration = String(num);
+        }
+      }
+
+      // Parse BPM: strip decimal (122.0 -> 122)
+      let bpm = '';
+      if (rawBpm) {
+        const bpmMatch = rawBpm.match(/(\d+)/);
+        if (bpmMatch) bpm = bpmMatch[1];
+      }
+
+      // Normalize key: handle Cmaj, Bbm, F#, etc.
+      let key = '';
+      if (rawKey) {
+        let k = rawKey.trim();
+        k = k.replace(/maj(or)?$/i, '');
+        if (/^[A-Ga-g][b#]?m?$/i.test(k)) {
+          key = k.charAt(0).toUpperCase() + k.slice(1);
+        } else {
+          key = rawKey.trim();
+        }
+      }
+
+      if (!title) return null;
+
+      return {
+        number: 0,
+        title: title.trim(),
+        artist: artist.trim(),
+        vocalist: vocalist.trim(),
+        duration,
+        style: style.trim().toLowerCase(),
+        key: key.trim(),
+        bpm: bpm.trim()
+      };
+    }
+
+    /**
+     * Parse a line using heuristic detection (no header row found).
+     * Works for DSJ-style PDFs with numbered rows and M:SS durations.
+     * Returns { number, title, artist, vocalist, duration, key, bpm, style } or null
      */
     function pdfParseBandListLine(line) {
       // Skip header rows and empty lines
@@ -645,39 +765,57 @@
 
       if (parts.length < 2) return null;
 
-      // Heuristic detection of fields
-      // Look for duration pattern M:SS or M.MM
+      // Heuristic detection of fields (scan from right to left)
       let durationIdx = -1;
       let keyIdx = -1;
       let bpmIdx = -1;
+      let styleIdx = -1;
 
       for (let i = parts.length - 1; i >= 0; i--) {
         const p = parts[i];
-        if (bpmIdx === -1 && /^\d{2,3}$/.test(p)) {
+        const pLower = p.toLowerCase();
+
+        // BPM: 2-3 digits, optionally with .0 decimal
+        if (bpmIdx === -1 && /^\d{2,3}(\.\d)?$/.test(p)) {
           bpmIdx = i;
-        } else if (keyIdx === -1 && /^[A-G][b#]?m?\s*$/.test(p) && p.length <= 3) {
+        // Key: musical key notation (A-G with optional accidental and minor)
+        } else if (keyIdx === -1 && /^[A-G][b#]?(m|maj|min)?$/i.test(p) && p.length <= 4) {
           keyIdx = i;
+        // Key: multi-key like "C / F / F /"
         } else if (keyIdx === -1 && /^[A-G][b#]?\s*\/\s*[A-G]/.test(p)) {
-          keyIdx = i; // handles "C / F / F /" style multi-key
-        } else if (keyIdx === -1 && /^[A-G][b#]?[m#]?$/.test(p)) {
           keyIdx = i;
+        // Style: known style value
+        } else if (styleIdx === -1 && PDF_KNOWN_STYLES.has(pLower)) {
+          styleIdx = i;
+        // Duration: M:SS format
         } else if (durationIdx === -1 && /^\d{1,2}:\d{2}$/.test(p)) {
           durationIdx = i;
+        // Duration: plain number 1-20 (minutes) - only if no M:SS found yet
+        } else if (durationIdx === -1 && /^\d{1,2}(\.\d+)?$/.test(p)) {
+          const num = parseFloat(p);
+          if (num > 0 && num <= 20) durationIdx = i;
         }
       }
 
-      // Parse duration from M:SS to minutes
+      // Parse duration
       let duration = '';
       if (durationIdx >= 0) {
-        const [m, s] = parts[durationIdx].split(':').map(Number);
-        duration = String(Math.round((m + s / 60) * 100) / 100);
+        const dp = parts[durationIdx];
+        if (/^\d{1,2}:\d{2}$/.test(dp)) {
+          const [m, s] = dp.split(':').map(Number);
+          duration = String(Math.round((m + s / 60) * 100) / 100);
+        } else {
+          const num = parseFloat(dp);
+          if (num > 0) duration = String(num);
+        }
       }
 
-      let key = keyIdx >= 0 ? parts[keyIdx].replace(/\s*\/\s*/g, '/').trim() : '';
-      let bpm = bpmIdx >= 0 ? parts[bpmIdx] : '';
+      let key = keyIdx >= 0 ? parts[keyIdx].replace(/\s*\/\s*/g, '/').replace(/maj(or)?$/i, '').trim() : '';
+      let bpm = bpmIdx >= 0 ? parts[bpmIdx].replace(/\.0$/, '') : '';
+      let style = styleIdx >= 0 ? parts[styleIdx].toLowerCase() : '';
 
-      // The fields before duration/key/bpm are title, artist, vocalist
-      const metaIndices = new Set([durationIdx, keyIdx, bpmIdx].filter(i => i >= 0));
+      // Collect remaining text parts (title, artist, vocalist)
+      const metaIndices = new Set([durationIdx, keyIdx, bpmIdx, styleIdx].filter(i => i >= 0));
       const textParts = parts.filter((_, i) => !metaIndices.has(i));
 
       let title = '', artist = '', vocalist = '';
@@ -701,6 +839,7 @@
         artist: artist.trim(),
         vocalist: vocalist.trim(),
         duration,
+        style,
         key: key.trim(),
         bpm: bpm.trim()
       };
@@ -708,11 +847,29 @@
 
     /**
      * Parse all pages of extracted PDF text into song rows.
-     * Handles multi-page PDFs by concatenating all pages.
+     * First tries header-detection (BandHelper/Zemba format),
+     * then falls back to heuristic parsing (DSJ format).
      */
     function pdfParseAllPages(pageTexts) {
-      const songs = [];
       const allLines = pageTexts.join('\n').split('\n');
+
+      // Try header-based detection first
+      const headerResult = pdfDetectHeaderRow(allLines);
+      if (headerResult.detected) {
+        const songs = [];
+        for (let i = 0; i < allLines.length; i++) {
+          if (i === headerResult.headerLineIdx) continue;
+          // Skip repeated header rows on subsequent pages
+          const lower = allLines[i].toLowerCase();
+          if (/\btitle\b/.test(lower) && /\bartist\b/.test(lower)) continue;
+          const parsed = pdfParseWithColumnMap(allLines[i], headerResult.map);
+          if (parsed) songs.push(parsed);
+        }
+        if (songs.length > 0) return songs;
+      }
+
+      // Fallback: heuristic line-by-line parsing (DSJ-style)
+      const songs = [];
       for (const line of allLines) {
         const parsed = pdfParseBandListLine(line);
         if (parsed) songs.push(parsed);
@@ -733,7 +890,7 @@
       const lines = [headers.join(',')];
       for (const s of songs) {
         lines.push([
-          esc(s.title), esc(s.artist), esc(s.duration), '', esc(s.key), esc(s.bpm), esc(s.vocalist)
+          esc(s.title), esc(s.artist), esc(s.duration), esc(s.style || ''), esc(s.key), esc(s.bpm), esc(s.vocalist)
         ].join(','));
       }
       return lines.join('\n');
@@ -2475,7 +2632,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               title: sanitizeInput(s.title),
               artist: sanitizeInput(s.artist),
               duration: parseDuration(s.duration),
-              style: 'midtempo',
+              style: (s.style && PDF_KNOWN_STYLES.has(s.style.toLowerCase())) ? s.style.toLowerCase() : 'midtempo',
               key: s.key || '',
               bpm: s.bpm || '',
               vocalist: s.vocalist || ''
