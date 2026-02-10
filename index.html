@@ -118,8 +118,9 @@
     .setlist { background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
     .setlist-header { display:flex; align-items:center; justify-content: space-between; border-bottom:2px solid var(--accent); padding-bottom:.5rem; margin-bottom:.75rem; }
     .setlist-song {
-      display:grid; grid-template-columns: 32px 1fr 54px 40px; gap:.6rem; align-items:center;
+      display:grid; grid-template-columns: 20px 32px 1fr 54px 60px; gap:.6rem; align-items:center;
       background: var(--primary); border:1px solid var(--border); border-left:3px solid transparent; border-radius: 8px; padding: .6rem; margin-bottom:.5rem;
+      transition: opacity 0.2s, border-color 0.2s;
     }
     .setlist-song.locked { border-left-color: var(--locked); background: rgba(74,222,128,.06); }
     .song-number { color: var(--accent); font-family:'Space Mono', monospace; font-weight:700; text-align:center; }
@@ -132,6 +133,15 @@
     .action-btn:hover { background: var(--border); color: var(--text); }
     .action-btn:disabled { opacity:.5; cursor:not-allowed; }
     .action-btn.locked { color: var(--locked); }
+
+    /* Drag and Drop */
+    .setlist-song[draggable="true"] { cursor: grab; }
+    .setlist-song[draggable="true"]:active { cursor: grabbing; }
+    .setlist-song.dragging { opacity: 0.4; border: 1px dashed var(--accent); }
+    .setlist-song.drag-over-top { border-top: 3px solid var(--accent); margin-top: -2px; }
+    .setlist-song.drag-over-bottom { border-bottom: 3px solid var(--accent); margin-bottom: -2px; }
+    .drag-handle { cursor: grab; color: var(--text-muted); font-size: 1rem; user-select: none; display: flex; align-items: center; }
+    .drag-handle:active { cursor: grabbing; }
 
     .toast-container { position: fixed; bottom: 1.25rem; left: 50%; transform: translateX(-50%); z-index: 2000; }
     .toast {
@@ -163,8 +173,10 @@
       .set-page {
         page-break-after: always; break-after: page;
         font-family: "Times New Roman", serif; font-size: 19pt; font-weight: bold; line-height: 1.0;
+        position: relative; overflow: hidden;
       }
       .set-page:last-child { page-break-after: auto; break-after: auto; }
+      .set-page img { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
     /* Import Modal Styles */
     .import-modal { width: min(720px, 95vw); max-height: 90vh; overflow-y: auto; background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
@@ -209,7 +221,7 @@
     @media (max-width: 1100px){ .main-grid{ grid-template-columns: 1fr; } }
     @media (max-width: 700px){
       h1{ font-size: 1.8rem; }
-      .setlist-song{ grid-template-columns: 26px 1fr 46px 34px; }
+      .setlist-song{ grid-template-columns: 18px 26px 1fr 46px 50px; }
     }
   </style>
 </head>
@@ -313,7 +325,8 @@
       bandSettings: (id) => `setlist_band_settings_v3_${id}`,
       bandHistory: (id) => `setlist_band_history_v3_${id}`,
       bandImports: (id) => `setlist_band_imports_v3_${id}`,
-      bandGigs: (id) => `setlist_band_gigs_v3_${id}`
+      bandGigs: (id) => `setlist_band_gigs_v3_${id}`,
+      bandWatermark: (id) => `setlist_band_watermark_v3_${id}`
     };
 
     const ENERGY_MAP = {
@@ -1541,7 +1554,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, songCount, manualEditMode, onToggleManualEdit, libraryTime }) {
+    function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, songCount, libraryTime, watermarkImg, onWatermarkUpload, onClearWatermark }) {
       return (
         <div className="panel">
           <div className="panel-header">
@@ -1680,9 +1693,25 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           <div className="toolbar" style={{ marginTop: '1rem' }}>
             <button className="btn btn-small" onClick={onCopy}>Copy Text</button>
             <button className="btn btn-small" onClick={onExportPDF}>Export PDF</button>
-            <button className={`btn btn-small ${manualEditMode ? 'btn-toggle-active' : ''}`} onClick={() => onToggleManualEdit(!manualEditMode)}>
-              Manual Edit {manualEditMode ? 'ON' : 'OFF'}
-            </button>
+          </div>
+
+          <div style={{ marginTop: '.75rem', padding: '.5rem', background: 'var(--primary)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+            <div style={{ fontSize: '.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-muted)', marginBottom: '.4rem' }}>
+              PDF Watermark
+            </div>
+            {watermarkImg ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                <img src={watermarkImg} alt="Watermark" style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 4, opacity: 0.7 }} />
+                <span style={{ fontSize: '.8rem', color: 'var(--text-muted)', flex: 1 }}>Watermark set</span>
+                <button className="btn btn-small" onClick={onClearWatermark} style={{ fontSize: '.7rem' }}>Remove</button>
+              </div>
+            ) : (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '.5rem', cursor: 'pointer', fontSize: '.8rem', color: 'var(--text-muted)' }}>
+                <input type="file" accept="image/*" onChange={onWatermarkUpload} style={{ display: 'none' }} />
+                <span className="btn btn-small" style={{ fontSize: '.7rem' }}>Upload Image</span>
+                <span>No watermark</span>
+              </label>
+            )}
           </div>
 
           <div style={{ marginTop: '1rem', fontSize: '.85rem', color: 'var(--text-muted)' }}>
@@ -1692,9 +1721,64 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, manualEditMode, onMoveSong, onRemoveSong, onLockEntireSet }) {
+    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onMoveSong, onRemoveSong, onLockEntireSet }) {
       let runningTime = 0;
       const allLocked = setlist.songs.length > 0 && setlist.songs.every(s => locked.has(`${setIdx}:${s.id}`));
+
+      const [dragIdx, setDragIdx] = useState(null);
+      const [dragOverIdx, setDragOverIdx] = useState(null);
+      const [dragOverHalf, setDragOverHalf] = useState(null);
+
+      const handleDragStart = (e, songIdx) => {
+        const isLocked = locked.has(`${setIdx}:${setlist.songs[songIdx].id}`);
+        if (isLocked) { e.preventDefault(); return; }
+        setDragIdx(songIdx);
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', `${setIdx}:${songIdx}`);
+      };
+
+      const handleDragOver = (e, songIdx) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const rect = e.currentTarget.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        setDragOverIdx(songIdx);
+        setDragOverHalf(e.clientY < midY ? 'top' : 'bottom');
+      };
+
+      const handleDragLeave = (e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+          setDragOverIdx(null);
+          setDragOverHalf(null);
+        }
+      };
+
+      const handleDrop = (e, songIdx) => {
+        e.preventDefault();
+        const data = e.dataTransfer.getData('text/plain');
+        const [srcSetIdx, srcSongIdx] = data.split(':').map(Number);
+
+        if (srcSetIdx === setIdx && dragIdx !== null) {
+          let toIdx = songIdx;
+          if (dragOverHalf === 'bottom' && songIdx > dragIdx) toIdx = songIdx;
+          else if (dragOverHalf === 'top' && songIdx < dragIdx) toIdx = songIdx;
+          else if (dragOverHalf === 'bottom') toIdx = songIdx;
+          else toIdx = songIdx;
+
+          if (dragIdx !== toIdx) {
+            onMoveSong(setIdx, dragIdx, toIdx);
+          }
+        }
+        setDragIdx(null);
+        setDragOverIdx(null);
+        setDragOverHalf(null);
+      };
+
+      const handleDragEnd = () => {
+        setDragIdx(null);
+        setDragOverIdx(null);
+        setDragOverHalf(null);
+      };
 
       return (
         <div className="setlist">
@@ -1721,9 +1805,28 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             const startTime = runningTime;
             runningTime += Number(song.duration) || 0;
             const isLocked = locked.has(`${setIdx}:${song.id}`);
+            const isDragging = dragIdx === songIdx;
+            const isOver = dragOverIdx === songIdx;
+
+            let dragClass = '';
+            if (isDragging) dragClass = 'dragging';
+            if (isOver && dragOverHalf === 'top') dragClass += ' drag-over-top';
+            if (isOver && dragOverHalf === 'bottom') dragClass += ' drag-over-bottom';
 
             return (
-              <div key={`${song.id}-${songIdx}`} className={`setlist-song ${isLocked ? 'locked' : ''}`}>
+              <div
+                key={`${song.id}-${songIdx}`}
+                className={`setlist-song ${isLocked ? 'locked' : ''} ${dragClass}`}
+                draggable={!isLocked}
+                onDragStart={(e) => handleDragStart(e, songIdx)}
+                onDragOver={(e) => handleDragOver(e, songIdx)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, songIdx)}
+                onDragEnd={handleDragEnd}
+              >
+                <div className="drag-handle" title={isLocked ? 'Locked - cannot drag' : 'Drag to reorder'}>
+                  {isLocked ? '' : '⠿'}
+                </div>
                 <div className="song-number">{songIdx + 1}</div>
                 <div>
                   <div className="song-title">{song.title}</div>
@@ -1736,28 +1839,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 </div>
                 <div className="song-time">+{Math.round(startTime)}m</div>
                 <div className="song-actions">
-                  {manualEditMode ? (
-                    <>
-                      <button className="action-btn" onClick={() => onMoveSong(setIdx, songIdx, songIdx - 1)} disabled={songIdx === 0} title="Move Up">
-                        ↑
-                      </button>
-                      <button className="action-btn" onClick={() => onMoveSong(setIdx, songIdx, songIdx + 1)} disabled={songIdx >= setlist.songs.length - 1} title="Move Down">
-                        ↓
-                      </button>
-                      <button className="action-btn" onClick={() => onRemoveSong(setIdx, songIdx)} title="Remove (send to Cold List)" style={{ color: 'var(--error)' }}>
-                        ✕
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button className={`action-btn ${isLocked ? 'locked' : ''}`} onClick={() => onToggleLock(setIdx, song.id)} title={isLocked ? 'Unlock' : 'Lock'}>
-                        {isLocked ? '🔒' : '🔓'}
-                      </button>
-                      <button className="action-btn" onClick={() => onSwap(setIdx, songIdx)} title="Swap" disabled={isLocked}>
-                        🔄
-                      </button>
-                    </>
-                  )}
+                  <button className={`action-btn ${isLocked ? 'locked' : ''}`} onClick={() => onToggleLock(setIdx, song.id)} title={isLocked ? 'Unlock' : 'Lock'}>
+                    {isLocked ? '🔒' : '🔓'}
+                  </button>
+                  <button className="action-btn" onClick={() => onRemoveSong(setIdx, songIdx)} title="Remove (send to Cold List)" style={{ color: 'var(--error)' }}>
+                    ✕
+                  </button>
                 </div>
               </div>
             );
@@ -2292,35 +2379,45 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function PrintView({ setlists }) {
+    function PrintView({ setlists, watermarkImg }) {
       return (
         <div className="print-only">
           {setlists.map((set) => (
-            <div key={set.id} className="set-page">
-              <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                <h1>{set.name}</h1>
-                <p>{set.songs.length} songs • {Math.round(set.totalTime)} minutes</p>
-              </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: 'left', borderBottom: '2px solid #000', padding: '8px' }}>#</th>
-                    <th style={{ textAlign: 'left', borderBottom: '2px solid #000', padding: '8px' }}>Title</th>
-                    <th style={{ textAlign: 'left', borderBottom: '2px solid #000', padding: '8px' }}>Artist</th>
-                    <th style={{ textAlign: 'left', borderBottom: '2px solid #000', padding: '8px' }}>Duration</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {set.songs.map((song, idx) => (
-                    <tr key={`print-${song.id}-${idx}`}>
-                      <td style={{ padding: '8px', borderBottom: '1px solid #ccc' }}>{idx + 1}</td>
-                      <td style={{ padding: '8px', borderBottom: '1px solid #ccc' }}>{song.title}</td>
-                      <td style={{ padding: '8px', borderBottom: '1px solid #ccc' }}>{song.artist}</td>
-                      <td style={{ padding: '8px', borderBottom: '1px solid #ccc' }}>{parseDuration(song.duration)} min</td>
+            <div key={set.id} className="set-page" style={{ position: 'relative' }}>
+              {watermarkImg && (
+                <div style={{
+                  position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                  width: '70%', height: '70%', opacity: 0.06, pointerEvents: 'none', zIndex: 0
+                }}>
+                  <img src={watermarkImg} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                </div>
+              )}
+              <div style={{ position: 'relative', zIndex: 1 }}>
+                <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                  <h1>{set.name}</h1>
+                  <p>{set.songs.length} songs • {Math.round(set.totalTime)} minutes</p>
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', borderBottom: '2px solid #000', padding: '8px' }}>#</th>
+                      <th style={{ textAlign: 'left', borderBottom: '2px solid #000', padding: '8px' }}>Title</th>
+                      <th style={{ textAlign: 'left', borderBottom: '2px solid #000', padding: '8px' }}>Artist</th>
+                      <th style={{ textAlign: 'left', borderBottom: '2px solid #000', padding: '8px' }}>Duration</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {set.songs.map((song, idx) => (
+                      <tr key={`print-${song.id}-${idx}`}>
+                        <td style={{ padding: '8px', borderBottom: '1px solid #ccc' }}>{idx + 1}</td>
+                        <td style={{ padding: '8px', borderBottom: '1px solid #ccc' }}>{song.title}</td>
+                        <td style={{ padding: '8px', borderBottom: '1px solid #ccc' }}>{song.artist}</td>
+                        <td style={{ padding: '8px', borderBottom: '1px solid #ccc' }}>{parseDuration(song.duration)} min</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ))}
         </div>
@@ -2426,7 +2523,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [settings, setSettings] = useState({ numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false });
       const [setlists, setSetlists] = useState([]);
       const [locked, setLocked] = useState(new Set());
-      const [manualEditMode, setManualEditMode] = useState(false);
+      // manualEditMode removed - replaced by always-on drag-and-drop
 
       const [bandModal, setBandModal] = useState(false);
       const [importModal, setImportModal] = useState(false);
@@ -2435,6 +2532,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [lastGenerationStats, setLastGenerationStats] = useState(null);
       const [imports, setImports] = useState([]);
       const [gigs, setGigs] = useState([]);
+      const [watermarkImg, setWatermarkImg] = useState(null);
 
       // PHASE 3A: active/cold library tab
       const [libraryTab, setLibraryTab] = useState('active');
@@ -2489,15 +2587,16 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const storedSettings = LS.get(LS_KEYS.bandSettings(activeBandId)) || { numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false };
         const storedImports = LS.get(LS_KEYS.bandImports(activeBandId)) || [];
         const storedGigs = LS.get(LS_KEYS.bandGigs(activeBandId)) || [];
+        const storedWatermark = LS.get(LS_KEYS.bandWatermark(activeBandId)) || null;
 
         setSongs(normalizedSongs);
         setSettings(storedSettings);
         setImports(storedImports);
         setGigs(storedGigs);
+        setWatermarkImg(storedWatermark);
 
         setSetlists([]);
         setLocked(new Set());
-        setManualEditMode(false);
         setLibraryTab('active');
       }, [activeBandId]);
 
@@ -2783,29 +2882,83 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard', 'success'));
       };
 
+      const handleWatermarkUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const dataUrl = ev.target.result;
+          setWatermarkImg(dataUrl);
+          if (activeBandId) LS.set(LS_KEYS.bandWatermark(activeBandId), dataUrl);
+          showToast('Watermark image set', 'success');
+        };
+        reader.readAsDataURL(file);
+      };
+
+      const clearWatermark = () => {
+        setWatermarkImg(null);
+        if (activeBandId) LS.set(LS_KEYS.bandWatermark(activeBandId), null);
+        showToast('Watermark removed', 'success');
+      };
+
       const exportPDF = () => {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
-        let yPos = 20;
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
+
+        const addWatermark = () => {
+          if (watermarkImg) {
+            const imgW = pageW * 0.7;
+            const imgH = pageH * 0.7;
+            const x = (pageW - imgW) / 2;
+            const y = (pageH - imgH) / 2;
+            doc.saveGraphicsState();
+            doc.setGState(new doc.GState({ opacity: 0.08 }));
+            try {
+              doc.addImage(watermarkImg, 'AUTO', x, y, imgW, imgH);
+            } catch (err) {
+              console.warn('Watermark image error:', err);
+            }
+            doc.restoreGraphicsState();
+          }
+        };
 
         setlists.forEach((set, i) => {
           if (i > 0) doc.addPage();
-          doc.setFontSize(16);
-          doc.text(set.name, 20, yPos);
-          yPos += 10;
-          doc.setFontSize(10);
-          doc.text(`${set.songs.length} songs • ${Math.round(set.totalTime)} minutes`, 20, yPos);
+          addWatermark();
+
+          let yPos = 25;
+          doc.setFontSize(20);
+          doc.setFont(undefined, 'bold');
+          doc.text(set.name.toUpperCase(), pageW / 2, yPos, { align: 'center' });
+          yPos += 8;
+
+          doc.setFontSize(11);
+          doc.setFont(undefined, 'normal');
+          doc.setTextColor(100, 100, 100);
+          doc.text(`${set.songs.length} songs \u2022 ${Math.round(set.totalTime)} minutes`, pageW / 2, yPos, { align: 'center' });
+          doc.setTextColor(0, 0, 0);
           yPos += 10;
 
+          doc.setLineWidth(0.5);
+          doc.line(20, yPos, pageW - 20, yPos);
+          yPos += 8;
+
+          doc.setFontSize(11);
           set.songs.forEach((song, idx) => {
-            if (yPos > 270) {
+            if (yPos > pageH - 20) {
               doc.addPage();
-              yPos = 20;
+              addWatermark();
+              yPos = 25;
             }
-            doc.text(`${idx + 1}. ${song.title} - ${song.artist} (${parseDuration(song.duration)} min)`, 20, yPos);
+            doc.setFont(undefined, 'bold');
+            const num = `${idx + 1}.`;
+            doc.text(num, 22, yPos);
+            doc.setFont(undefined, 'normal');
+            doc.text(`${song.title} - ${song.artist} (${parseDuration(song.duration)} min)`, 32, yPos);
             yPos += 7;
           });
-          yPos = 20;
         });
 
         doc.save(`setlist-${new Date().toISOString().slice(0, 10)}.pdf`);
@@ -3030,7 +3183,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
             <header className="header">
               <h1>SETLIST GENERATOR</h1>
-              <div className="subtitle">v3.5.0 — PDF Import • Gig Profiles • Enhanced Manual Arrange</div>
+              <div className="subtitle">v3.5.0 — PDF Import • Gig Profiles • Drag &amp; Drop • Watermark Export</div>
             </header>
 
             <div className="band-bar">
@@ -3076,9 +3229,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 onCopy={copyToClipboard}
                 onExportPDF={exportPDF}
                 songCount={activeSongs.length}
-                manualEditMode={manualEditMode}
-                onToggleManualEdit={setManualEditMode}
                 libraryTime={activeLibraryTime}
+                watermarkImg={watermarkImg}
+                onWatermarkUpload={handleWatermarkUpload}
+                onClearWatermark={clearWatermark}
               />
             </div>
 
@@ -3096,7 +3250,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem' }}>
                   <h3 className="panel-title">Generated Setlists</h3>
                   <div className="toolbar">
-                    <button className="btn btn-small" onClick={generate} disabled={manualEditMode}>Regenerate</button>
+                    <button className="btn btn-small" onClick={generate}>Regenerate</button>
                     <button className="btn btn-small" onClick={() => { setSetlists([]); setLocked(new Set()); setLastGenerationStats(null); }}>Clear</button>
                   </div>
                 </div>
@@ -3118,7 +3272,6 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       setLocked={setLocked}
                       onToggleLock={toggleLock}
                       onSwap={swapSong}
-                      manualEditMode={manualEditMode}
                       onMoveSong={moveSong}
                       onRemoveSong={removeSongFromSetlist}
                       onLockEntireSet={lockEntireSet}
@@ -3157,7 +3310,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             />
           </div>
 
-          <PrintView setlists={setlists} />
+          <PrintView setlists={setlists} watermarkImg={watermarkImg} />
         </>
       );
     }
