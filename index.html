@@ -142,6 +142,13 @@
     .setlist-song.drag-over-bottom { border-bottom: 3px solid var(--accent); margin-bottom: -2px; }
     .drag-handle { cursor: grab; color: var(--text-muted); font-size: 1rem; user-select: none; display: flex; align-items: center; }
     .drag-handle:active { cursor: grabbing; }
+    .drop-zone-between { padding: .6rem; border: 2px dashed var(--border); border-radius: 8px; text-align: center; color: var(--text-muted); font-size: .8rem; margin-top: .35rem; transition: .2s; }
+    .drop-zone-between:hover, .drop-zone-between.drag-over { border-color: var(--accent); color: var(--accent); background: rgba(255,107,53,.06); }
+    .setlist.drag-target { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .move-to-set-select { font-size: .7rem; padding: .1rem .2rem; background: var(--primary); color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; max-width: 70px; }
+    .move-to-set-select:hover { border-color: var(--accent); color: var(--text); }
+    .reset-balance-bar { display: flex; gap: .5rem; align-items: center; }
+    .reset-balance-bar .btn { font-size: .8rem; }
 
     .toast-container { position: fixed; bottom: 1.25rem; left: 50%; transform: translateX(-50%); z-index: 2000; }
     .toast {
@@ -1721,67 +1728,17 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onMoveSong, onRemoveSong, onLockEntireSet }) {
+    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onMoveSong, onRemoveSong, onLockEntireSet, onDragStart, onDragEnd, onDragOverSong, onDragOverSet, onDropOnSong, onDropOnSet, onMoveToSet, dragState, totalSets }) {
       let runningTime = 0;
       const allLocked = setlist.songs.length > 0 && setlist.songs.every(s => locked.has(`${setIdx}:${s.id}`));
-
-      const [dragIdx, setDragIdx] = useState(null);
-      const [dragOverIdx, setDragOverIdx] = useState(null);
-      const [dragOverHalf, setDragOverHalf] = useState(null);
-
-      const handleDragStart = (e, songIdx) => {
-        const isLocked = locked.has(`${setIdx}:${setlist.songs[songIdx].id}`);
-        if (isLocked) { e.preventDefault(); return; }
-        setDragIdx(songIdx);
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', `${setIdx}:${songIdx}`);
-      };
-
-      const handleDragOver = (e, songIdx) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        const rect = e.currentTarget.getBoundingClientRect();
-        const midY = rect.top + rect.height / 2;
-        setDragOverIdx(songIdx);
-        setDragOverHalf(e.clientY < midY ? 'top' : 'bottom');
-      };
-
-      const handleDragLeave = (e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) {
-          setDragOverIdx(null);
-          setDragOverHalf(null);
-        }
-      };
-
-      const handleDrop = (e, songIdx) => {
-        e.preventDefault();
-        const data = e.dataTransfer.getData('text/plain');
-        const [srcSetIdx, srcSongIdx] = data.split(':').map(Number);
-
-        if (srcSetIdx === setIdx && dragIdx !== null) {
-          let toIdx = songIdx;
-          if (dragOverHalf === 'bottom' && songIdx > dragIdx) toIdx = songIdx;
-          else if (dragOverHalf === 'top' && songIdx < dragIdx) toIdx = songIdx;
-          else if (dragOverHalf === 'bottom') toIdx = songIdx;
-          else toIdx = songIdx;
-
-          if (dragIdx !== toIdx) {
-            onMoveSong(setIdx, dragIdx, toIdx);
-          }
-        }
-        setDragIdx(null);
-        setDragOverIdx(null);
-        setDragOverHalf(null);
-      };
-
-      const handleDragEnd = () => {
-        setDragIdx(null);
-        setDragOverIdx(null);
-        setDragOverHalf(null);
-      };
+      const isSetDragTarget = dragState && dragState.active && dragState.overSetIdx === setIdx && dragState.fromSetIdx !== setIdx;
 
       return (
-        <div className="setlist">
+        <div
+          className={`setlist${isSetDragTarget ? ' drag-target' : ''}`}
+          onDragOver={(e) => onDragOverSet(e, setIdx)}
+          onDrop={(e) => onDropOnSet(e, setIdx)}
+        >
           <div className="setlist-header">
             <div>
               <h4>{setlist.name}</h4>
@@ -1805,26 +1762,24 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             const startTime = runningTime;
             runningTime += Number(song.duration) || 0;
             const isLocked = locked.has(`${setIdx}:${song.id}`);
-            const isDragging = dragIdx === songIdx;
-            const isOver = dragOverIdx === songIdx;
+            const isDragging = dragState && dragState.active && dragState.fromSetIdx === setIdx && dragState.fromSongIdx === songIdx;
+            const isOver = dragState && dragState.active && dragState.overSetIdx === setIdx && dragState.overSongIdx === songIdx;
 
             let dragClass = '';
             if (isDragging) dragClass = 'dragging';
-            if (isOver && dragOverHalf === 'top') dragClass += ' drag-over-top';
-            if (isOver && dragOverHalf === 'bottom') dragClass += ' drag-over-bottom';
+            if (isOver) dragClass += ' drag-over-bottom';
 
             return (
               <div
                 key={`${song.id}-${songIdx}`}
                 className={`setlist-song ${isLocked ? 'locked' : ''} ${dragClass}`}
                 draggable={!isLocked}
-                onDragStart={(e) => handleDragStart(e, songIdx)}
-                onDragOver={(e) => handleDragOver(e, songIdx)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, songIdx)}
-                onDragEnd={handleDragEnd}
+                onDragStart={(e) => onDragStart(e, song, setIdx, songIdx)}
+                onDragOver={(e) => onDragOverSong(e, setIdx, songIdx)}
+                onDrop={(e) => onDropOnSong(e, setIdx, songIdx)}
+                onDragEnd={onDragEnd}
               >
-                <div className="drag-handle" title={isLocked ? 'Locked - cannot drag' : 'Drag to reorder'}>
+                <div className="drag-handle" title={isLocked ? 'Locked - cannot drag' : 'Drag to reorder or move to another set'}>
                   {isLocked ? '' : '⠿'}
                 </div>
                 <div className="song-number">{songIdx + 1}</div>
@@ -1839,6 +1794,19 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 </div>
                 <div className="song-time">+{Math.round(startTime)}m</div>
                 <div className="song-actions">
+                  {totalSets > 1 && !isLocked && (
+                    <select
+                      className="move-to-set-select"
+                      value=""
+                      onChange={(e) => { if (e.target.value !== '') onMoveToSet(setIdx, songIdx, Number(e.target.value)); }}
+                      title="Move to another set"
+                    >
+                      <option value="" disabled>Set</option>
+                      {Array.from({ length: totalSets }, (_, i) => i).filter(i => i !== setIdx).map(i => (
+                        <option key={i} value={i}>Set {i + 1}</option>
+                      ))}
+                    </select>
+                  )}
                   <button className={`action-btn ${isLocked ? 'locked' : ''}`} onClick={() => onToggleLock(setIdx, song.id)} title={isLocked ? 'Unlock' : 'Lock'}>
                     {isLocked ? '🔒' : '🔓'}
                   </button>
@@ -1849,6 +1817,17 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               </div>
             );
           })}
+
+          {dragState && dragState.active && dragState.fromSetIdx !== setIdx && (
+            <div
+              className="drop-zone-between"
+              onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
+              onDragLeave={(e) => { e.currentTarget.classList.remove('drag-over'); }}
+              onDrop={(e) => { e.currentTarget.classList.remove('drag-over'); onDropOnSet(e, setIdx); }}
+            >
+              Drop here to add to {setlist.name}
+            </div>
+          )}
         </div>
       );
     }
@@ -2523,7 +2502,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [settings, setSettings] = useState({ numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false });
       const [setlists, setSetlists] = useState([]);
       const [locked, setLocked] = useState(new Set());
-      // manualEditMode removed - replaced by always-on drag-and-drop
+      // Cross-set drag-and-drop state
+      const defaultDragState = { active: false, song: null, fromSetIdx: null, fromSongIdx: null, overSetIdx: null, overSongIdx: null };
+      const [dragState, setDragState] = useState(defaultDragState);
+      const [originalSetlists, setOriginalSetlists] = useState(null);
 
       const [bandModal, setBandModal] = useState(false);
       const [importModal, setImportModal] = useState(false);
@@ -3087,6 +3069,147 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         showToast(lock ? 'Set locked' : 'Set unlocked', 'success');
       };
 
+      // --- Cross-Set Drag-and-Drop Handlers ---
+
+      const handleDragStart = (e, song, setIdx, songIdx) => {
+        if (locked.has(`${setIdx}:${song.id}`)) { e.preventDefault(); return; }
+        if (!originalSetlists) {
+          setOriginalSetlists(JSON.parse(JSON.stringify(setlists)));
+        }
+        try { e.dataTransfer.setData('text/plain', song.title); } catch (_) {}
+        e.dataTransfer.effectAllowed = 'move';
+        setDragState({ active: true, song, fromSetIdx: setIdx, fromSongIdx: songIdx, overSetIdx: null, overSongIdx: null });
+      };
+
+      const handleDragEnd = () => {
+        setDragState(defaultDragState);
+      };
+
+      const handleDragOverSong = (e, setIdx, songIdx) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        setDragState(prev => ({ ...prev, overSetIdx: setIdx, overSongIdx: songIdx }));
+      };
+
+      const handleDragOverSet = (e, setIdx) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        setDragState(prev => {
+          if (prev.overSongIdx !== null) return prev;
+          return { ...prev, overSetIdx: setIdx, overSongIdx: null };
+        });
+      };
+
+      const reorderSongWithinSet = (setIdx, fromIdx, toIdx) => {
+        const set = setlists[setIdx];
+        if (!set || fromIdx === toIdx) return;
+        const newSongs = [...set.songs];
+        const [moved] = newSongs.splice(fromIdx, 1);
+        newSongs.splice(toIdx, 0, moved);
+        const newSetlists = [...setlists];
+        newSetlists[setIdx] = { ...set, songs: newSongs, totalTime: newSongs.reduce((sum, s) => sum + (Number(parseDuration(s.duration)) || 0), 0) };
+        setSetlists(newSetlists);
+      };
+
+      const moveSongBetweenSets = (fromSetIdx, toSetIdx, fromSongIdx, toSongIdx) => {
+        const newSetlists = JSON.parse(JSON.stringify(setlists));
+        const fromSet = newSetlists[fromSetIdx];
+        const toSet = newSetlists[toSetIdx];
+        if (!fromSet || !toSet) return;
+
+        const [movedSong] = fromSet.songs.splice(fromSongIdx, 1);
+        const insertIdx = (toSongIdx !== null && toSongIdx !== undefined) ? Math.min(toSongIdx, toSet.songs.length) : toSet.songs.length;
+        toSet.songs.splice(insertIdx, 0, movedSong);
+
+        fromSet.totalTime = fromSet.songs.reduce((sum, s) => sum + (Number(parseDuration(s.duration)) || 0), 0);
+        toSet.totalTime = toSet.songs.reduce((sum, s) => sum + (Number(parseDuration(s.duration)) || 0), 0);
+
+        // Migrate lock from source set to destination set
+        const oldKey = `${fromSetIdx}:${movedSong.id}`;
+        if (locked.has(oldKey)) {
+          const newLocked = new Set(locked);
+          newLocked.delete(oldKey);
+          newLocked.add(`${toSetIdx}:${movedSong.id}`);
+          setLocked(newLocked);
+        }
+
+        setSetlists(newSetlists);
+        showToast(`Moved "${movedSong.title}" to ${toSet.name}`, 'success');
+      };
+
+      const handleDropOnSong = (e, toSetIdx, toSongIdx) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!dragState.active) return;
+        const { fromSetIdx, fromSongIdx } = dragState;
+        if (fromSetIdx === toSetIdx) {
+          reorderSongWithinSet(toSetIdx, fromSongIdx, toSongIdx);
+        } else {
+          moveSongBetweenSets(fromSetIdx, toSetIdx, fromSongIdx, toSongIdx);
+        }
+        handleDragEnd();
+      };
+
+      const handleDropOnSet = (e, toSetIdx) => {
+        e.preventDefault();
+        if (!dragState.active) return;
+        const { fromSetIdx, fromSongIdx } = dragState;
+        if (fromSetIdx !== toSetIdx) {
+          moveSongBetweenSets(fromSetIdx, toSetIdx, fromSongIdx, null);
+        }
+        handleDragEnd();
+      };
+
+      const moveToSetDropdown = (fromSetIdx, songIdx, toSetIdx) => {
+        if (fromSetIdx === toSetIdx) return;
+        if (!originalSetlists) {
+          setOriginalSetlists(JSON.parse(JSON.stringify(setlists)));
+        }
+        moveSongBetweenSets(fromSetIdx, toSetIdx, songIdx, null);
+      };
+
+      const resetToOriginal = () => {
+        if (!originalSetlists) return;
+        setSetlists(originalSetlists);
+        setLocked(new Set());
+        setOriginalSetlists(null);
+        showToast('Order reset to original', 'success');
+      };
+
+      const balanceSets = () => {
+        if (setlists.length < 2) return;
+        const allSongs = setlists.flatMap(s => s.songs);
+        const sorted = [...allSongs].sort((a, b) => (Number(parseDuration(b.duration)) || 0) - (Number(parseDuration(a.duration)) || 0));
+        const buckets = setlists.map(() => []);
+        const totals = setlists.map(() => 0);
+
+        sorted.forEach(song => {
+          let minIdx = 0;
+          for (let i = 1; i < totals.length; i++) {
+            if (totals[i] < totals[minIdx]) minIdx = i;
+          }
+          buckets[minIdx].push(song);
+          totals[minIdx] += Number(parseDuration(song.duration)) || 0;
+        });
+
+        if (!originalSetlists) {
+          setOriginalSetlists(JSON.parse(JSON.stringify(setlists)));
+        }
+
+        const newSetlists = setlists.map((set, i) => ({
+          ...set,
+          songs: buckets[i],
+          totalTime: totals[i]
+        }));
+        setSetlists(newSetlists);
+        setLocked(new Set());
+
+        const times = totals.map(t => Math.round(t));
+        const spread = Math.max(...times) - Math.min(...times);
+        showToast(`Sets balanced (spread: ${spread} min)`, 'success');
+      };
+
       const switchBand = (bandId) => {
         setActiveBandId(bandId);
         LS.set(LS_KEYS.active, bandId);
@@ -3166,7 +3289,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         if (!gig || !gig.setlists) return showToast('No saved setlists for this gig', 'warning');
         setSetlists(gig.setlists);
         setLocked(new Set());
-        setManualEditMode(false);
+        setOriginalSetlists(null);
         setLastGenerationStats(null);
         showToast(`Loaded setlists from "${gig.name}"`, 'success');
         setGigModal(false);
@@ -3250,8 +3373,16 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem' }}>
                   <h3 className="panel-title">Generated Setlists</h3>
                   <div className="toolbar">
+                    <div className="reset-balance-bar">
+                      {originalSetlists && (
+                        <button className="btn btn-small" onClick={resetToOriginal} title="Reset to original generated order">&#8617; Reset Order</button>
+                      )}
+                      {setlists.length > 1 && (
+                        <button className="btn btn-small" onClick={balanceSets} title="Evenly redistribute songs across sets">&#9878; Balance Sets</button>
+                      )}
+                    </div>
                     <button className="btn btn-small" onClick={generate}>Regenerate</button>
-                    <button className="btn btn-small" onClick={() => { setSetlists([]); setLocked(new Set()); setLastGenerationStats(null); }}>Clear</button>
+                    <button className="btn btn-small" onClick={() => { setSetlists([]); setLocked(new Set()); setOriginalSetlists(null); setLastGenerationStats(null); }}>Clear</button>
                   </div>
                 </div>
 
@@ -3275,6 +3406,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       onMoveSong={moveSong}
                       onRemoveSong={removeSongFromSetlist}
                       onLockEntireSet={lockEntireSet}
+                      onDragStart={handleDragStart}
+                      onDragEnd={handleDragEnd}
+                      onDragOverSong={handleDragOverSong}
+                      onDragOverSet={handleDragOverSet}
+                      onDropOnSong={handleDropOnSong}
+                      onDropOnSet={handleDropOnSet}
+                      onMoveToSet={moveToSetDropdown}
+                      dragState={dragState}
+                      totalSets={setlists.length}
                     />
                   ))}
                 </div>
