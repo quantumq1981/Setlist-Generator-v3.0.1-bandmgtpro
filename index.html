@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Setlist Generator v3.5.0 — Phase 4: PDF Import, Gig Profiles, Enhanced UX</title>
+  <title>Setlist Generator v3.6.0 — Phase 5: Locked Openers/Closers, Venue Integration, PDF Enhancements</title>
 
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -17,7 +17,7 @@
     }
   </script>
 
-  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Manrope:wght@400;500;600;700&family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <style>
     :root {
@@ -173,13 +173,13 @@
     .generation-stats strong { color: var(--accent); }
 
     @media print {
-      @page { size: letter portrait; margin: 0.5in; }
+      @page { size: letter portrait; margin: 0.25in; }
       body { background: #fff; color: #000; }
       .no-print { display: none !important; }
       .print-only { display: block; }
       .set-page {
         page-break-after: always; break-after: page;
-        font-family: "Times New Roman", serif; font-size: 19pt; font-weight: bold; line-height: 1.0;
+        font-family: 'Oswald', 'Helvetica Neue', Arial, sans-serif; font-size: 20pt; font-weight: bold; line-height: 1.0;
         position: relative; overflow: hidden;
       }
       .set-page:last-child { page-break-after: auto; break-after: auto; }
@@ -1157,7 +1157,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         useEnergyCurve = true,
         forceOpener = false,
         forceCloser = true,
-        seedSets = null,
+        lockedOpeners = [],
+        lockedClosers = [],
         lockPlan = null
       } = opts || {};
 
@@ -1225,56 +1226,73 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           for (const [idx, song] of lockedSlots.entries()) {
             setArr[idx] = song;
             setUsedIds.add(song.id);
-            current += Number(song.duration) || 0;
+            current += song.duration || 0;
           }
         } else {
           setArr = [];
         }
 
         if (lockedSlots.size === 0 && forceOpener) {
-          const openerStyles = ['swing', 'midtempo', 'groove'];
-          const openers = pool.filter(s => isAvailable(s) && openerStyles.includes(s.style));
-          if (openers.length > 0) {
-            const opener = openers[Math.floor(Math.random() * openers.length)];
+          let opener = null;
+
+          // Prefer user-selected locked openers
+          if (lockedOpeners.length > 0) {
+            const availableLockedOpeners = lockedOpeners
+              .map(id => pool.find(s => s.id === id))
+              .filter(s => s && isAvailable(s));
+            if (availableLockedOpeners.length > 0) {
+              opener = availableLockedOpeners[Math.floor(Math.random() * availableLockedOpeners.length)];
+            }
+          }
+
+          // Fallback to style-based opener if no locked opener available
+          if (!opener) {
+            const openerStyles = ['uptempo', 'swing', 'midtempo', 'groove'];
+            const openers = pool.filter(s => isAvailable(s) && openerStyles.includes(s.style));
+            if (openers.length > 0) {
+              opener = openers[Math.floor(Math.random() * openers.length)];
+            }
+          }
+
+          if (opener) {
             setArr[0] = opener;
             setUsedIds.add(opener.id);
             markUsed(opener);
-            current += Number(opener.duration) || 0;
+            current += opener.duration || 0;
           }
         }
 
-        const lastSongInSet = () => {
+        let lastAddedSong = null;
+        // Track last added song directly instead of scanning backwards each iteration
+        if (lockedSlots.size > 0) {
           for (let i = setArr.length - 1; i >= 0; i--) {
-            if (setArr[i]) return setArr[i];
+            if (setArr[i]) { lastAddedSong = setArr[i]; break; }
           }
-          return null;
-        };
+        }
 
         let guard = 0;
-        // Use global MAX_GUARD to control max iterations when filling a set.
         const maxGuard = MAX_GUARD;
 
+        // Pre-build available pool index for faster candidate lookup
         while (current < setDuration - 0.5 && guard < maxGuard) {
           guard++;
           const remaining = setDuration - current;
 
-          let insertIndex = setArr.findIndex(x => x === null);
+          let insertIndex = setArr.indexOf(null);
           if (insertIndex === -1) insertIndex = setArr.length;
 
-          let candidates = pool.filter(song => {
-            if (!isAvailable(song)) return false;
-            if (setUsedIds.has(song.id)) return false;
+          const durMin = Math.max(0.5, remaining - DURATION_TOLERANCE_NEGATIVE);
+          const durMax = remaining + DURATION_TOLERANCE_POSITIVE;
 
-            const dur = Number(song.duration) || 0;
-            // Accept songs whose durations fall within a tolerance window relative to the remaining time.
-            if (dur <= remaining + DURATION_TOLERANCE_POSITIVE && dur >= Math.max(0.5, remaining - DURATION_TOLERANCE_NEGATIVE)) {
-              return true;
-            }
-            return false;
+          let candidates = pool.filter(song => {
+            if (setUsedIds.has(song.id)) return false;
+            if (!isAvailable(song)) return false;
+            const dur = song.duration;
+            return dur <= durMax && dur >= durMin;
           });
 
           if (candidates.length === 0) {
-            candidates = pool.filter(s => isAvailable(s) && !setUsedIds.has(s.id));
+            candidates = pool.filter(s => !setUsedIds.has(s.id) && isAvailable(s));
             if (candidates.length === 0) {
               if (!allowSongReuse) {
                 generationWarnings.add(`Set ${setNum + 1}: Ran out of unique songs at ${Math.round(current)}min.`);
@@ -1284,10 +1302,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             }
           }
 
-          const last = lastSongInSet();
+          const last = lastAddedSong;
 
           const scored = candidates.map(s => {
-            const dur = Number(s.duration) || 0;
+            const dur = s.duration || 0;
             const timePenalty = Math.abs(remaining - dur);
 
             let diversityPenalty = 0;
@@ -1320,7 +1338,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           setArr[insertIndex] = pick;
           setUsedIds.add(pick.id);
           markUsed(pick);
-          current += Number(pick.duration) || 0;
+          current += pick.duration;
+          lastAddedSong = pick;
           totalAttempts++;
 
           if (current > setDuration + 8) break;
@@ -1333,9 +1352,35 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           const lastSong = setSongs[lastIdx];
           const closerStyles = ['ballad', 'midtempo', 'swing'];
 
-          if (!closerStyles.includes(lastSong.style)) {
-            // Temporarily unmark last song so it doesn't block the pool and
-            // so we can correctly evaluate available closers
+          // Check if a locked closer should be used
+          let useLockedCloser = false;
+          let lockedCloserSong = null;
+
+          if (lockedClosers.length > 0) {
+            const availableLockedClosers = lockedClosers
+              .map(id => pool.find(s => s.id === id))
+              .filter(s => s && (s.id === lastSong.id || (allowSongReuse || !setSongs.some((x, xi) => xi !== lastIdx && x.id === s.id))));
+
+            // Find one that's available globally
+            if (!allowSongReuse) unmarkUsed(lastSong);
+            const reallyAvailable = availableLockedClosers.filter(s => s.id === lastSong.id || isAvailable(s));
+            if (reallyAvailable.length > 0) {
+              lockedCloserSong = reallyAvailable[Math.floor(Math.random() * reallyAvailable.length)];
+              useLockedCloser = true;
+            }
+            if (!useLockedCloser && !allowSongReuse) markUsed(lastSong);
+          }
+
+          if (useLockedCloser && lockedCloserSong) {
+            if (lockedCloserSong.id !== lastSong.id) {
+              setSongs[lastIdx] = lockedCloserSong;
+              markUsed(lockedCloserSong);
+            } else {
+              // Locked closer is already the last song, re-mark it
+              if (!allowSongReuse) markUsed(lastSong);
+            }
+          } else if (!closerStyles.includes(lastSong.style)) {
+            // Fallback to style-based closer selection
             if (!allowSongReuse) unmarkUsed(lastSong);
 
             const closerCandidates = pool.filter(s =>
@@ -1346,15 +1391,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               const closer = closerCandidates[Math.floor(Math.random() * closerCandidates.length)];
               setSongs[lastIdx] = closer;
               markUsed(closer);
-              // lastSong is no longer in the set, leave it unmarked so it can be used in later sets
             } else {
-              // No suitable closer found — re-mark the original last song
               if (!allowSongReuse) markUsed(lastSong);
             }
           }
         }
 
-        const totalTime = setSongs.reduce((sum, s) => sum + (Number(s.duration) || 0), 0);
+        const totalTime = setSongs.reduce((sum, s) => sum + (s.duration || 0), 0);
         results.push({
           id: genId(),
           name: `Set ${setNum + 1}`,
@@ -1561,7 +1604,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, songCount, libraryTime, watermarkImg, onWatermarkUpload, onClearWatermark }) {
+    function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, songCount, libraryTime, watermarkImg, onWatermarkUpload, onClearWatermark, activeSongs }) {
       return (
         <div className="panel">
           <div className="panel-header">
@@ -1618,7 +1661,85 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             </div>
           </div>
 
-          
+          {/* Locked Openers Selection */}
+          {settings.forceOpener && (
+            <div className="input-group" style={{ marginTop: '.5rem' }}>
+              <label style={{ textTransform: 'none', fontSize: '.75rem' }}>
+                Locked Set Openers ({(settings.lockedOpeners || []).length} selected)
+              </label>
+              <select
+                value=""
+                onChange={e => {
+                  if (!e.target.value) return;
+                  const id = e.target.value;
+                  const current = settings.lockedOpeners || [];
+                  if (!current.includes(id)) {
+                    onChange({ ...settings, lockedOpeners: [...current, id] });
+                  }
+                }}
+                style={{ fontSize: '.8rem' }}
+              >
+                <option value="">+ Add a locked opener...</option>
+                {(activeSongs || []).filter(s => !(settings.lockedOpeners || []).includes(s.id)).map(s => (
+                  <option key={s.id} value={s.id}>{s.title} - {s.artist}</option>
+                ))}
+              </select>
+              {(settings.lockedOpeners || []).length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.3rem', marginTop: '.3rem' }}>
+                  {(settings.lockedOpeners || []).map(id => {
+                    const song = (activeSongs || []).find(s => s.id === id);
+                    return song ? (
+                      <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: '.25rem', background: 'var(--primary)', border: '1px solid var(--success)', borderRadius: '6px', padding: '.2rem .5rem', fontSize: '.75rem', color: 'var(--success)' }}>
+                        {song.title}
+                        <span style={{ cursor: 'pointer', opacity: 0.7 }} onClick={() => onChange({ ...settings, lockedOpeners: (settings.lockedOpeners || []).filter(x => x !== id) })}>x</span>
+                      </span>
+                    ) : null;
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Locked Closers Selection */}
+          {settings.forceCloser && (
+            <div className="input-group" style={{ marginTop: '.5rem' }}>
+              <label style={{ textTransform: 'none', fontSize: '.75rem' }}>
+                Locked Set Closers ({(settings.lockedClosers || []).length} selected)
+              </label>
+              <select
+                value=""
+                onChange={e => {
+                  if (!e.target.value) return;
+                  const id = e.target.value;
+                  const current = settings.lockedClosers || [];
+                  if (!current.includes(id)) {
+                    onChange({ ...settings, lockedClosers: [...current, id] });
+                  }
+                }}
+                style={{ fontSize: '.8rem' }}
+              >
+                <option value="">+ Add a locked closer...</option>
+                {(activeSongs || []).filter(s => !(settings.lockedClosers || []).includes(s.id)).map(s => (
+                  <option key={s.id} value={s.id}>{s.title} - {s.artist}</option>
+                ))}
+              </select>
+              {(settings.lockedClosers || []).length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.3rem', marginTop: '.3rem' }}>
+                  {(settings.lockedClosers || []).map(id => {
+                    const song = (activeSongs || []).find(s => s.id === id);
+                    return song ? (
+                      <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: '.25rem', background: 'var(--primary)', border: '1px solid var(--ballad)', borderRadius: '6px', padding: '.2rem .5rem', fontSize: '.75rem', color: 'var(--ballad)' }}>
+                        {song.title}
+                        <span style={{ cursor: 'pointer', opacity: 0.7 }} onClick={() => onChange({ ...settings, lockedClosers: (settings.lockedClosers || []).filter(x => x !== id) })}>x</span>
+                      </span>
+                    ) : null;
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+
 {/* PHASE 3B: Tonal Gravity */}
 <div style={{ 
   marginTop: '1rem', 
@@ -2377,16 +2498,16 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   <img src={watermarkImg} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
               )}
-              <div style={{ position: 'relative', zIndex: 1, padding: '0.5in' }}>
-                <div style={{ fontSize: '19pt', fontWeight: 'bold', textTransform: 'uppercase', textDecoration: 'underline', marginBottom: '20px' }}>
+              <div style={{ position: 'relative', zIndex: 1, padding: '0.25in' }}>
+                <div style={{ fontFamily: "'Oswald', 'Helvetica Neue', Arial, sans-serif", fontSize: '20pt', fontWeight: 'bold', textTransform: 'uppercase', textDecoration: 'underline', marginBottom: '18px' }}>
                   {set.name}
                 </div>
-                <div style={{ fontSize: '19pt', fontWeight: 'bold', marginBottom: '20px' }}>
-                  {set.songs.length} songs • {Math.round(set.totalTime)} minutes
+                <div style={{ fontFamily: "'Oswald', 'Helvetica Neue', Arial, sans-serif", fontSize: '16pt', fontWeight: 'bold', marginBottom: '18px' }}>
+                  {set.songs.length} songs | {Math.round(set.totalTime)} minutes
                 </div>
                 <div>
                   {set.songs.map((song, idx) => (
-                    <div key={`print-${song.id}-${idx}`} style={{ fontSize: '19pt', fontWeight: 'bold', lineHeight: 1.0, marginBottom: '10px' }}>
+                    <div key={`print-${song.id}-${idx}`} style={{ fontFamily: "'Oswald', 'Helvetica Neue', Arial, sans-serif", fontSize: '20pt', fontWeight: 'bold', lineHeight: 1.0, marginBottom: '8px' }}>
                       {idx + 1}. {song.title}{song.artist ? ` - ${song.artist}` : ''} ({parseDuration(song.duration)} min)
                     </div>
                   ))}
@@ -2399,36 +2520,59 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     }
 
     /******************* GIG PROFILES *******************/
-    function GigProfileModal({ open, onClose, gigs, onCreateGig, onDeleteGig, onLoadGig, onSaveToGig, setlists, bandName }) {
-      const [form, setForm] = useState({ name: '', venue: '', date: '', notes: '' });
+    function GigProfileModal({ open, onClose, gigs, onCreateGig, onDeleteGig, onLoadGig, onSaveToGig, onExportGigCSV, setlists, bandName }) {
+      const [form, setForm] = useState({
+        name: '', venue: '', date: '', notes: '',
+        // Venue info fields (common across GigSalad, Sonicbids, Bands in Town, Gigmit, etc.)
+        venueCity: '', venueState: '', venueZip: '',
+        venueType: '', // bar, club, festival, private, corporate, theater, outdoor
+        venueCapacity: '',
+        contactName: '', contactEmail: '', contactPhone: '',
+        loadInTime: '', soundCheckTime: '', setStartTime: '',
+        compensation: '', // flat fee, door split, percentage, etc.
+        eventType: '', // wedding, corporate, festival, bar gig, private party
+        ageRestriction: '', // all ages, 18+, 21+
+        backlineProvided: false,
+        paProvided: false
+      });
+      const [showVenueDetails, setShowVenueDetails] = useState(false);
 
       if (!open) return null;
 
       const handleCreate = () => {
         if (!form.name.trim()) return;
         onCreateGig(form);
-        setForm({ name: '', venue: '', date: '', notes: '' });
+        setForm({
+          name: '', venue: '', date: '', notes: '',
+          venueCity: '', venueState: '', venueZip: '',
+          venueType: '', venueCapacity: '',
+          contactName: '', contactEmail: '', contactPhone: '',
+          loadInTime: '', soundCheckTime: '', setStartTime: '',
+          compensation: '', eventType: '', ageRestriction: '',
+          backlineProvided: false, paProvided: false
+        });
       };
 
       return (
         <div className="modal-backdrop" onClick={onClose}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(620px, 95vw)' }}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(720px, 95vw)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="panel-header">
               <h3 className="panel-title">Gig Profiles — {bandName}</h3>
               <button className="btn btn-small" onClick={onClose}>Close</button>
             </div>
 
             <div style={{ marginBottom: '1rem', fontSize: '.85rem', color: 'var(--text-muted)' }}>
-              Create gig profiles for specific venues and dates. Save and load setlists for each gig.
+              Create gig profiles for specific venues and dates. Save and load setlists for each gig. Export gig setlists as CSV.
             </div>
 
+            {/* Basic Gig Info */}
             <div className="set-config">
               <div className="input-group">
                 <label>Gig Name*</label>
                 <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Friday at The Roxy" />
               </div>
               <div className="input-group">
-                <label>Venue</label>
+                <label>Venue Name</label>
                 <input value={form.venue} onChange={e => setForm({ ...form, venue: e.target.value })} placeholder="e.g. The Roxy" />
               </div>
             </div>
@@ -2438,9 +2582,144 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
               </div>
               <div className="input-group">
-                <label>Notes</label>
-                <input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Optional notes" />
+                <label>Event Type</label>
+                <select value={form.eventType} onChange={e => setForm({ ...form, eventType: e.target.value })}>
+                  <option value="">Select...</option>
+                  <option value="bar_gig">Bar / Club Gig</option>
+                  <option value="festival">Festival</option>
+                  <option value="corporate">Corporate Event</option>
+                  <option value="wedding">Wedding / Reception</option>
+                  <option value="private_party">Private Party</option>
+                  <option value="theater">Theater / Concert Hall</option>
+                  <option value="outdoor">Outdoor Event</option>
+                  <option value="house_concert">House Concert</option>
+                  <option value="charity">Charity / Benefit</option>
+                  <option value="other">Other</option>
+                </select>
               </div>
+            </div>
+
+            {/* Expandable Venue Details */}
+            <button
+              className="btn btn-small"
+              onClick={() => setShowVenueDetails(!showVenueDetails)}
+              style={{ width: '100%', marginBottom: '.75rem', textAlign: 'left' }}
+            >
+              {showVenueDetails ? '▾' : '▸'} Venue Details &amp; Contact Info
+            </button>
+
+            {showVenueDetails && (
+              <div style={{ background: 'var(--primary)', border: '1px solid var(--border)', borderRadius: '8px', padding: '.75rem', marginBottom: '.75rem' }}>
+                <div className="set-config">
+                  <div className="input-group">
+                    <label>City</label>
+                    <input value={form.venueCity} onChange={e => setForm({ ...form, venueCity: e.target.value })} placeholder="City" />
+                  </div>
+                  <div className="input-group">
+                    <label>State/Region</label>
+                    <input value={form.venueState} onChange={e => setForm({ ...form, venueState: e.target.value })} placeholder="State" />
+                  </div>
+                </div>
+                <div className="set-config">
+                  <div className="input-group">
+                    <label>ZIP/Postal Code</label>
+                    <input value={form.venueZip} onChange={e => setForm({ ...form, venueZip: e.target.value })} placeholder="ZIP" />
+                  </div>
+                  <div className="input-group">
+                    <label>Venue Type</label>
+                    <select value={form.venueType} onChange={e => setForm({ ...form, venueType: e.target.value })}>
+                      <option value="">Select...</option>
+                      <option value="bar">Bar / Pub</option>
+                      <option value="club">Night Club</option>
+                      <option value="restaurant">Restaurant</option>
+                      <option value="theater">Theater</option>
+                      <option value="arena">Arena / Stadium</option>
+                      <option value="outdoor_amphitheater">Outdoor Amphitheater</option>
+                      <option value="festival_grounds">Festival Grounds</option>
+                      <option value="hotel_ballroom">Hotel / Ballroom</option>
+                      <option value="community_center">Community Center</option>
+                      <option value="private_residence">Private Residence</option>
+                      <option value="winery_brewery">Winery / Brewery</option>
+                      <option value="coffeehouse">Coffeehouse</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="set-config">
+                  <div className="input-group">
+                    <label>Capacity</label>
+                    <input value={form.venueCapacity} onChange={e => setForm({ ...form, venueCapacity: e.target.value })} placeholder="e.g. 200" />
+                  </div>
+                  <div className="input-group">
+                    <label>Age Restriction</label>
+                    <select value={form.ageRestriction} onChange={e => setForm({ ...form, ageRestriction: e.target.value })}>
+                      <option value="">Select...</option>
+                      <option value="all_ages">All Ages</option>
+                      <option value="18+">18+</option>
+                      <option value="21+">21+</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ borderTop: '1px solid var(--border)', marginTop: '.5rem', paddingTop: '.5rem' }}>
+                  <div style={{ fontSize: '.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: '.4rem' }}>Contact Info</div>
+                  <div className="set-config">
+                    <div className="input-group">
+                      <label>Contact Name</label>
+                      <input value={form.contactName} onChange={e => setForm({ ...form, contactName: e.target.value })} placeholder="Booking contact" />
+                    </div>
+                    <div className="input-group">
+                      <label>Contact Email</label>
+                      <input type="email" value={form.contactEmail} onChange={e => setForm({ ...form, contactEmail: e.target.value })} placeholder="email@venue.com" />
+                    </div>
+                  </div>
+                  <div className="set-config">
+                    <div className="input-group">
+                      <label>Contact Phone</label>
+                      <input value={form.contactPhone} onChange={e => setForm({ ...form, contactPhone: e.target.value })} placeholder="(555) 123-4567" />
+                    </div>
+                    <div className="input-group">
+                      <label>Compensation</label>
+                      <input value={form.compensation} onChange={e => setForm({ ...form, compensation: e.target.value })} placeholder="e.g. $500, door split" />
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ borderTop: '1px solid var(--border)', marginTop: '.5rem', paddingTop: '.5rem' }}>
+                  <div style={{ fontSize: '.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: '.4rem' }}>Schedule &amp; Logistics</div>
+                  <div className="set-config">
+                    <div className="input-group">
+                      <label>Load-In Time</label>
+                      <input type="time" value={form.loadInTime} onChange={e => setForm({ ...form, loadInTime: e.target.value })} />
+                    </div>
+                    <div className="input-group">
+                      <label>Sound Check</label>
+                      <input type="time" value={form.soundCheckTime} onChange={e => setForm({ ...form, soundCheckTime: e.target.value })} />
+                    </div>
+                  </div>
+                  <div className="set-config">
+                    <div className="input-group">
+                      <label>Set Start Time</label>
+                      <input type="time" value={form.setStartTime} onChange={e => setForm({ ...form, setStartTime: e.target.value })} />
+                    </div>
+                    <div className="input-group" style={{ display: 'flex', gap: '.75rem', alignItems: 'flex-end' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', cursor: 'pointer', textTransform: 'none', fontSize: '.8rem' }}>
+                        <input type="checkbox" checked={form.backlineProvided} onChange={e => setForm({ ...form, backlineProvided: e.target.checked })} style={{ width: 'auto' }} />
+                        Backline
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', cursor: 'pointer', textTransform: 'none', fontSize: '.8rem' }}>
+                        <input type="checkbox" checked={form.paProvided} onChange={e => setForm({ ...form, paProvided: e.target.checked })} style={{ width: 'auto' }} />
+                        PA Provided
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="input-group">
+              <label>Notes</label>
+              <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Special requests, parking info, dress code..." rows={2} style={{ resize: 'vertical' }} />
             </div>
 
             <button className="btn btn-primary" onClick={handleCreate} style={{ width: '100%', marginBottom: '1rem' }}>
@@ -2453,30 +2732,44 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   No gig profiles yet. Create one above.
                 </div>
               ) : (
-                gigs.map(gig => (
+                gigs.sort((a, b) => {
+                  if (a.date && b.date) return a.date.localeCompare(b.date);
+                  if (a.date) return -1;
+                  if (b.date) return 1;
+                  return (b.createdAt || 0) - (a.createdAt || 0);
+                }).map(gig => (
                   <div key={gig.id} className="band-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '.5rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 700 }}>{gig.name}</div>
                         <div style={{ fontSize: '.8rem', color: 'var(--text-muted)' }}>
                           {gig.venue && <span>{gig.venue}</span>}
-                          {gig.date && <span> • {gig.date}</span>}
-                          {gig.setlists && <span> • {gig.setlists.length} set(s) saved</span>}
+                          {gig.venueCity && <span>, {gig.venueCity}</span>}
+                          {gig.venueState && <span>, {gig.venueState}</span>}
+                          {gig.date && <span> | {gig.date}</span>}
+                          {gig.eventType && <span> | {gig.eventType.replace(/_/g, ' ')}</span>}
+                          {gig.setlists && <span> | {gig.setlists.length} set(s)</span>}
                         </div>
-                        {gig.notes && <div style={{ fontSize: '.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>{gig.notes}</div>}
+                        {gig.setStartTime && <div style={{ fontSize: '.75rem', color: 'var(--accent)' }}>Start: {gig.setStartTime}</div>}
+                        {gig.notes && <div style={{ fontSize: '.75rem', color: 'var(--text-muted)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{gig.notes}</div>}
                       </div>
-                      <div style={{ display: 'flex', gap: '.4rem', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', gap: '.3rem', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         {setlists.length > 0 && (
                           <button className="btn btn-small" onClick={() => onSaveToGig(gig.id)} style={{ borderColor: 'var(--success)', color: 'var(--success)' }}>
-                            Save Current
+                            Save
                           </button>
                         )}
                         {gig.setlists && gig.setlists.length > 0 && (
-                          <button className="btn btn-small" onClick={() => onLoadGig(gig.id)} style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
-                            Load
-                          </button>
+                          <>
+                            <button className="btn btn-small" onClick={() => onLoadGig(gig.id)} style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
+                              Load
+                            </button>
+                            <button className="btn btn-small" onClick={() => onExportGigCSV(gig.id)} style={{ borderColor: 'var(--warning)', color: 'var(--warning)' }}>
+                              CSV
+                            </button>
+                          </>
                         )}
-                        <button className="btn btn-small" onClick={() => onDeleteGig(gig.id)}>Delete</button>
+                        <button className="btn btn-small" onClick={() => onDeleteGig(gig.id)}>Del</button>
                       </div>
                     </div>
                   </div>
@@ -2494,7 +2787,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [activeBandId, setActiveBandId] = useState(null);
 
       const [songs, setSongs] = useState([]);
-      const [settings, setSettings] = useState({ numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false });
+      const [settings, setSettings] = useState({ numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, lockedOpeners: [], lockedClosers: [], useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false });
       const [setlists, setSetlists] = useState([]);
       const [locked, setLocked] = useState(new Set());
       // Cross-set drag-and-drop state
@@ -2561,7 +2854,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         // PHASE 3A: normalize status for older data
         const normalizedSongs = storedSongsRaw.map(s => ({ ...s, status: (s.status || 'active') }));
 
-        const storedSettings = LS.get(LS_KEYS.bandSettings(activeBandId)) || { numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false };
+        const storedSettings = LS.get(LS_KEYS.bandSettings(activeBandId)) || { numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, lockedOpeners: [], lockedClosers: [], useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false };
+        // Ensure backward compatibility for settings without locked opener/closer arrays
+        if (!storedSettings.lockedOpeners) storedSettings.lockedOpeners = [];
+        if (!storedSettings.lockedClosers) storedSettings.lockedClosers = [];
         const storedImports = LS.get(LS_KEYS.bandImports(activeBandId)) || [];
         const storedGigs = LS.get(LS_KEYS.bandGigs(activeBandId)) || [];
         const storedWatermark = LS.get(LS_KEYS.bandWatermark(activeBandId)) || null;
@@ -2881,16 +3177,24 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const exportPDF = () => {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
-        const pageW = doc.internal.pageSize.getWidth();
-        const pageH = doc.internal.pageSize.getHeight();
-        const margin = 36; // 0.5in (narrow) margins
+        const pageW = doc.internal.pageSize.getWidth(); // 612pt
+        const pageH = doc.internal.pageSize.getHeight(); // 792pt
+        // Narrow margins: ~0.25in = 18pt
+        const margin = 18;
         const contentWidth = pageW - (margin * 2);
+
+        // Register Oswald font fallback - jsPDF uses helvetica as base,
+        // we set font size to 20pt per spec
+        const HEADER_SIZE = 20;
+        const BODY_SIZE = 20;
+        const LINE_HEIGHT = 20; // 1.00 line spacing at 20pt = 20pt
 
         const addWatermark = () => {
           if (!watermarkImg) return;
           doc.saveGraphicsState();
           doc.setGState(new doc.GState({ opacity: 0.12 }));
           try {
+            // Fill entire page, portrait orientation aligned
             doc.addImage(watermarkImg, 'AUTO', 0, 0, pageW, pageH);
           } catch (err) {
             console.warn('Watermark image error:', err);
@@ -2902,17 +3206,18 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           const heading = set.name.toUpperCase();
 
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(19);
+          doc.setFontSize(HEADER_SIZE);
           doc.setTextColor(0, 0, 0);
           doc.text(heading, margin, yPos);
 
           const headingWidth = doc.getTextWidth(heading);
           doc.setLineWidth(1);
-          doc.line(margin, yPos + 2, margin + headingWidth, yPos + 2);
+          doc.line(margin, yPos + 3, margin + headingWidth, yPos + 3);
 
-          yPos += 28;
-          doc.text(`${set.songs.length} songs • ${Math.round(set.totalTime)} minutes`, margin, yPos);
-          return yPos + 24;
+          yPos += HEADER_SIZE + 6;
+          doc.setFontSize(BODY_SIZE - 4);
+          doc.text(`${set.songs.length} songs  |  ${Math.round(set.totalTime)} minutes`, margin, yPos);
+          return yPos + HEADER_SIZE + 4;
         };
 
         const formatSongLine = (song, idx) => {
@@ -2924,31 +3229,30 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           if (setIdx > 0) doc.addPage();
           addWatermark();
 
-          let yPos = drawSetHeader(set, margin + 20);
+          let yPos = drawSetHeader(set, margin + HEADER_SIZE);
 
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(19);
+          doc.setFontSize(BODY_SIZE);
 
           set.songs.forEach((song, songIdx) => {
             const lines = doc.splitTextToSize(formatSongLine(song, songIdx), contentWidth);
-            const lineHeight = 23;
-            const itemHeight = lines.length * lineHeight;
+            const itemHeight = lines.length * LINE_HEIGHT;
 
             if (yPos + itemHeight > pageH - margin) {
               doc.addPage();
               addWatermark();
-              yPos = margin + 20;
+              yPos = margin + HEADER_SIZE;
 
               doc.setFont('helvetica', 'bold');
-              doc.setFontSize(19);
+              doc.setFontSize(BODY_SIZE);
             }
 
             lines.forEach((line) => {
               doc.text(line, margin, yPos);
-              yPos += lineHeight;
+              yPos += LINE_HEIGHT;
             });
 
-            yPos += 6;
+            yPos += 4;
           });
         });
 
@@ -3268,7 +3572,32 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       // Gig Profile functions
       const createGig = (form) => {
-        const newGig = { id: genId(), ...form, setlists: null, createdAt: Date.now() };
+        // Store all venue/gig fields from the form
+        const newGig = {
+          id: genId(),
+          name: form.name,
+          venue: form.venue || '',
+          date: form.date || '',
+          notes: form.notes || '',
+          venueCity: form.venueCity || '',
+          venueState: form.venueState || '',
+          venueZip: form.venueZip || '',
+          venueType: form.venueType || '',
+          venueCapacity: form.venueCapacity || '',
+          contactName: form.contactName || '',
+          contactEmail: form.contactEmail || '',
+          contactPhone: form.contactPhone || '',
+          loadInTime: form.loadInTime || '',
+          soundCheckTime: form.soundCheckTime || '',
+          setStartTime: form.setStartTime || '',
+          compensation: form.compensation || '',
+          eventType: form.eventType || '',
+          ageRestriction: form.ageRestriction || '',
+          backlineProvided: !!form.backlineProvided,
+          paProvided: !!form.paProvided,
+          setlists: null,
+          createdAt: Date.now()
+        };
         const updated = [...gigs, newGig];
         setGigs(updated);
         LS.set(LS_KEYS.bandGigs(activeBandId), updated);
@@ -3293,6 +3622,54 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         showToast('Setlists saved to gig profile', 'success');
       };
 
+      const exportGigCSV = (gigId) => {
+        const gig = gigs.find(g => g.id === gigId);
+        if (!gig || !gig.setlists || gig.setlists.length === 0) return showToast('No setlists saved for this gig', 'warning');
+
+        const headers = ['Set', 'Order', 'Title', 'Artist', 'Duration', 'Style', 'Key', 'BPM', 'Vocalist'];
+        const rows = [];
+        gig.setlists.forEach((set, setIdx) => {
+          set.songs.forEach((song, songIdx) => {
+            rows.push([
+              csvEscapeCell(set.name || `Set ${setIdx + 1}`),
+              csvEscapeCell(songIdx + 1),
+              csvEscapeCell(song.title),
+              csvEscapeCell(song.artist),
+              csvEscapeCell(parseDuration(song.duration)),
+              csvEscapeCell(song.style || ''),
+              csvEscapeCell(song.key || ''),
+              csvEscapeCell(song.bpm || ''),
+              csvEscapeCell(song.vocalist || '')
+            ]);
+          });
+        });
+
+        // Add gig metadata as footer rows
+        rows.push([]);
+        rows.push([csvEscapeCell('Gig Info')]);
+        rows.push([csvEscapeCell('Gig Name'), csvEscapeCell(gig.name || '')]);
+        rows.push([csvEscapeCell('Venue'), csvEscapeCell(gig.venue || '')]);
+        rows.push([csvEscapeCell('Date'), csvEscapeCell(gig.date || '')]);
+        if (gig.venueCity) rows.push([csvEscapeCell('City'), csvEscapeCell(gig.venueCity)]);
+        if (gig.venueState) rows.push([csvEscapeCell('State'), csvEscapeCell(gig.venueState)]);
+        if (gig.eventType) rows.push([csvEscapeCell('Event Type'), csvEscapeCell(gig.eventType.replace(/_/g, ' '))]);
+        if (gig.contactName) rows.push([csvEscapeCell('Contact'), csvEscapeCell(gig.contactName)]);
+        if (gig.contactEmail) rows.push([csvEscapeCell('Email'), csvEscapeCell(gig.contactEmail)]);
+        if (gig.notes) rows.push([csvEscapeCell('Notes'), csvEscapeCell(gig.notes)]);
+
+        const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const safeName = (gig.name || 'gig').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+        const dateStr = gig.date || new Date().toISOString().slice(0, 10);
+        a.download = `setlist-${safeName}-${dateStr}.csv`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
+        showToast('Gig setlist exported as CSV', 'success');
+      };
+
       const loadSetlistsFromGig = (gigId) => {
         const gig = gigs.find(g => g.id === gigId);
         if (!gig || !gig.setlists) return showToast('No saved setlists for this gig', 'warning');
@@ -3315,7 +3692,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
             <header className="header">
               <h1>SETLIST GENERATOR</h1>
-              <div className="subtitle">v3.5.0 — PDF Import • Gig Profiles • Drag &amp; Drop • Watermark Export</div>
+              <div className="subtitle">v3.6.0 — Locked Openers/Closers • Venue Integration • Enhanced PDF Export</div>
             </header>
 
             <div className="band-bar">
@@ -3365,6 +3742,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 watermarkImg={watermarkImg}
                 onWatermarkUpload={handleWatermarkUpload}
                 onClearWatermark={clearWatermark}
+                activeSongs={activeSongs}
               />
             </div>
 
@@ -3454,6 +3832,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               onDeleteGig={deleteGig}
               onLoadGig={loadSetlistsFromGig}
               onSaveToGig={saveSetlistsToGig}
+              onExportGigCSV={exportGigCSV}
               setlists={setlists}
               bandName={activeBand?.name || 'Band'}
             />
