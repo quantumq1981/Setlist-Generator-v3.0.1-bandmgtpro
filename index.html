@@ -173,7 +173,7 @@
     .generation-stats strong { color: var(--accent); }
 
     @media print {
-      @page { size: letter; margin: 1in; }
+      @page { size: letter portrait; margin: 0.5in; }
       body { background: #fff; color: #000; }
       .no-print { display: none !important; }
       .print-only { display: block; }
@@ -2365,37 +2365,32 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             <div key={set.id} className="set-page" style={{ position: 'relative' }}>
               {watermarkImg && (
                 <div style={{
-                  position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-                  width: '70%', height: '70%', opacity: 0.06, pointerEvents: 'none', zIndex: 0
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  opacity: 0.12,
+                  pointerEvents: 'none',
+                  zIndex: 0
                 }}>
-                  <img src={watermarkImg} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  <img src={watermarkImg} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
               )}
-              <div style={{ position: 'relative', zIndex: 1 }}>
-                <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                  <h1>{set.name}</h1>
-                  <p>{set.songs.length} songs • {Math.round(set.totalTime)} minutes</p>
+              <div style={{ position: 'relative', zIndex: 1, padding: '0.5in' }}>
+                <div style={{ fontSize: '19pt', fontWeight: 'bold', textTransform: 'uppercase', textDecoration: 'underline', marginBottom: '20px' }}>
+                  {set.name}
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ textAlign: 'left', borderBottom: '2px solid #000', padding: '8px' }}>#</th>
-                      <th style={{ textAlign: 'left', borderBottom: '2px solid #000', padding: '8px' }}>Title</th>
-                      <th style={{ textAlign: 'left', borderBottom: '2px solid #000', padding: '8px' }}>Artist</th>
-                      <th style={{ textAlign: 'left', borderBottom: '2px solid #000', padding: '8px' }}>Duration</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {set.songs.map((song, idx) => (
-                      <tr key={`print-${song.id}-${idx}`}>
-                        <td style={{ padding: '8px', borderBottom: '1px solid #ccc' }}>{idx + 1}</td>
-                        <td style={{ padding: '8px', borderBottom: '1px solid #ccc' }}>{song.title}</td>
-                        <td style={{ padding: '8px', borderBottom: '1px solid #ccc' }}>{song.artist}</td>
-                        <td style={{ padding: '8px', borderBottom: '1px solid #ccc' }}>{parseDuration(song.duration)} min</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div style={{ fontSize: '19pt', fontWeight: 'bold', marginBottom: '20px' }}>
+                  {set.songs.length} songs • {Math.round(set.totalTime)} minutes
+                </div>
+                <div>
+                  {set.songs.map((song, idx) => (
+                    <div key={`print-${song.id}-${idx}`} style={{ fontSize: '19pt', fontWeight: 'bold', lineHeight: 1.0, marginBottom: '10px' }}>
+                      {idx + 1}. {song.title}{song.artist ? ` - ${song.artist}` : ''} ({parseDuration(song.duration)} min)
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           ))}
@@ -2885,61 +2880,75 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       const exportPDF = () => {
         const { jsPDF } = window.jspdf;
-        const doc = new jsPDF();
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
         const pageW = doc.internal.pageSize.getWidth();
         const pageH = doc.internal.pageSize.getHeight();
+        const margin = 36; // 0.5in (narrow) margins
+        const contentWidth = pageW - (margin * 2);
 
         const addWatermark = () => {
-          if (watermarkImg) {
-            const imgW = pageW * 0.7;
-            const imgH = pageH * 0.7;
-            const x = (pageW - imgW) / 2;
-            const y = (pageH - imgH) / 2;
-            doc.saveGraphicsState();
-            doc.setGState(new doc.GState({ opacity: 0.08 }));
-            try {
-              doc.addImage(watermarkImg, 'AUTO', x, y, imgW, imgH);
-            } catch (err) {
-              console.warn('Watermark image error:', err);
-            }
-            doc.restoreGraphicsState();
+          if (!watermarkImg) return;
+          doc.saveGraphicsState();
+          doc.setGState(new doc.GState({ opacity: 0.12 }));
+          try {
+            doc.addImage(watermarkImg, 'AUTO', 0, 0, pageW, pageH);
+          } catch (err) {
+            console.warn('Watermark image error:', err);
           }
+          doc.restoreGraphicsState();
         };
 
-        setlists.forEach((set, i) => {
-          if (i > 0) doc.addPage();
+        const drawSetHeader = (set, yPos) => {
+          const heading = set.name.toUpperCase();
+
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(19);
+          doc.setTextColor(0, 0, 0);
+          doc.text(heading, margin, yPos);
+
+          const headingWidth = doc.getTextWidth(heading);
+          doc.setLineWidth(1);
+          doc.line(margin, yPos + 2, margin + headingWidth, yPos + 2);
+
+          yPos += 28;
+          doc.text(`${set.songs.length} songs • ${Math.round(set.totalTime)} minutes`, margin, yPos);
+          return yPos + 24;
+        };
+
+        const formatSongLine = (song, idx) => {
+          const artistPart = song.artist ? ` - ${song.artist}` : '';
+          return `${idx + 1}. ${song.title}${artistPart} (${parseDuration(song.duration)} min)`;
+        };
+
+        setlists.forEach((set, setIdx) => {
+          if (setIdx > 0) doc.addPage();
           addWatermark();
 
-          let yPos = 25;
-          doc.setFontSize(20);
-          doc.setFont(undefined, 'bold');
-          doc.text(set.name.toUpperCase(), pageW / 2, yPos, { align: 'center' });
-          yPos += 8;
+          let yPos = drawSetHeader(set, margin + 20);
 
-          doc.setFontSize(11);
-          doc.setFont(undefined, 'normal');
-          doc.setTextColor(100, 100, 100);
-          doc.text(`${set.songs.length} songs \u2022 ${Math.round(set.totalTime)} minutes`, pageW / 2, yPos, { align: 'center' });
-          doc.setTextColor(0, 0, 0);
-          yPos += 10;
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(19);
 
-          doc.setLineWidth(0.5);
-          doc.line(20, yPos, pageW - 20, yPos);
-          yPos += 8;
+          set.songs.forEach((song, songIdx) => {
+            const lines = doc.splitTextToSize(formatSongLine(song, songIdx), contentWidth);
+            const lineHeight = 23;
+            const itemHeight = lines.length * lineHeight;
 
-          doc.setFontSize(11);
-          set.songs.forEach((song, idx) => {
-            if (yPos > pageH - 20) {
+            if (yPos + itemHeight > pageH - margin) {
               doc.addPage();
               addWatermark();
-              yPos = 25;
+              yPos = margin + 20;
+
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(19);
             }
-            doc.setFont(undefined, 'bold');
-            const num = `${idx + 1}.`;
-            doc.text(num, 22, yPos);
-            doc.setFont(undefined, 'normal');
-            doc.text(`${song.title} - ${song.artist} (${parseDuration(song.duration)} min)`, 32, yPos);
-            yPos += 7;
+
+            lines.forEach((line) => {
+              doc.text(line, margin, yPos);
+              yPos += lineHeight;
+            });
+
+            yPos += 6;
           });
         });
 
