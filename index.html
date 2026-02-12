@@ -135,12 +135,12 @@
     .action-btn.locked { color: var(--locked); }
 
     /* Drag and Drop */
-    .setlist-song[draggable="true"] { cursor: grab; }
+    .setlist-song[draggable="true"] { cursor: grab; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
     .setlist-song[draggable="true"]:active { cursor: grabbing; }
-    .setlist-song.dragging { opacity: 0.4; border: 1px dashed var(--accent); }
+    .setlist-song.dragging { opacity: 0.4; border: 1px dashed var(--accent); pointer-events: none; }
     .setlist-song.drag-over-top { border-top: 3px solid var(--accent); margin-top: -2px; }
     .setlist-song.drag-over-bottom { border-bottom: 3px solid var(--accent); margin-bottom: -2px; }
-    .drag-handle { cursor: grab; color: var(--text-muted); font-size: 1rem; user-select: none; display: flex; align-items: center; }
+    .drag-handle { cursor: grab; color: var(--text-muted); font-size: 1rem; user-select: none; -webkit-user-select: none; display: flex; align-items: center; touch-action: none; }
     .drag-handle:active { cursor: grabbing; }
     .drop-zone-between { padding: .6rem; border: 2px dashed var(--border); border-radius: 8px; text-align: center; color: var(--text-muted); font-size: .8rem; margin-top: .35rem; transition: .2s; }
     .drop-zone-between:hover, .drop-zone-between.drag-over { border-color: var(--accent); color: var(--accent); background: rgba(255,107,53,.06); }
@@ -1858,6 +1858,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         <div
           className={`setlist${isSetDragTarget ? ' drag-target' : ''}`}
           onDragOver={(e) => onDragOverSet(e, setIdx)}
+          onDragEnter={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
           onDrop={(e) => onDropOnSet(e, setIdx)}
         >
           <div className="setlist-header">
@@ -1896,6 +1897,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 className={`setlist-song ${isLocked ? 'locked' : ''} ${dragClass}`}
                 draggable={!isLocked}
                 onDragStart={(e) => onDragStart(e, song, setIdx, songIdx)}
+                onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 onDragOver={(e) => onDragOverSong(e, setIdx, songIdx)}
                 onDrop={(e) => onDropOnSong(e, setIdx, songIdx)}
                 onDragEnd={onDragEnd}
@@ -2506,11 +2508,16 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   {set.songs.length} songs | {Math.round(set.totalTime)} minutes
                 </div>
                 <div>
-                  {set.songs.map((song, idx) => (
-                    <div key={`print-${song.id}-${idx}`} style={{ fontFamily: "'Oswald', 'Helvetica Neue', Arial, sans-serif", fontSize: '20pt', fontWeight: 'bold', lineHeight: 1.0, marginBottom: '8px' }}>
-                      {idx + 1}. {song.title}{song.artist ? ` - ${song.artist}` : ''} ({parseDuration(song.duration)} min)
-                    </div>
-                  ))}
+                  {set.songs.map((song, idx) => {
+                    const meta = [];
+                    if (song.key) meta.push(song.key);
+                    if (song.bpm) meta.push(`${song.bpm} BPM`);
+                    return (
+                      <div key={`print-${song.id}-${idx}`} style={{ fontFamily: "'Oswald', 'Helvetica Neue', Arial, sans-serif", fontSize: '20pt', fontWeight: 'bold', lineHeight: 1.0, marginBottom: '8px' }}>
+                        {idx + 1}. {song.title}{song.artist ? ` - ${song.artist}` : ''}{meta.length > 0 ? ` (${meta.join(' | ')})` : ''}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -3148,7 +3155,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const copyToClipboard = () => {
         const text = setlists.map((set) => {
           const header = `${set.name} (${set.songs.length} songs, ${Math.round(set.totalTime)} min)\n${'='.repeat(50)}`;
-          const songList = set.songs.map((s, idx) => `${idx + 1}. ${s.title} - ${s.artist} (${parseDuration(s.duration)} min)`).join('\n');
+          const songList = set.songs.map((s, idx) => {
+            const meta = [];
+            if (s.key) meta.push(s.key);
+            if (s.bpm) meta.push(`${s.bpm} BPM`);
+            const metaStr = meta.length > 0 ? ` (${meta.join(' | ')})` : '';
+            return `${idx + 1}. ${s.title}${s.artist ? ` - ${s.artist}` : ''}${metaStr}`;
+          }).join('\n');
           return `${header}\n${songList}`;
         }).join('\n\n');
 
@@ -3221,8 +3234,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         };
 
         const formatSongLine = (song, idx) => {
-          const artistPart = song.artist ? ` - ${song.artist}` : '';
-          return `${idx + 1}. ${song.title}${artistPart} (${parseDuration(song.duration)} min)`;
+          // PDF setlist shows what the performer needs on stage: #, title, key, BPM
+          // Duration is excluded (internal-only for set planning). Artist included if available.
+          const parts = [`${idx + 1}. ${song.title}`];
+          if (song.artist) parts.push(` - ${song.artist}`);
+          const meta = [];
+          if (song.key) meta.push(song.key);
+          if (song.bpm) meta.push(`${song.bpm} BPM`);
+          if (meta.length > 0) parts.push(` (${meta.join(' | ')})`);
+          return parts.join('');
         };
 
         setlists.forEach((set, setIdx) => {
@@ -3383,26 +3403,43 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       };
 
       // --- Cross-Set Drag-and-Drop Handlers ---
+      // Ref to throttle dragover state updates (prevents excessive re-renders that cause "stuck" feeling)
+      const dragOverRef = React.useRef({ setIdx: null, songIdx: null });
 
       const handleDragStart = (e, song, setIdx, songIdx) => {
         if (locked.has(`${setIdx}:${song.id}`)) { e.preventDefault(); return; }
         if (!originalSetlists) {
           setOriginalSetlists(JSON.parse(JSON.stringify(setlists)));
         }
-        try { e.dataTransfer.setData('text/plain', song.title); } catch (_) {}
+        // Set effectAllowed BEFORE setData for cross-browser compat (Firefox requires this order)
         e.dataTransfer.effectAllowed = 'move';
-        setDragState({ active: true, song, fromSetIdx: setIdx, fromSongIdx: songIdx, overSetIdx: null, overSongIdx: null });
+        try { e.dataTransfer.setData('text/plain', song.title); } catch (_) {}
+        // Some browsers (Safari) need a brief delay before visual state updates during drag
+        requestAnimationFrame(() => {
+          setDragState({ active: true, song, fromSetIdx: setIdx, fromSongIdx: songIdx, overSetIdx: null, overSongIdx: null });
+        });
       };
 
       const handleDragEnd = () => {
+        dragOverRef.current = { setIdx: null, songIdx: null };
         setDragState(defaultDragState);
+        // Clean up any lingering drag-over CSS classes that may get stuck
+        document.querySelectorAll('.drag-over, .drag-over-bottom, .drag-over-top').forEach(el => {
+          el.classList.remove('drag-over', 'drag-over-bottom', 'drag-over-top');
+        });
       };
 
       const handleDragOverSong = (e, setIdx, songIdx) => {
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
-        setDragState(prev => ({ ...prev, overSetIdx: setIdx, overSongIdx: songIdx }));
+        // Throttle: only update React state if the target actually changed
+        if (dragOverRef.current.setIdx === setIdx && dragOverRef.current.songIdx === songIdx) return;
+        dragOverRef.current = { setIdx, songIdx };
+        setDragState(prev => {
+          if (prev.overSetIdx === setIdx && prev.overSongIdx === songIdx) return prev;
+          return { ...prev, overSetIdx: setIdx, overSongIdx: songIdx };
+        });
       };
 
       const handleDragOverSet = (e, setIdx) => {
@@ -3410,6 +3447,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         e.dataTransfer.dropEffect = 'move';
         setDragState(prev => {
           if (prev.overSongIdx !== null) return prev;
+          if (prev.overSetIdx === setIdx && prev.overSongIdx === null) return prev;
           return { ...prev, overSetIdx: setIdx, overSongIdx: null };
         });
       };
@@ -3488,6 +3526,34 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         setLocked(new Set());
         setOriginalSetlists(null);
         showToast('Order reset to original', 'success');
+      };
+
+      const shuffleSets = () => {
+        if (setlists.length < 2) return;
+        if (!originalSetlists) {
+          setOriginalSetlists(JSON.parse(JSON.stringify(setlists)));
+        }
+        // Fisher-Yates shuffle of the set order
+        const shuffled = [...setlists];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        // Rename sets to reflect new order and remap locks
+        const newLocked = new Set();
+        const newSetlists = shuffled.map((set, newIdx) => {
+          const oldIdx = setlists.indexOf(set);
+          // Migrate locks from old index to new index
+          set.songs.forEach(song => {
+            if (locked.has(`${oldIdx}:${song.id}`)) {
+              newLocked.add(`${newIdx}:${song.id}`);
+            }
+          });
+          return { ...set, name: `Set ${newIdx + 1}` };
+        });
+        setSetlists(newSetlists);
+        setLocked(newLocked);
+        showToast('Sets shuffled', 'success');
       };
 
       const balanceSets = () => {
@@ -3765,7 +3831,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                         <button className="btn btn-small" onClick={resetToOriginal} title="Reset to original generated order">&#8617; Reset Order</button>
                       )}
                       {setlists.length > 1 && (
-                        <button className="btn btn-small" onClick={balanceSets} title="Evenly redistribute songs across sets">&#9878; Balance Sets</button>
+                        <>
+                          <button className="btn btn-small" onClick={shuffleSets} title="Randomly reorder entire sets (keeps songs within each set)">&#8645; Shuffle Sets</button>
+                          <button className="btn btn-small" onClick={balanceSets} title="Evenly redistribute songs across sets">&#9878; Balance Sets</button>
+                        </>
                       )}
                     </div>
                     <button className="btn btn-small" onClick={generate}>Regenerate</button>
