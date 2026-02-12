@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Setlist Generator v3.6.0 — Phase 5: Locked Openers/Closers, Venue Integration, PDF Enhancements</title>
+  <title>Setlist Generator v3.7.0 — Phase 6: Energy Curve + Tonal Gravity Overhaul, SA Optimizer, Templates</title>
 
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -285,7 +285,8 @@
     const MAX_GUARD = 10000;
     const DURATION_TOLERANCE_POSITIVE = 2.0;
     const DURATION_TOLERANCE_NEGATIVE = 6.0;
-    const DEFAULT_PASSES = 2;
+    const DEFAULT_PASSES = 4;
+    const TONAL_SWAP_THRESHOLD = 1;
 
     // PHASE 2: CSV Quoting Fix
     function csvEscapeCell(value) {
@@ -355,8 +356,38 @@
     };
 
     const ENERGY_MAP = {
-      ballad: 2, uptempo: 6, midtempo: 4, funk: 5, shuffle: 5, swing: 4, groove: 5
+      ballad: 2, acoustic: 2.5, waltz: 3, bossa: 3.5, blues: 3.5, jazz: 3.5,
+      swing: 4, country: 4, reggae: 4, midtempo: 4.5, soul: 4.5, rnb: 4.5,
+      shuffle: 5, groove: 5.5, funk: 6, rock: 6.5, uptempo: 7, ska: 6.5,
+      punk: 8, metal: 9, edm: 8.5, pop: 5
     };
+
+    // Continuous energy curve: smooth sinusoidal arc replacing the old 4-zone step function.
+    // curveType selects a preset shape; each preset has amplitude, frequency, phase, and baseline.
+    const ENERGY_CURVE_PRESETS = {
+      standard:    { amp: 1.5, freq: 1.0, phase: -0.3, base: 3.8, label: 'Standard' },
+      party:       { amp: 1.0, freq: 0.8, phase: 0.0,  base: 4.8, label: 'Party / Club' },
+      jazz:        { amp: 1.0, freq: 1.0, phase: -0.5, base: 3.2, label: 'Jazz Club' },
+      festival:    { amp: 1.8, freq: 1.5, phase: -0.2, base: 4.2, label: 'Festival' },
+      wedding:     { amp: 1.2, freq: 1.0, phase: -0.3, base: 4.0, label: 'Wedding / Corporate' },
+      acoustic:    { amp: 0.8, freq: 1.0, phase: -0.4, base: 3.0, label: 'Acoustic / Coffeehouse' }
+    };
+
+    function targetEnergyCurve(position, curveType) {
+      const c = ENERGY_CURVE_PRESETS[curveType] || ENERGY_CURVE_PRESETS.standard;
+      return Math.max(1, Math.min(10, c.base + c.amp * Math.sin(Math.PI * position * c.freq + c.phase)));
+    }
+
+    // Composite energy: blend style-based energy with BPM-derived energy when available.
+    function getCompositeEnergy(song) {
+      const styleE = ENERGY_MAP[(song.style || '').toLowerCase()] || null;
+      const bpm = parseFloat(song.bpm);
+      const bpmE = (bpm && bpm > 0) ? Math.min(10, Math.max(1, (bpm - 60) / 20 + 2)) : null;
+      if (styleE !== null && bpmE !== null) return 0.6 * styleE + 0.4 * bpmE;
+      if (styleE !== null) return styleE;
+      if (bpmE !== null) return bpmE;
+      return 4; // neutral default for songs with no data
+    }
 
 
     /******************* CSV IMPORT: NORMALIZATION ENGINE *******************/
@@ -1006,6 +1037,27 @@ function areParallelKeys_TG(k1, k2) {
   return k1.tonic === k2.tonic && k1.mode !== k2.mode;
 }
 
+// Directional harmonic movement: clockwise on the circle of fifths provides an energy
+// boost, counterclockwise drains energy. Returns 'clockwise', 'counterclockwise', or 'same'.
+function circleDirection_TG(fromTonic, toTonic) {
+  const ia = getCircleIndex_TG(fromTonic);
+  const ib = getCircleIndex_TG(toTonic);
+  if (ia < 0 || ib < 0 || ia === ib) return 'same';
+  const clockwise = (ib - ia + 12) % 12;
+  const counterclockwise = (ia - ib + 12) % 12;
+  return clockwise <= counterclockwise ? 'clockwise' : 'counterclockwise';
+}
+
+// Anchor key bonus: songs near the anchor key at set boundaries receive a small bonus.
+function anchorKeyBonus_TG(songKey, anchorKey, position, setLength) {
+  if (!songKey || !anchorKey) return 0;
+  const dist = circleDistance_TG(songKey.tonic, anchorKey.tonic);
+  const isNearBoundary = position < 2 || position > setLength - 3;
+  if (isNearBoundary && dist <= 1) return 3;
+  if (isNearBoundary && dist <= 2) return 1;
+  return 0;
+}
+
 function determineAnchorKey_TG(songs, userAnchor = '') {
   const manual = userAnchor && typeof userAnchor === 'string' ? userAnchor.trim() : '';
   if (manual) {
@@ -1036,7 +1088,7 @@ function isContrastSlot_TG(pos, setLen, tonalSmoothness) {
   return Math.abs(pos - cp) <= 1;
 }
 
-function calculateTonalTransitionScore_TG(prevSong, nextSong, pos, setLen, tonalSmoothness) {
+function calculateTonalTransitionScore_TG(prevSong, nextSong, pos, setLen, tonalSmoothness, opts) {
   // Null-safe: missing keys simply contribute 0 tonal score
   if (!prevSong?.normalizedKey || !nextSong?.normalizedKey) return 0;
 
@@ -1063,7 +1115,23 @@ function calculateTonalTransitionScore_TG(prevSong, nextSong, pos, setLen, tonal
   let repetitionPenalty = 0;
   if (a.tonic === b.tonic && a.mode === b.mode) repetitionPenalty -= 5;
 
-  return base + modeBonus + repetitionPenalty;
+  // Directional harmonic movement bonus: prefer clockwise during build phases,
+  // counterclockwise during cool-down phases (Phase 4 enhancement)
+  let directionBonus = 0;
+  if (dist >= 1 && dist <= 2) {
+    const dir = circleDirection_TG(a.tonic, b.tonic);
+    const normalizedPos = setLen > 0 ? pos / setLen : 0.5;
+    if (normalizedPos < 0.65 && dir === 'clockwise') directionBonus += 2;
+    else if (normalizedPos >= 0.65 && dir === 'counterclockwise') directionBonus += 2;
+  }
+
+  // Anchor key proximity bonus at set boundaries
+  let anchorBonus = 0;
+  if (opts && opts.anchorKey) {
+    anchorBonus = anchorKeyBonus_TG(b, opts.anchorKey, pos, setLen);
+  }
+
+  return base + modeBonus + repetitionPenalty + directionBonus + anchorBonus;
 }
 
 // generateTonalDiagnostics_TG analyses tonal transitions across the provided setlists.
@@ -1113,39 +1181,132 @@ function generateTonalDiagnostics_TG(setlists) {
 }
 
 // Tonal Gravity generator wrapper: preserve Phase 2 validity, then refine ordering locally.
+// Enhanced with lock-awareness, bidirectional sweeps, energy-aware swaps, anchor key
+// integration, and directional harmonic movement.
 function generateSetlistsCore_WithTonalGravity(songs, opts) {
   const enriched = (songs || []).map(s => ({
     ...s,
     normalizedKey: normalizeKey_TG(s.key, s.tags || [])
   }));
 
-  // Always use Phase 2 to satisfy duration/energy/locks robustly
+  const anchor = determineAnchorKey_TG(enriched, opts.anchorKey || '');
+  const tonalOpts = { anchorKey: anchor };
+  const smoothness = opts.tonalSmoothness ?? 70;
+
+  // Always use core generator to satisfy duration/energy/locks robustly
   const base = generateSetlistsCore(enriched, opts);
 
-  // Local refinement pass: adjacent swaps only (fast & safe)
+  // Build a set of locked song IDs from the lockPlan so we skip them during tonal swaps
+  const lockedIds = new Set();
+  if (Array.isArray(opts.lockPlan)) {
+    for (const plan of opts.lockPlan) {
+      if (!Array.isArray(plan)) continue;
+      for (const entry of plan) {
+        if (entry && entry.song && entry.song.id) lockedIds.add(entry.song.id);
+      }
+    }
+  }
+
+  // Enhanced refinement: bidirectional sweeps with lock-awareness and energy checks
   base.forEach(set => {
     const len = set.songs.length;
     if (len < 3) return;
 
-    // multiple passes for a little more convergence
-    // Use configurable DEFAULT_PASSES rather than hard-coded passes.
-    const PASSES = DEFAULT_PASSES;
+    const isLocked = (idx) => lockedIds.has(set.songs[idx]?.id);
+    const curveType = opts.energyCurveType || 'standard';
+
+    const PASSES = DEFAULT_PASSES; // now 4
     for (let pass = 0; pass < PASSES; pass++) {
-      for (let i = 1; i < len - 1; i++) {
-        const prev = set.songs[i - 1];
-        const curr = set.songs[i];
-        const next = set.songs[i + 1];
+      // Alternate sweep direction each pass for better convergence
+      const forward = pass % 2 === 0;
+      const start = forward ? 1 : len - 2;
+      const end = forward ? len - 1 : 0;
+      const step = forward ? 1 : -1;
 
-        const currentScore =
-          calculateTonalTransitionScore_TG(prev, curr, i, len, opts.tonalSmoothness ?? 70) +
-          calculateTonalTransitionScore_TG(curr, next, i + 1, len, opts.tonalSmoothness ?? 70);
+      for (let i = start; forward ? i < end : i > end; i += step) {
+        // Skip locked songs — they must not be repositioned
+        if (isLocked(i) || isLocked(i + (forward ? 1 : -1))) continue;
 
-        const swappedScore =
-          calculateTonalTransitionScore_TG(prev, next, i, len, opts.tonalSmoothness ?? 70) +
-          calculateTonalTransitionScore_TG(next, curr, i + 1, len, opts.tonalSmoothness ?? 70);
+        const j = forward ? i + 1 : i - 1;
+        if (j < 0 || j >= len) continue;
 
-        if (swappedScore > currentScore + 3) {
-          [set.songs[i], set.songs[i + 1]] = [set.songs[i + 1], set.songs[i]];
+        const prev = set.songs[Math.min(i, j) - 1];
+        const curr = set.songs[Math.min(i, j)];
+        const next = set.songs[Math.max(i, j)];
+        const after = set.songs[Math.max(i, j) + 1];
+
+        if (!prev || !curr || !next) continue;
+
+        // Score current arrangement
+        let currentScore = calculateTonalTransitionScore_TG(prev, curr, Math.min(i, j), len, smoothness, tonalOpts)
+          + calculateTonalTransitionScore_TG(curr, next, Math.max(i, j), len, smoothness, tonalOpts);
+        if (after) currentScore += calculateTonalTransitionScore_TG(next, after, Math.max(i, j) + 1, len, smoothness, tonalOpts);
+
+        // Score swapped arrangement
+        let swappedScore = calculateTonalTransitionScore_TG(prev, next, Math.min(i, j), len, smoothness, tonalOpts)
+          + calculateTonalTransitionScore_TG(next, curr, Math.max(i, j), len, smoothness, tonalOpts);
+        if (after) swappedScore += calculateTonalTransitionScore_TG(curr, after, Math.max(i, j) + 1, len, smoothness, tonalOpts);
+
+        // Energy-aware swap check: penalize swaps that worsen energy curve adherence
+        if (opts.useEnergyCurve) {
+          const setDur = opts.setDuration || 45;
+          const posA = Math.min(i, j) / len;
+          const posB = Math.max(i, j) / len;
+          const targetA = targetEnergyCurve(posA, curveType);
+          const targetB = targetEnergyCurve(posB, curveType);
+          const eA = getCompositeEnergy(curr);
+          const eB = getCompositeEnergy(next);
+
+          const currentEnergyFit = Math.abs(eA - targetA) + Math.abs(eB - targetB);
+          const swappedEnergyFit = Math.abs(eB - targetA) + Math.abs(eA - targetB);
+          // Apply energy degradation as a tonal score penalty
+          const energyDelta = (swappedEnergyFit - currentEnergyFit) * 0.8;
+          swappedScore -= energyDelta;
+        }
+
+        if (swappedScore > currentScore + TONAL_SWAP_THRESHOLD) {
+          const lo = Math.min(i, j);
+          const hi = Math.max(i, j);
+          [set.songs[lo], set.songs[hi]] = [set.songs[hi], set.songs[lo]];
+        }
+      }
+    }
+
+    // Non-adjacent swap exploration (distance 2-3) for additional optimization
+    for (let gap = 2; gap <= Math.min(3, Math.floor(len / 2)); gap++) {
+      for (let i = 1; i < len - gap; i++) {
+        const j = i + gap;
+        if (isLocked(i) || isLocked(j)) continue;
+        if (j >= len - 1 && (opts.forceCloser)) continue; // don't displace closer
+
+        // Calculate local scores around both positions before and after swap
+        const neighborScore = (arr) => {
+          let sc = 0;
+          for (let k = 1; k < arr.length; k++) {
+            sc += calculateTonalTransitionScore_TG(
+              { normalizedKey: arr[k-1].normalizedKey },
+              { normalizedKey: arr[k].normalizedKey },
+              k, len, smoothness, tonalOpts
+            );
+          }
+          return sc;
+        };
+
+        // Gather affected window
+        const minIdx = Math.max(0, i - 1);
+        const maxIdx = Math.min(len - 1, j + 1);
+        const window = set.songs.slice(minIdx, maxIdx + 1);
+        const currentWindowScore = neighborScore(window);
+
+        // Simulate swap
+        const swapped = [...window];
+        const relI = i - minIdx;
+        const relJ = j - minIdx;
+        [swapped[relI], swapped[relJ]] = [swapped[relJ], swapped[relI]];
+        const swappedWindowScore = neighborScore(swapped);
+
+        if (swappedWindowScore > currentWindowScore + TONAL_SWAP_THRESHOLD + 1) {
+          [set.songs[i], set.songs[j]] = [set.songs[j], set.songs[i]];
         }
       }
     }
@@ -1153,11 +1314,38 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     set.totalTime = set.songs.reduce((sum, s) => sum + (Number(parseDuration(s.duration)) || 0), 0);
   });
 
-  // Attach diagnostics (non-breaking) when enabled
+  // Simulated annealing deep optimization pass (when enabled)
+  if (opts.optimizationLevel === 'deep') {
+    const lockedIdSet = new Set();
+    if (Array.isArray(opts.lockPlan)) {
+      for (const plan of opts.lockPlan) {
+        if (!Array.isArray(plan)) continue;
+        for (const entry of plan) {
+          if (entry && entry.song && entry.song.id) lockedIdSet.add(entry.song.id);
+        }
+      }
+    }
+
+    base.forEach(set => {
+      if (set.songs.length < 4) return;
+      set.songs = simulatedAnnealingOptimize(set.songs, {
+        ...opts,
+        _anchorKey: anchor,
+        _lockedIds: lockedIdSet
+      });
+      set.totalTime = set.songs.reduce((sum, s) => sum + (Number(parseDuration(s.duration)) || 0), 0);
+    });
+  }
+
+  // Attach diagnostics and quality scores (non-breaking) when enabled
   try {
-    const anchor = determineAnchorKey_TG(enriched, opts.anchorKey || '');
     base.diagnostics = generateTonalDiagnostics_TG(base);
     base.anchorKey = anchor?.displayTonic || anchor?.tonic || null;
+    // Calculate unified quality score for each set
+    base.qualityScores = base.map(set => calculateSetlistQualityScore(set, {
+      ...opts,
+      _anchorKey: anchor
+    }));
   } catch (e) {
     console.warn('[TonalGravity] Diagnostics failed:', e);
   }
@@ -1165,6 +1353,278 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
   return base;
 }
 
+
+    /******************* PHASE 4: SIMULATED ANNEALING OPTIMIZER *******************/
+    // Deep optimization mode: uses simulated annealing to escape local optima and find
+    // globally better setlist orderings. Operates on a fully generated setlist as input.
+    function simulatedAnnealingOptimize(setlistSongs, opts) {
+      const songs = [...setlistSongs];
+      const len = songs.length;
+      if (len < 4) return songs;
+
+      const smoothness = opts.tonalSmoothness ?? 70;
+      const curveType = opts.energyCurveType || 'standard';
+      const useTonal = opts.useTonalGravity;
+      const useEnergy = opts.useEnergyCurve;
+      const anchorKey = opts._anchorKey || null;
+      const affinities = opts.songAffinities || [];
+      const antiAffinities = opts.songAntiAffinities || [];
+
+      // Cost function: lower = better
+      const cost = (arr) => {
+        let c = 0;
+        for (let i = 0; i < arr.length; i++) {
+          const pos = arr.length > 1 ? i / (arr.length - 1) : 0.5;
+
+          // Energy curve adherence
+          if (useEnergy) {
+            const target = targetEnergyCurve(pos, curveType);
+            const actual = getCompositeEnergy(arr[i]);
+            c += Math.abs(actual - target) * 0.4;
+          }
+
+          // Energy transition smoothness
+          if (useEnergy && i > 0) {
+            const jump = Math.abs(getCompositeEnergy(arr[i]) - getCompositeEnergy(arr[i - 1]));
+            if (jump > 2.5) c += (jump - 2.5) * 0.35;
+          }
+
+          // Tonal transitions
+          if (useTonal && i > 0) {
+            const score = calculateTonalTransitionScore_TG(
+              arr[i - 1], arr[i], i, len, smoothness, { anchorKey }
+            );
+            c -= score * 0.3; // higher tonal score = lower cost
+          }
+
+          // Diversity: penalize consecutive same style/artist
+          if (i > 0) {
+            if (arr[i].style === arr[i - 1].style) c += 1.0;
+            if (arr[i].artist === arr[i - 1].artist) c += 1.2;
+          }
+        }
+
+        // Song affinity bonuses (prefer paired songs adjacent)
+        for (const pair of affinities) {
+          const idxA = arr.findIndex(s => s.id === pair[0]);
+          const idxB = arr.findIndex(s => s.id === pair[1]);
+          if (idxA >= 0 && idxB >= 0) {
+            const gap = Math.abs(idxA - idxB);
+            if (gap === 1) c -= 3; // adjacent: big bonus
+            else if (gap <= 3) c -= 1; // close: small bonus
+          }
+        }
+
+        // Song anti-affinity penalties (keep certain songs apart)
+        for (const pair of antiAffinities) {
+          const idxA = arr.findIndex(s => s.id === pair[0]);
+          const idxB = arr.findIndex(s => s.id === pair[1]);
+          if (idxA >= 0 && idxB >= 0) {
+            const gap = Math.abs(idxA - idxB);
+            if (gap <= 2) c += 4; // too close: penalty
+          }
+        }
+
+        return c;
+      };
+
+      // Build set of locked indices (opener at 0, closer at len-1 if forced)
+      const lockedIndices = new Set();
+      if (opts.forceOpener) lockedIndices.add(0);
+      if (opts.forceCloser) lockedIndices.add(len - 1);
+      // Also lock any songs from the lockPlan
+      if (opts._lockedIds) {
+        songs.forEach((s, idx) => {
+          if (opts._lockedIds.has(s.id)) lockedIndices.add(idx);
+        });
+      }
+
+      let current = [...songs];
+      let currentCost = cost(current);
+      let best = [...current];
+      let bestCost = currentCost;
+
+      // SA parameters
+      const T0 = 10;
+      const Tmin = 0.1;
+      const alpha = 0.97;
+      const iterations = Math.min(800, len * 60);
+
+      let T = T0;
+      for (let iter = 0; iter < iterations && T > Tmin; iter++) {
+        // Generate neighbor: random swap of two non-locked positions
+        const unlocked = [];
+        for (let k = 0; k < len; k++) {
+          if (!lockedIndices.has(k)) unlocked.push(k);
+        }
+        if (unlocked.length < 2) break;
+
+        const idxA = unlocked[Math.floor(Math.random() * unlocked.length)];
+        let idxB = unlocked[Math.floor(Math.random() * unlocked.length)];
+        while (idxB === idxA) idxB = unlocked[Math.floor(Math.random() * unlocked.length)];
+
+        const neighbor = [...current];
+        [neighbor[idxA], neighbor[idxB]] = [neighbor[idxB], neighbor[idxA]];
+
+        const neighborCost = cost(neighbor);
+        const delta = neighborCost - currentCost;
+
+        if (delta < 0 || Math.random() < Math.exp(-delta / T)) {
+          current = neighbor;
+          currentCost = neighborCost;
+          if (currentCost < bestCost) {
+            best = [...current];
+            bestCost = currentCost;
+          }
+        }
+
+        T *= alpha;
+      }
+
+      return best;
+    }
+
+    /******************* PHASE 4: UNIFIED QUALITY SCORE *******************/
+    // Returns a 0-100 quality score for a generated setlist based on energy adherence,
+    // tonal flow, diversity, and duration accuracy.
+    function calculateSetlistQualityScore(set, opts) {
+      const songs = set.songs || [];
+      if (songs.length === 0) return 0;
+
+      const curveType = opts.energyCurveType || 'standard';
+      const smoothness = opts.tonalSmoothness ?? 70;
+      const anchorKey = opts._anchorKey || null;
+      let energyScore = 100;
+      let tonalScore = 100;
+      let diversityScore = 100;
+      let durationScore = 100;
+
+      // Energy adherence: how well songs match the target curve
+      if (opts.useEnergyCurve) {
+        let totalDeviation = 0;
+        let maxDeviation = 0;
+        for (let i = 0; i < songs.length; i++) {
+          const pos = songs.length > 1 ? i / (songs.length - 1) : 0.5;
+          const target = targetEnergyCurve(pos, curveType);
+          const actual = getCompositeEnergy(songs[i]);
+          const dev = Math.abs(actual - target);
+          totalDeviation += dev;
+          maxDeviation = Math.max(maxDeviation, dev);
+        }
+        const avgDev = totalDeviation / songs.length;
+        energyScore = Math.max(0, 100 - avgDev * 15 - maxDeviation * 5);
+      }
+
+      // Tonal flow: average tonal transition quality
+      if (opts.useTonalGravity) {
+        let totalTonal = 0;
+        let edges = 0;
+        for (let i = 0; i < songs.length - 1; i++) {
+          if (songs[i].normalizedKey && songs[i + 1].normalizedKey) {
+            const sc = calculateTonalTransitionScore_TG(
+              songs[i], songs[i + 1], i + 1, songs.length, smoothness, { anchorKey }
+            );
+            totalTonal += sc;
+            edges++;
+          }
+        }
+        if (edges > 0) {
+          const avgTonal = totalTonal / edges;
+          // Scale: -4 to 15 → 0 to 100
+          tonalScore = Math.max(0, Math.min(100, ((avgTonal + 4) / 19) * 100));
+        }
+      }
+
+      // Diversity: check for consecutive same style/artist
+      let sameStyleRuns = 0;
+      let sameArtistRuns = 0;
+      for (let i = 1; i < songs.length; i++) {
+        if (songs[i].style === songs[i - 1].style) sameStyleRuns++;
+        if (songs[i].artist === songs[i - 1].artist) sameArtistRuns++;
+      }
+      const maxRuns = Math.max(1, songs.length - 1);
+      diversityScore = Math.max(0, 100 - (sameStyleRuns / maxRuns) * 60 - (sameArtistRuns / maxRuns) * 40);
+
+      // Duration accuracy
+      const targetDur = opts.setDuration || 45;
+      const actualDur = set.totalTime || songs.reduce((s, song) => s + (song.duration || 0), 0);
+      const durError = Math.abs(actualDur - targetDur);
+      durationScore = Math.max(0, 100 - durError * 5);
+
+      // Weighted composite
+      const weights = { energy: 0.3, tonal: 0.25, diversity: 0.2, duration: 0.25 };
+      const composite = weights.energy * energyScore
+        + weights.tonal * tonalScore
+        + weights.diversity * diversityScore
+        + weights.duration * durationScore;
+
+      return {
+        overall: Math.round(composite),
+        energy: Math.round(energyScore),
+        tonal: Math.round(tonalScore),
+        diversity: Math.round(diversityScore),
+        duration: Math.round(durationScore)
+      };
+    }
+
+    /******************* PHASE 4: SET STRUCTURE TEMPLATES *******************/
+    const SET_STRUCTURE_TEMPLATES = {
+      classic: {
+        label: 'Classic Arc',
+        description: 'Opener → Build → Peak → Cool → Closer',
+        zones: [
+          { start: 0, end: 0.1, preferStyles: ['uptempo', 'rock', 'funk'], label: 'Opener' },
+          { start: 0.1, end: 0.35, preferStyles: ['midtempo', 'groove', 'shuffle'], label: 'Build' },
+          { start: 0.35, end: 0.7, preferStyles: ['uptempo', 'funk', 'rock', 'groove'], label: 'Peak' },
+          { start: 0.7, end: 0.9, preferStyles: ['midtempo', 'swing', 'soul'], label: 'Cool Down' },
+          { start: 0.9, end: 1.0, preferStyles: ['ballad', 'midtempo', 'swing'], label: 'Closer' }
+        ]
+      },
+      doublePeak: {
+        label: 'Double Peak',
+        description: 'Opener → Peak1 → Valley → Peak2 → Closer',
+        zones: [
+          { start: 0, end: 0.1, preferStyles: ['uptempo', 'groove', 'funk'], label: 'Opener' },
+          { start: 0.1, end: 0.35, preferStyles: ['uptempo', 'funk', 'rock'], label: 'Peak 1' },
+          { start: 0.35, end: 0.5, preferStyles: ['ballad', 'midtempo', 'swing'], label: 'Valley' },
+          { start: 0.5, end: 0.8, preferStyles: ['uptempo', 'funk', 'groove', 'rock'], label: 'Peak 2' },
+          { start: 0.8, end: 1.0, preferStyles: ['ballad', 'midtempo'], label: 'Closer' }
+        ]
+      },
+      slowBurn: {
+        label: 'Slow Burn',
+        description: 'Mellow start → Gradual build → Big finish',
+        zones: [
+          { start: 0, end: 0.3, preferStyles: ['ballad', 'midtempo', 'swing', 'bossa'], label: 'Mellow' },
+          { start: 0.3, end: 0.6, preferStyles: ['midtempo', 'groove', 'shuffle'], label: 'Warming Up' },
+          { start: 0.6, end: 0.9, preferStyles: ['uptempo', 'funk', 'rock', 'groove'], label: 'Peak' },
+          { start: 0.9, end: 1.0, preferStyles: ['uptempo', 'rock'], label: 'Big Finish' }
+        ]
+      },
+      highEnergy: {
+        label: 'High Energy',
+        description: 'Constant high energy with one mid-set breather',
+        zones: [
+          { start: 0, end: 0.45, preferStyles: ['uptempo', 'funk', 'rock', 'groove', 'ska'], label: 'Full Throttle' },
+          { start: 0.45, end: 0.55, preferStyles: ['midtempo', 'swing', 'shuffle'], label: 'Breather' },
+          { start: 0.55, end: 1.0, preferStyles: ['uptempo', 'funk', 'rock', 'groove'], label: 'Full Throttle' }
+        ]
+      },
+      freeform: {
+        label: 'Freeform',
+        description: 'No structural constraints — pure algorithm optimization',
+        zones: []
+      }
+    };
+
+    // Returns a style bonus/penalty for a candidate at a given position in a template
+    function templateStylePenalty(style, position, templateName) {
+      const template = SET_STRUCTURE_TEMPLATES[templateName];
+      if (!template || !template.zones.length) return 0;
+      const zone = template.zones.find(z => position >= z.start && position < z.end);
+      if (!zone) return 0;
+      return zone.preferStyles.includes(style) ? -0.8 : 0.4; // bonus for match, penalty for mismatch
+    }
 
     /******************* CORE GENERATOR (PHASE 2 OPTIMIZED) *******************/
     function generateSetlistsCore(songs, opts) {
@@ -1268,7 +1728,18 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             const openerStyles = ['uptempo', 'swing', 'midtempo', 'groove'];
             const openers = pool.filter(s => isAvailable(s) && openerStyles.includes(s.style));
             if (openers.length > 0) {
-              opener = openers[Math.floor(Math.random() * openers.length)];
+              // When tonal gravity is active, prefer openers near the anchor key
+              if (opts.useTonalGravity && opts._anchorKey) {
+                const scoredOpeners = openers.map(s => {
+                  const nk = s.normalizedKey || normalizeKey_TG(s.key, s.tags || []);
+                  const dist = nk ? circleDistance_TG(nk.tonic, opts._anchorKey.tonic) : 6;
+                  return { s, dist };
+                }).sort((a, b) => a.dist - b.dist);
+                const topOpeners = scoredOpeners.slice(0, Math.min(3, scoredOpeners.length));
+                opener = topOpeners[Math.floor(Math.random() * topOpeners.length)].s;
+              } else {
+                opener = openers[Math.floor(Math.random() * openers.length)];
+              }
             }
           }
 
@@ -1321,6 +1792,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           }
 
           const last = lastAddedSong;
+          const curveType = opts.energyCurveType || 'standard';
+          const energyWeight = opts.energyWeight ?? 0.35;
+          const tonalWeight = opts.tonalWeight ?? 0.25;
+          const diversityWeight = opts.diversityWeight ?? 1.0;
+          const randomness = opts.randomness ?? 50;
 
           const scored = candidates.map(s => {
             const dur = s.duration || 0;
@@ -1331,27 +1807,83 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               if (s.style === last.style) diversityPenalty += 1.25;
               if (s.artist === last.artist) diversityPenalty += 1.0;
             }
+            diversityPenalty *= diversityWeight;
 
+            // Continuous energy curve with composite (style + BPM) energy
             let energyPenalty = 0;
             if (useEnergyCurve) {
               const pos = (setDuration - remaining) / setDuration;
-              let targetE = 4;
-              if (pos < 0.15) targetE = 3.5;
-              else if (pos < 0.4) targetE = 4.5;
-              else if (pos < 0.75) targetE = 5.5;
-              else targetE = 3.0;
-              const e = ENERGY_MAP[s.style] || 3;
-              energyPenalty = Math.abs(e - targetE) * 0.35;
+              const targetE = targetEnergyCurve(pos, curveType);
+              const actualE = getCompositeEnergy(s);
+              energyPenalty = Math.abs(actualE - targetE) * energyWeight;
+
+              // Transition smoothness: penalize large energy jumps between consecutive songs
+              if (last) {
+                const jump = Math.abs(getCompositeEnergy(s) - getCompositeEnergy(last));
+                if (jump > 2.5) energyPenalty += (jump - 2.5) * 0.3;
+              }
             }
 
-            const score = timePenalty + diversityPenalty + energyPenalty;
+            // Integrated tonal scoring: consider key compatibility during initial selection
+            let tonalPenalty = 0;
+            if (opts.useTonalGravity && last?.normalizedKey && s.normalizedKey) {
+              const songCount = setArr.filter(Boolean).length;
+              const tonalScore = calculateTonalTransitionScore_TG(
+                last, s, songCount, Math.ceil(setDuration / 4), opts.tonalSmoothness ?? 70,
+                { anchorKey: opts._anchorKey || null }
+              );
+              tonalPenalty = -tonalScore * tonalWeight; // higher tonal score = lower penalty
+            }
+
+            // Set structure template preference
+            let templatePenalty = 0;
+            if (opts.setTemplate && opts.setTemplate !== 'freeform') {
+              const pos = (setDuration - remaining) / setDuration;
+              templatePenalty = templateStylePenalty(s.style, pos, opts.setTemplate);
+            }
+
+            // Song affinity: bonus for placing next to an affinity partner
+            let affinityPenalty = 0;
+            if (last && opts.songAffinities && opts.songAffinities.length > 0) {
+              const isAffinity = opts.songAffinities.some(
+                pair => (pair[0] === last.id && pair[1] === s.id) || (pair[1] === last.id && pair[0] === s.id)
+              );
+              if (isAffinity) affinityPenalty = -2.0; // bonus
+            }
+            if (last && opts.songAntiAffinities && opts.songAntiAffinities.length > 0) {
+              const isAnti = opts.songAntiAffinities.some(
+                pair => (pair[0] === last.id && pair[1] === s.id) || (pair[1] === last.id && pair[0] === s.id)
+              );
+              if (isAnti) affinityPenalty = 2.5; // penalty
+            }
+
+            const score = timePenalty + diversityPenalty + energyPenalty + tonalPenalty + templatePenalty + affinityPenalty;
             return { s, score };
           });
 
           scored.sort((a, b) => a.score - b.score);
 
-          const topK = scored.slice(0, Math.min(6, scored.length));
-          const pick = topK[Math.floor(Math.random() * topK.length)].s;
+          // Temperature-controlled selection: randomness 0=deterministic, 50=top-6, 100=softmax-all
+          let pick;
+          if (randomness <= 10) {
+            pick = scored[0].s;
+          } else if (randomness >= 80 && scored.length > 3) {
+            // Softmax selection over all candidates
+            const temp = (randomness / 100) * 2 + 0.1;
+            const maxScore = scored[0].score;
+            const weights = scored.map(c => Math.exp(-(c.score - maxScore) / temp));
+            const totalW = weights.reduce((a, b) => a + b, 0);
+            let r = Math.random() * totalW;
+            let pickIdx = 0;
+            for (let wi = 0; wi < weights.length; wi++) {
+              r -= weights[wi];
+              if (r <= 0) { pickIdx = wi; break; }
+            }
+            pick = scored[pickIdx].s;
+          } else {
+            const topK = scored.slice(0, Math.min(6, scored.length));
+            pick = topK[Math.floor(Math.random() * topK.length)].s;
+          }
 
           setArr[insertIndex] = pick;
           setUsedIds.add(pick.id);
@@ -1406,7 +1938,22 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               && !setSongs.some((x, xi) => xi !== lastIdx && x.id === s.id)
             );
             if (closerCandidates.length > 0) {
-              const closer = closerCandidates[Math.floor(Math.random() * closerCandidates.length)];
+              let closer;
+              // Tonal-aware closer: prefer closers harmonically close to the penultimate song
+              const penultimate = setSongs.length > 1 ? setSongs[lastIdx - 1] : null;
+              if (opts.useTonalGravity && penultimate?.normalizedKey && closerCandidates.length > 1) {
+                const scoredClosers = closerCandidates.map(s => {
+                  const nk = s.normalizedKey || normalizeKey_TG(s.key, s.tags || []);
+                  const dist = nk && penultimate.normalizedKey
+                    ? circleDistance_TG(nk.tonic, penultimate.normalizedKey.tonic)
+                    : 6;
+                  return { s, dist };
+                }).sort((a, b) => a.dist - b.dist);
+                const topClosers = scoredClosers.slice(0, Math.min(3, scoredClosers.length));
+                closer = topClosers[Math.floor(Math.random() * topClosers.length)].s;
+              } else {
+                closer = closerCandidates[Math.floor(Math.random() * closerCandidates.length)];
+              }
               setSongs[lastIdx] = closer;
               markUsed(closer);
             } else {
@@ -1660,6 +2207,28 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             </label>
           </div>
 
+          {settings.useEnergyCurve && (
+            <div style={{ marginBottom: '.8rem', paddingLeft: '.5rem', borderLeft: '2px solid var(--accent)', marginLeft: '.25rem' }}>
+              <div className="input-group">
+                <label style={{ textTransform: 'none', fontSize: '.75rem' }}>Curve Preset</label>
+                <select value={settings.energyCurveType || 'standard'}
+                  onChange={e => onChange({ ...settings, energyCurveType: e.target.value })}
+                  style={{ fontSize: '.8rem' }}>
+                  {Object.entries(ENERGY_CURVE_PRESETS).map(([key, preset]) => (
+                    <option key={key} value={key}>{preset.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="input-group">
+                <label style={{ textTransform: 'none', fontSize: '.75rem' }}>
+                  Energy Weight: {(settings.energyWeight ?? 0.35).toFixed(2)}
+                </label>
+                <input type="range" min="0" max="100" value={Math.round((settings.energyWeight ?? 0.35) * 100)}
+                  onChange={e => onChange({ ...settings, energyWeight: parseInt(e.target.value, 10) / 100 })} />
+              </div>
+            </div>
+          )}
+
           <div className="set-config">
             <div className="input-group">
               <label style={{ display: 'flex', alignItems: 'center', gap: '.5rem', cursor: 'pointer', textTransform: 'none' }}>
@@ -1830,6 +2399,140 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       </div>
     </div>
   )}
+</div>
+
+{/* Advanced Algorithm Settings */}
+<div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+  <div style={{ fontSize: '.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-muted)', marginBottom: '.6rem' }}>
+    Advanced Settings
+  </div>
+
+  <div className="set-config">
+    <div className="input-group">
+      <label style={{ textTransform: 'none', fontSize: '.75rem' }}>Set Template</label>
+      <select value={settings.setTemplate || 'freeform'}
+        onChange={e => onChange({ ...settings, setTemplate: e.target.value })}
+        style={{ fontSize: '.8rem' }}>
+        {Object.entries(SET_STRUCTURE_TEMPLATES).map(([key, t]) => (
+          <option key={key} value={key}>{t.label}</option>
+        ))}
+      </select>
+      {settings.setTemplate && settings.setTemplate !== 'freeform' && (
+        <div style={{ fontSize: '.7rem', color: 'var(--text-muted)', marginTop: '.2rem' }}>
+          {SET_STRUCTURE_TEMPLATES[settings.setTemplate]?.description}
+        </div>
+      )}
+    </div>
+    <div className="input-group">
+      <label style={{ textTransform: 'none', fontSize: '.75rem' }}>Optimization</label>
+      <select value={settings.optimizationLevel || 'standard'}
+        onChange={e => onChange({ ...settings, optimizationLevel: e.target.value })}
+        style={{ fontSize: '.8rem' }}>
+        <option value="standard">Standard</option>
+        <option value="deep">Deep (SA)</option>
+      </select>
+    </div>
+  </div>
+
+  <div className="input-group">
+    <label style={{ textTransform: 'none', fontSize: '.75rem' }}>
+      Randomness: {settings.randomness ?? 50}
+      <span style={{ fontSize: '.65rem', color: 'var(--text-muted)', marginLeft: '.4rem' }}>
+        {(settings.randomness ?? 50) <= 10 ? 'Predictable' : (settings.randomness ?? 50) >= 80 ? 'Adventurous' : 'Balanced'}
+      </span>
+    </label>
+    <input type="range" min="0" max="100" value={settings.randomness ?? 50}
+      onChange={e => onChange({ ...settings, randomness: parseInt(e.target.value, 10) })} />
+  </div>
+
+  <div className="input-group">
+    <label style={{ textTransform: 'none', fontSize: '.75rem' }}>
+      Diversity Weight: {(settings.diversityWeight ?? 1.0).toFixed(1)}
+    </label>
+    <input type="range" min="0" max="200" value={Math.round((settings.diversityWeight ?? 1.0) * 100)}
+      onChange={e => onChange({ ...settings, diversityWeight: parseInt(e.target.value, 10) / 100 })} />
+  </div>
+
+  {settings.useTonalGravity && (
+    <div className="input-group">
+      <label style={{ textTransform: 'none', fontSize: '.75rem' }}>
+        Tonal Weight: {(settings.tonalWeight ?? 0.25).toFixed(2)}
+      </label>
+      <input type="range" min="0" max="100" value={Math.round((settings.tonalWeight ?? 0.25) * 100)}
+        onChange={e => onChange({ ...settings, tonalWeight: parseInt(e.target.value, 10) / 100 })} />
+    </div>
+  )}
+
+  {/* Song Affinity Manager */}
+  <div className="input-group" style={{ marginTop: '.5rem' }}>
+    <label style={{ textTransform: 'none', fontSize: '.75rem' }}>
+      Song Pairings ({(settings.songAffinities || []).length} affinity, {(settings.songAntiAffinities || []).length} anti)
+    </label>
+    <div style={{ display: 'flex', gap: '.3rem' }}>
+      <select id="affinityA" style={{ fontSize: '.75rem', flex: 1 }}>
+        <option value="">Song A...</option>
+        {(activeSongs || []).map(s => (
+          <option key={s.id} value={s.id}>{s.title}</option>
+        ))}
+      </select>
+      <select id="affinityB" style={{ fontSize: '.75rem', flex: 1 }}>
+        <option value="">Song B...</option>
+        {(activeSongs || []).map(s => (
+          <option key={s.id} value={s.id}>{s.title}</option>
+        ))}
+      </select>
+    </div>
+    <div style={{ display: 'flex', gap: '.3rem', marginTop: '.3rem' }}>
+      <button className="btn btn-small" style={{ fontSize: '.65rem', flex: 1 }} onClick={() => {
+        const a = document.getElementById('affinityA')?.value;
+        const b = document.getElementById('affinityB')?.value;
+        if (!a || !b || a === b) return;
+        const existing = settings.songAffinities || [];
+        if (existing.some(p => (p[0] === a && p[1] === b) || (p[0] === b && p[1] === a))) return;
+        onChange({ ...settings, songAffinities: [...existing, [a, b]] });
+      }}>+ Pair Together</button>
+      <button className="btn btn-small" style={{ fontSize: '.65rem', flex: 1 }} onClick={() => {
+        const a = document.getElementById('affinityA')?.value;
+        const b = document.getElementById('affinityB')?.value;
+        if (!a || !b || a === b) return;
+        const existing = settings.songAntiAffinities || [];
+        if (existing.some(p => (p[0] === a && p[1] === b) || (p[0] === b && p[1] === a))) return;
+        onChange({ ...settings, songAntiAffinities: [...existing, [a, b]] });
+      }}>+ Keep Apart</button>
+    </div>
+    {(settings.songAffinities || []).length > 0 && (
+      <div style={{ marginTop: '.3rem' }}>
+        {(settings.songAffinities || []).map((pair, idx) => {
+          const sA = (activeSongs || []).find(s => s.id === pair[0]);
+          const sB = (activeSongs || []).find(s => s.id === pair[1]);
+          return (
+            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '.3rem', fontSize: '.7rem', color: 'var(--success)', marginBottom: '.15rem' }}>
+              <span>{sA?.title || '?'} + {sB?.title || '?'}</span>
+              <span style={{ cursor: 'pointer', opacity: 0.7 }} onClick={() => {
+                onChange({ ...settings, songAffinities: (settings.songAffinities || []).filter((_, i) => i !== idx) });
+              }}>x</span>
+            </div>
+          );
+        })}
+      </div>
+    )}
+    {(settings.songAntiAffinities || []).length > 0 && (
+      <div style={{ marginTop: '.2rem' }}>
+        {(settings.songAntiAffinities || []).map((pair, idx) => {
+          const sA = (activeSongs || []).find(s => s.id === pair[0]);
+          const sB = (activeSongs || []).find(s => s.id === pair[1]);
+          return (
+            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '.3rem', fontSize: '.7rem', color: 'var(--error)', marginBottom: '.15rem' }}>
+              <span>{sA?.title || '?'} / {sB?.title || '?'}</span>
+              <span style={{ cursor: 'pointer', opacity: 0.7 }} onClick={() => {
+                onChange({ ...settings, songAntiAffinities: (settings.songAntiAffinities || []).filter((_, i) => i !== idx) });
+              }}>x</span>
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </div>
 </div>
 
           <button className="btn btn-primary" onClick={onGenerate} disabled={songCount === 0} style={{ width: '100%', marginTop: '.5rem' }}>
@@ -2812,7 +3515,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [activeBandId, setActiveBandId] = useState(null);
 
       const [songs, setSongs] = useState([]);
-      const [settings, setSettings] = useState({ numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, lockedOpeners: [], lockedClosers: [], useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false });
+      const [settings, setSettings] = useState({ numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, lockedOpeners: [], lockedClosers: [], useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false, energyCurveType: 'standard', energyWeight: 0.35, tonalWeight: 0.25, diversityWeight: 1.0, randomness: 50, optimizationLevel: 'standard', setTemplate: 'freeform', songAffinities: [], songAntiAffinities: [] });
       const [setlists, setSetlists] = useState([]);
       const [locked, setLocked] = useState(new Set());
       // Cross-set drag-and-drop state
@@ -2881,10 +3584,19 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         // PHASE 3A: normalize status for older data
         const normalizedSongs = storedSongsRaw.map(s => ({ ...s, status: (s.status || 'active') }));
 
-        const storedSettings = LS.get(LS_KEYS.bandSettings(activeBandId)) || { numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, lockedOpeners: [], lockedClosers: [], useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false };
-        // Ensure backward compatibility for settings without locked opener/closer arrays
+        const storedSettings = LS.get(LS_KEYS.bandSettings(activeBandId)) || { numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, lockedOpeners: [], lockedClosers: [], useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false, energyCurveType: 'standard', energyWeight: 0.35, tonalWeight: 0.25, diversityWeight: 1.0, randomness: 50, optimizationLevel: 'standard', setTemplate: 'freeform', songAffinities: [], songAntiAffinities: [] };
+        // Ensure backward compatibility for settings without newer fields
         if (!storedSettings.lockedOpeners) storedSettings.lockedOpeners = [];
         if (!storedSettings.lockedClosers) storedSettings.lockedClosers = [];
+        if (!storedSettings.energyCurveType) storedSettings.energyCurveType = 'standard';
+        if (storedSettings.energyWeight == null) storedSettings.energyWeight = 0.35;
+        if (storedSettings.tonalWeight == null) storedSettings.tonalWeight = 0.25;
+        if (storedSettings.diversityWeight == null) storedSettings.diversityWeight = 1.0;
+        if (storedSettings.randomness == null) storedSettings.randomness = 50;
+        if (!storedSettings.optimizationLevel) storedSettings.optimizationLevel = 'standard';
+        if (!storedSettings.setTemplate) storedSettings.setTemplate = 'freeform';
+        if (!storedSettings.songAffinities) storedSettings.songAffinities = [];
+        if (!storedSettings.songAntiAffinities) storedSettings.songAntiAffinities = [];
         const storedImports = LS.get(LS_KEYS.bandImports(activeBandId)) || [];
         const storedGigs = LS.get(LS_KEYS.bandGigs(activeBandId)) || [];
         const storedWatermark = LS.get(LS_KEYS.bandWatermark(activeBandId)) || null;
@@ -2933,10 +3645,28 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         // PHASE 3A: generator uses ACTIVE only
         const lockPlan = buildLockPlanFromCurrentSetlists();
         const generatorFn = settings.useTonalGravity ? generateSetlistsCore_WithTonalGravity : generateSetlistsCore;
+        // Pre-compute anchor key so the core generator can use it for tonal-aware selection
+        let _anchorKey = null;
+        if (settings.useTonalGravity) {
+          const enrichedForAnchor = activeSongs.map(s => ({
+            ...s,
+            normalizedKey: normalizeKey_TG(s.key, s.tags || [])
+          }));
+          _anchorKey = determineAnchorKey_TG(enrichedForAnchor, settings.anchorKey || '');
+        }
         const out = generatorFn(activeSongs, {
           ...settings,
-          lockPlan: lockPlan || null
+          lockPlan: lockPlan || null,
+          _anchorKey
         });
+        // Compute quality scores if not already attached (non-tonal-gravity path)
+        if (!out.qualityScores) {
+          try {
+            out.qualityScores = out.map(set => calculateSetlistQualityScore(set, {
+              ...settings, _anchorKey
+            }));
+          } catch (e) { console.warn('Quality score computation failed:', e); }
+        }
         setSetlists(out);
         setLastGenerationStats(out.stats);
 
@@ -3781,7 +4511,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
             <header className="header">
               <h1>SETLIST GENERATOR</h1>
-              <div className="subtitle">v3.6.0 — Locked Openers/Closers • Venue Integration • Enhanced PDF Export</div>
+              <div className="subtitle">v3.7.0 — SA Optimizer • Continuous Energy Curves • Tonal Gravity v2 • Templates</div>
             </header>
 
             <div className="band-bar">
@@ -3906,6 +4636,16 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   <div className="generation-stats">
                     <strong>{lastGenerationStats.songsUsed}</strong> songs used •
                     <strong> {lastGenerationStats.attempts}</strong> selection attempts
+                    {setlists.qualityScores && setlists.qualityScores.length > 0 && (
+                      <span>
+                        {' '} • Quality: {setlists.qualityScores.map((q, qi) => (
+                          <span key={qi} title={`Energy: ${q.energy} | Tonal: ${q.tonal} | Diversity: ${q.diversity} | Duration: ${q.duration}`}
+                            style={{ color: q.overall >= 75 ? 'var(--success)' : q.overall >= 50 ? 'var(--warning)' : 'var(--error)', fontWeight: 600, cursor: 'help' }}>
+                            {qi > 0 ? ' | ' : ''}Set {qi + 1}: <strong>{q.overall}</strong>/100
+                          </span>
+                        ))}
+                      </span>
+                    )}
                   </div>
                 )}
 
