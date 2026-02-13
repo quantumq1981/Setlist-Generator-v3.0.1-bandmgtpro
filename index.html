@@ -243,6 +243,75 @@
     .import-drop-zone:hover, .import-drop-zone.dragover { border-color: var(--accent); color: var(--text); }
     .import-drop-zone input[type="file"] { display: none; }
 
+    .info-trigger {
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--primary);
+      color: var(--text-muted);
+      font-size: .72rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: .4rem;
+      transition: all .18s ease;
+    }
+    .info-trigger:hover { color: var(--text); border-color: var(--accent); transform: translateY(-1px); }
+
+    .info-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(8, 8, 12, .62);
+      backdrop-filter: blur(6px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1200;
+      animation: infoFadeIn .2s ease;
+      padding: 1rem;
+    }
+    .info-modal {
+      width: min(580px, 95vw);
+      border-radius: 14px;
+      background: linear-gradient(155deg, rgba(45, 45, 45, .86), rgba(27, 27, 27, .92));
+      border: 1px solid rgba(255, 255, 255, .14);
+      box-shadow: 0 18px 55px rgba(0, 0, 0, .45);
+      animation: infoPopIn .2s ease;
+      overflow: hidden;
+    }
+    .info-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: .85rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, .1);
+    }
+    .info-modal-header h4 {
+      margin: 0;
+      color: var(--accent);
+      font-size: .95rem;
+      letter-spacing: .02em;
+    }
+    .info-modal-close {
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 1.2rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .info-modal-content {
+      padding: 1rem;
+      font-size: .87rem;
+      color: #f1f3f4;
+      line-height: 1.45;
+    }
+    @keyframes infoFadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes infoPopIn { from { opacity: .1; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
     @media (max-width: 1100px){ .main-grid{ grid-template-columns: 1fr; } }
     @media (max-width: 700px){
       h1{ font-size: 1.8rem; }
@@ -253,6 +322,10 @@
 
 <body>
   <div id="root"></div>
+
+  <script type="text/babel" src="./featureHelp.js"></script>
+  <script type="text/babel" src="./InfoModal.jsx"></script>
+  <script type="text/babel" src="./InfoTrigger.jsx"></script>
 
   <script type="text/babel">
     const { useState, useEffect, useMemo } = React;
@@ -2170,6 +2243,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     }
 
     function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, songCount, libraryTime, watermarkImg, onWatermarkUpload, onClearWatermark, activeSongs }) {
+      const [activeHelpKey, setActiveHelpKey] = useState(null);
+      const activeHelp = activeHelpKey ? window.featureDefinitions?.[activeHelpKey] : null;
+      const openHelp = (featureKey) => setActiveHelpKey(featureKey);
+      const closeHelp = () => setActiveHelpKey(null);
+
       return (
         <div className="panel">
           <div className="panel-header">
@@ -2204,13 +2282,17 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 onChange={e => onChange({ ...settings, useEnergyCurve: e.target.checked })}
                 style={{ width: 'auto' }} />
               Energy Curve Optimization
+              <InfoTrigger featureKey="energyCurve" onClick={openHelp} label="Learn about Energy Curve Optimization" />
             </label>
           </div>
 
           {settings.useEnergyCurve && (
             <div style={{ marginBottom: '.8rem', paddingLeft: '.5rem', borderLeft: '2px solid var(--accent)', marginLeft: '.25rem' }}>
               <div className="input-group">
-                <label style={{ textTransform: 'none', fontSize: '.75rem' }}>Curve Preset</label>
+                <label style={{ textTransform: 'none', fontSize: '.75rem', display: 'flex', alignItems: 'center' }}>
+                  Curve Preset
+                  <InfoTrigger featureKey="presets" onClick={openHelp} label="Learn about curve presets" />
+                </label>
                 <select value={settings.energyCurveType || 'standard'}
                   onChange={e => onChange({ ...settings, energyCurveType: e.target.value })}
                   style={{ fontSize: '.8rem' }}>
@@ -2348,6 +2430,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         style={{ width: 'auto' }}
       />
       🎵 Tonal Gravity (Circle of Fifths)
+      <InfoTrigger featureKey="tonalGravity" onClick={openHelp} label="Learn about Tonal Gravity" />
     </label>
   </div>
 
@@ -2424,7 +2507,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       )}
     </div>
     <div className="input-group">
-      <label style={{ textTransform: 'none', fontSize: '.75rem' }}>Optimization</label>
+      <label style={{ textTransform: 'none', fontSize: '.75rem', display: 'flex', alignItems: 'center' }}>
+        Optimization
+        <InfoTrigger featureKey="optimizationMode" onClick={openHelp} label="Learn about optimization modes" />
+      </label>
       <select value={settings.optimizationLevel || 'standard'}
         onChange={e => onChange({ ...settings, optimizationLevel: e.target.value })}
         style={{ fontSize: '.8rem' }}>
@@ -2566,6 +2652,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           <div style={{ marginTop: '1rem', fontSize: '.85rem', color: 'var(--text-muted)' }}>
             Active Library: {songCount} songs • {Math.round(libraryTime)} min total
           </div>
+
+          <InfoModal isOpen={!!activeHelp} onClose={closeHelp} data={activeHelp} />
         </div>
       );
     }
