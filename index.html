@@ -44,9 +44,27 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Manrope', system-ui, -apple-system, Arial, sans-serif;
-      background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%);
+      background: #0b0b0f;
       color: var(--text);
       min-height: 100vh; overflow-x: hidden;
+    }
+
+    .ide-background {
+      min-height: 100vh;
+      background-color: #0b0b0f;
+      background-image: url('./assets/zemba-logo-bg.png');
+      background-image: image-set(
+        url('./assets/zemba-logo-bg.webp') type('image/webp'),
+        url('./assets/zemba-logo-bg.png') type('image/png')
+      );
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+    }
+    .ide-background__content {
+      min-height: 100vh;
+      background: linear-gradient(135deg, rgba(15, 15, 15, 0.82) 0%, rgba(26, 26, 26, 0.78) 100%);
+      padding: 1px 0;
     }
     .app-container { max-width: 1600px; margin: 0 auto; padding: 1.25rem; }
     header.header { text-align: center; margin: 1rem 0 2rem; position: relative; }
@@ -3696,6 +3714,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     }
 
     /******************* MAIN APP *******************/
+    function IDEBackground({ children }) {
+      return (
+        <div className="ide-background">
+          <div className="ide-background__content">{children}</div>
+        </div>
+      );
+    }
+
     function App() {
       const [bands, setBands] = useState([]);
       const [activeBandId, setActiveBandId] = useState(null);
@@ -4838,7 +4864,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       return (
         <>
-          <div className="app-container no-print">
+          <IDEBackground>
+            <div className="app-container no-print">
             {toast && (
               <div className="toast-container">
                 <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
@@ -5042,7 +5069,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               setlists={setlists}
               bandName={activeBand?.name || 'Band'}
             />
-          </div>
+            </div>
+          </IDEBackground>
 
           {dragState.active && (
             <div
