@@ -430,6 +430,7 @@
 
     const ENERGY_MAP = {
       ballad: 2, acoustic: 2.5, waltz: 3, bossa: 3.5, blues: 3.5, jazz: 3.5,
+      'slow blues': 2.5, latin: 4,
       swing: 4, country: 4, reggae: 4, midtempo: 4.5, soul: 4.5, rnb: 4.5,
       shuffle: 5, groove: 5.5, funk: 6, rock: 6.5, uptempo: 7, ska: 6.5,
       punk: 8, metal: 9, edm: 8.5, pop: 5
@@ -478,6 +479,9 @@
 
     const IMPORT_COLUMN_SYNONYMS = {
       title: ["title","song","song title","name","tune","track"],
+      artist: ["artist","band","performer","by","group"],
+      duration: ["duration","dur","time","length","minutes","min"],
+      style: ["style","genre","type","feel","category"],
       key: ["key","tonality","pitch","root"],
       tempo: ["tempo","bpm","speed"],
       vocalist: ["vocalist","singer","lead","vox","vocal"]
@@ -614,6 +618,9 @@
       const warnings = [];
       const changes = [];
       const rawTitle = rowObj[mapping.titleCol] ?? "";
+      const rawArtist = mapping.artistCol != null ? (rowObj[mapping.artistCol] ?? "") : "";
+      const rawDuration = mapping.durationCol != null ? (rowObj[mapping.durationCol] ?? "") : "";
+      const rawStyle = mapping.styleCol != null ? (rowObj[mapping.styleCol] ?? "") : "";
       const rawKey = mapping.keyCol != null ? (rowObj[mapping.keyCol] ?? "") : "";
       const rawTempo = mapping.tempoCol != null ? (rowObj[mapping.tempoCol] ?? "") : "";
       const rawVox = mapping.vocalistCol != null ? (rowObj[mapping.vocalistCol] ?? "") : "";
@@ -621,6 +628,43 @@
       const t = importNormalizeTitle(rawTitle, opts);
       warnings.push(...t.warnings);
       if (t.original !== t.value) changes.push({ field: "title", original: t.original, normalized: t.value });
+
+      // Artist: trim whitespace and normalize
+      const artistVal = importNormalizeWhitespace(rawArtist);
+      warnings.push(...artistVal.warnings.map(w => w.replace('title_', 'artist_')));
+      if (artistVal.original !== artistVal.value) changes.push({ field: "artist", original: artistVal.original, normalized: artistVal.value });
+
+      // Duration: parse m:ss or plain number
+      let durationVal = String(rawDuration).trim();
+      if (durationVal && durationVal.includes(':')) {
+        const [m, s] = durationVal.split(':').map(Number);
+        durationVal = String(Math.round(((m || 0) + ((s || 0) / 60)) * 100) / 100);
+      } else if (durationVal) {
+        const num = parseFloat(durationVal);
+        durationVal = (num > 0) ? String(num) : "";
+      }
+
+      // Style: normalize to lowercase, map known aliases
+      const STYLE_ALIASES = {
+        'classic rock': 'rock', 'hard rock': 'rock', 'soft rock': 'midtempo',
+        'slow blues': 'blues', 'fast blues': 'shuffle', 'r&b': 'rnb', 'r and b': 'rnb',
+        'hip hop': 'groove', 'hip-hop': 'groove', 'bossa nova': 'bossa',
+        'folk': 'acoustic', 'singer-songwriter': 'acoustic', 'alternative': 'rock',
+        'indie': 'midtempo', 'grunge': 'rock', 'heavy metal': 'metal',
+        'electronic': 'edm', 'dance': 'edm', 'disco': 'funk'
+      };
+      let styleVal = String(rawStyle).trim().toLowerCase();
+      if (STYLE_ALIASES[styleVal]) {
+        const originalStyle = styleVal;
+        styleVal = STYLE_ALIASES[styleVal];
+        changes.push({ field: "style", original: originalStyle, normalized: styleVal });
+        warnings.push("style_aliased");
+      }
+      // Validate against known styles
+      const KNOWN_STYLES = new Set(Object.keys(ENERGY_MAP));
+      if (styleVal && !KNOWN_STYLES.has(styleVal)) {
+        warnings.push("style_unknown");
+      }
 
       const k = opts.normalizeKeys ? importNormalizeKey(rawKey) : { value: String(rawKey).trim(), warnings: [], original: String(rawKey) };
       warnings.push(...k.warnings);
@@ -634,7 +678,7 @@
       warnings.push(...v.warnings);
       if (v.original !== v.value) changes.push({ field: "vocalist", original: v.original, normalized: v.value });
 
-      const out = { title: t.value, key: k.value, tempo: p.value, vocalist: v.value };
+      const out = { title: t.value, artist: artistVal.value, duration: durationVal, style: styleVal, key: k.value, tempo: p.value, vocalist: v.value };
       const rejectReason = !out.title ? "empty_title" : null;
       return { out, rejectReason, warnings, changes };
     }
@@ -663,11 +707,14 @@
     }
 
     function importToCanonicalCSV(rows) {
-      const header = ["title","key","tempo","vocalist"];
+      const header = ["Title","Artist","Duration","Style","Key","BPM","Vocalist"];
       const esc = (s) => `"${String(s ?? "").replace(/"/g,'""')}"`;
       const lines = [header.join(",")];
       for (const r of rows) {
-        lines.push([esc(r.title), esc(r.key), r.tempo ? String(parseInt(r.tempo, 10)) : "", esc(r.vocalist)].join(","));
+        lines.push([
+          esc(r.title), esc(r.artist || ""), r.duration || "", esc(r.style || ""),
+          esc(r.key), r.tempo ? String(parseInt(r.tempo, 10)) : "", esc(r.vocalist)
+        ].join(","));
       }
       return lines.join("\n");
     }
@@ -690,7 +737,7 @@
     }
 
     function importAutoMapColumns(headers) {
-      const mapping = { titleCol: null, keyCol: null, tempoCol: null, vocalistCol: null };
+      const mapping = { titleCol: null, artistCol: null, durationCol: null, styleCol: null, keyCol: null, tempoCol: null, vocalistCol: null };
       const confidences = {};
       const used = new Set();
 
@@ -1443,22 +1490,44 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const affinities = opts.songAffinities || [];
       const antiAffinities = opts.songAntiAffinities || [];
 
+      // PERF: Pre-cache composite energy values (avoids recalculating per iteration)
+      const energyCache = new Map();
+      for (const s of songs) {
+        if (!energyCache.has(s.id)) energyCache.set(s.id, getCompositeEnergy(s));
+      }
+      const cachedEnergy = (s) => energyCache.get(s.id) ?? getCompositeEnergy(s);
+
+      // PERF: Pre-cache energy curve targets for each position
+      const targetEnergyCache = new Float64Array(len);
+      for (let i = 0; i < len; i++) {
+        targetEnergyCache[i] = targetEnergyCurve(len > 1 ? i / (len - 1) : 0.5, curveType);
+      }
+
+      // PERF: Pre-build affinity lookup maps (O(1) instead of O(k) per pair check)
+      const affinitySet = new Set();
+      for (const pair of affinities) {
+        affinitySet.add(`${pair[0]}|${pair[1]}`);
+        affinitySet.add(`${pair[1]}|${pair[0]}`);
+      }
+      const antiAffinitySet = new Set();
+      for (const pair of antiAffinities) {
+        antiAffinitySet.add(`${pair[0]}|${pair[1]}`);
+        antiAffinitySet.add(`${pair[1]}|${pair[0]}`);
+      }
+
       // Cost function: lower = better
       const cost = (arr) => {
         let c = 0;
         for (let i = 0; i < arr.length; i++) {
-          const pos = arr.length > 1 ? i / (arr.length - 1) : 0.5;
-
           // Energy curve adherence
           if (useEnergy) {
-            const target = targetEnergyCurve(pos, curveType);
-            const actual = getCompositeEnergy(arr[i]);
-            c += Math.abs(actual - target) * 0.4;
+            const actual = cachedEnergy(arr[i]);
+            c += Math.abs(actual - targetEnergyCache[i]) * 0.4;
           }
 
           // Energy transition smoothness
           if (useEnergy && i > 0) {
-            const jump = Math.abs(getCompositeEnergy(arr[i]) - getCompositeEnergy(arr[i - 1]));
+            const jump = Math.abs(cachedEnergy(arr[i]) - cachedEnergy(arr[i - 1]));
             if (jump > 2.5) c += (jump - 2.5) * 0.35;
           }
 
@@ -1467,7 +1536,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             const score = calculateTonalTransitionScore_TG(
               arr[i - 1], arr[i], i, len, smoothness, { anchorKey }
             );
-            c -= score * 0.3; // higher tonal score = lower cost
+            c -= score * 0.3;
           }
 
           // Diversity: penalize consecutive same style/artist
@@ -1475,26 +1544,21 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             if (arr[i].style === arr[i - 1].style) c += 1.0;
             if (arr[i].artist === arr[i - 1].artist) c += 1.2;
           }
-        }
 
-        // Song affinity bonuses (prefer paired songs adjacent)
-        for (const pair of affinities) {
-          const idxA = arr.findIndex(s => s.id === pair[0]);
-          const idxB = arr.findIndex(s => s.id === pair[1]);
-          if (idxA >= 0 && idxB >= 0) {
-            const gap = Math.abs(idxA - idxB);
-            if (gap === 1) c -= 3; // adjacent: big bonus
-            else if (gap <= 3) c -= 1; // close: small bonus
+          // PERF: Check affinities inline using O(1) Set lookups
+          if (i > 0) {
+            const pairKey = `${arr[i - 1].id}|${arr[i].id}`;
+            if (affinitySet.has(pairKey)) c -= 3; // adjacent affinity bonus
+            if (antiAffinitySet.has(pairKey)) c += 4; // adjacent anti-affinity penalty
           }
         }
 
-        // Song anti-affinity penalties (keep certain songs apart)
-        for (const pair of antiAffinities) {
-          const idxA = arr.findIndex(s => s.id === pair[0]);
-          const idxB = arr.findIndex(s => s.id === pair[1]);
-          if (idxA >= 0 && idxB >= 0) {
-            const gap = Math.abs(idxA - idxB);
-            if (gap <= 2) c += 4; // too close: penalty
+        // Check non-adjacent affinity/anti-affinity pairs (gap 2-3)
+        for (let i = 0; i < arr.length - 2; i++) {
+          for (let g = 2; g <= Math.min(3, arr.length - 1 - i); g++) {
+            const pairKey = `${arr[i].id}|${arr[i + g].id}`;
+            if (affinitySet.has(pairKey)) c -= 1; // close but not adjacent: small bonus
+            if (g <= 2 && antiAffinitySet.has(pairKey)) c += 4; // too close penalty
           }
         }
 
@@ -1505,12 +1569,18 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const lockedIndices = new Set();
       if (opts.forceOpener) lockedIndices.add(0);
       if (opts.forceCloser) lockedIndices.add(len - 1);
-      // Also lock any songs from the lockPlan
       if (opts._lockedIds) {
         songs.forEach((s, idx) => {
           if (opts._lockedIds.has(s.id)) lockedIndices.add(idx);
         });
       }
+
+      // PERF: Pre-build unlocked indices array (constant across iterations)
+      const unlocked = [];
+      for (let k = 0; k < len; k++) {
+        if (!lockedIndices.has(k)) unlocked.push(k);
+      }
+      if (unlocked.length < 2) return songs;
 
       let current = [...songs];
       let currentCost = cost(current);
@@ -1522,19 +1592,16 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const Tmin = 0.1;
       const alpha = 0.97;
       const iterations = Math.min(800, len * 60);
+      const unlockedLen = unlocked.length;
 
       let T = T0;
       for (let iter = 0; iter < iterations && T > Tmin; iter++) {
-        // Generate neighbor: random swap of two non-locked positions
-        const unlocked = [];
-        for (let k = 0; k < len; k++) {
-          if (!lockedIndices.has(k)) unlocked.push(k);
-        }
-        if (unlocked.length < 2) break;
-
-        const idxA = unlocked[Math.floor(Math.random() * unlocked.length)];
-        let idxB = unlocked[Math.floor(Math.random() * unlocked.length)];
-        while (idxB === idxA) idxB = unlocked[Math.floor(Math.random() * unlocked.length)];
+        // PERF: Direct random index into pre-built unlocked array
+        const ai = Math.floor(Math.random() * unlockedLen);
+        let bi = Math.floor(Math.random() * (unlockedLen - 1));
+        if (bi >= ai) bi++;
+        const idxA = unlocked[ai];
+        const idxB = unlocked[bi];
 
         const neighbor = [...current];
         [neighbor[idxA], neighbor[idxB]] = [neighbor[idxB], neighbor[idxA]];
@@ -1719,6 +1786,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       let totalAttempts = 0;
       let generationAborted = false;
 
+      // PERF: Pre-cache composite energy for all songs in the pool
+      const energyCache = new Map();
+      for (const s of pool) {
+        if (!energyCache.has(s.id)) energyCache.set(s.id, getCompositeEnergy(s));
+      }
+      const cachedEnergy = (s) => energyCache.get(s.id) ?? getCompositeEnergy(s);
+
       const getSongDedupKeys = (s) => {
         const k = [];
         if (s.id) k.push(`id:${s.id}`);
@@ -1887,12 +1961,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             if (useEnergyCurve) {
               const pos = (setDuration - remaining) / setDuration;
               const targetE = targetEnergyCurve(pos, curveType);
-              const actualE = getCompositeEnergy(s);
+              const actualE = cachedEnergy(s);
               energyPenalty = Math.abs(actualE - targetE) * energyWeight;
 
               // Transition smoothness: penalize large energy jumps between consecutive songs
               if (last) {
-                const jump = Math.abs(getCompositeEnergy(s) - getCompositeEnergy(last));
+                const jump = Math.abs(cachedEnergy(s) - cachedEnergy(last));
                 if (jump > 2.5) energyPenalty += (jump - 2.5) * 0.3;
               }
             }
@@ -2781,7 +2855,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [parsedRows, setParsedRows] = useState([]);
 
       // Mapping
-      const [mapping, setMapping] = useState({ titleCol: null, keyCol: null, tempoCol: null, vocalistCol: null });
+      const [mapping, setMapping] = useState({ titleCol: null, artistCol: null, durationCol: null, styleCol: null, keyCol: null, tempoCol: null, vocalistCol: null });
       const [confidences, setConfidences] = useState({});
 
       // Options
@@ -2800,7 +2874,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         setStep("input"); setInputTab("upload"); setRawText(""); setFileName("");
         setHasHeaders(true); setDelimiter("auto");
         setParsedColumns([]); setParsedRows([]);
-        setMapping({ titleCol: null, keyCol: null, tempoCol: null, vocalistCol: null });
+        setMapping({ titleCol: null, artistCol: null, durationCol: null, styleCol: null, keyCol: null, tempoCol: null, vocalistCol: null });
         setConfidences({});
         setNormalizedResult(null);
       };
@@ -2886,6 +2960,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         // Convert column indices to column names
         const colMapping = {
           titleCol: parsedColumns[mapping.titleCol],
+          artistCol: mapping.artistCol != null ? parsedColumns[mapping.artistCol] : null,
+          durationCol: mapping.durationCol != null ? parsedColumns[mapping.durationCol] : null,
+          styleCol: mapping.styleCol != null ? parsedColumns[mapping.styleCol] : null,
           keyCol: mapping.keyCol != null ? parsedColumns[mapping.keyCol] : null,
           tempoCol: mapping.tempoCol != null ? parsedColumns[mapping.tempoCol] : null,
           vocalistCol: mapping.vocalistCol != null ? parsedColumns[mapping.vocalistCol] : null
@@ -2926,7 +3003,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         multi_vocalist_first_selected: "Multiple vocalists, used first",
         title_trimmed: "Title whitespace trimmed",
         title_smart_punct: "Smart punctuation converted",
-        title_meta_paren_stripped: "Meta parenthetical stripped"
+        title_meta_paren_stripped: "Meta parenthetical stripped",
+        style_aliased: "Style name mapped to standard vocabulary",
+        style_unknown: "Style not in known styles list",
+        artist_trimmed: "Artist whitespace trimmed"
       };
 
       return (
@@ -3032,6 +3112,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <div className="import-mapping-grid">
                   {[
                     { key: "titleCol", label: "Title *", required: true },
+                    { key: "artistCol", label: "Artist" },
+                    { key: "durationCol", label: "Duration" },
+                    { key: "styleCol", label: "Style / Genre" },
                     { key: "keyCol", label: "Key" },
                     { key: "tempoCol", label: "Tempo / BPM" },
                     { key: "vocalistCol", label: "Vocalist" }
@@ -3200,11 +3283,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   </h4>
                   <div style={{ overflowX: "auto" }}>
                     <table className="import-preview-table">
-                      <thead><tr><th>Title</th><th>Key</th><th>Tempo</th><th>Vocalist</th></tr></thead>
+                      <thead><tr><th>Title</th><th>Artist</th><th>Dur</th><th>Style</th><th>Key</th><th>BPM</th><th>Vocalist</th></tr></thead>
                       <tbody>
                         {normalizedResult.rows.slice(0, 10).map((r, i) => (
                           <tr key={i}>
                             <td>{r.title}</td>
+                            <td>{r.artist}</td>
+                            <td>{r.duration}</td>
+                            <td>{r.style}</td>
                             <td>{r.key}</td>
                             <td>{r.tempo}</td>
                             <td>{r.vocalist}</td>
@@ -3293,7 +3379,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     function PrintView({ setlists, watermarkImg }) {
       return (
         <div className="print-only">
-          {setlists.map((set) => (
+          {setlists.map((set, setIdx) => (
             <div key={set.id} className="set-page" style={{ position: 'relative' }}>
               {watermarkImg && (
                 <div style={{
@@ -3310,23 +3396,35 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 </div>
               )}
               <div style={{ position: 'relative', zIndex: 1, padding: '0.25in' }}>
-                <div style={{ fontFamily: "'Oswald', 'Helvetica Neue', Arial, sans-serif", fontSize: '20pt', fontWeight: 'bold', textTransform: 'uppercase', textDecoration: 'underline', marginBottom: '18px' }}>
+                <div style={{ fontFamily: "'Oswald', 'Helvetica Neue', Arial, sans-serif", fontSize: '20pt', fontWeight: 'bold', textTransform: 'uppercase', textDecoration: 'underline', marginBottom: '12px' }}>
                   {set.name}
                 </div>
-                <div style={{ fontFamily: "'Oswald', 'Helvetica Neue', Arial, sans-serif", fontSize: '16pt', fontWeight: 'bold', marginBottom: '18px' }}>
+                <div style={{ fontFamily: "'Oswald', 'Helvetica Neue', Arial, sans-serif", fontSize: '14pt', fontWeight: 'bold', marginBottom: '6px' }}>
                   {set.songs.length} songs | {Math.round(set.totalTime)} minutes
+                  {setlists.qualityScores && setlists.qualityScores[setIdx] && (
+                    <span style={{ marginLeft: '12px', fontSize: '11pt', fontWeight: 'normal' }}>
+                      Quality: {setlists.qualityScores[setIdx].overall}/100
+                    </span>
+                  )}
+                </div>
+                {/* Column headers */}
+                <div style={{ fontFamily: "'Oswald', 'Helvetica Neue', Arial, sans-serif", fontSize: '9pt', fontWeight: 'bold', color: '#666', display: 'grid', gridTemplateColumns: '30px 1fr 50px 50px 70px', gap: '4px', borderBottom: '1px solid #ccc', paddingBottom: '4px', marginBottom: '8px' }}>
+                  <span>#</span>
+                  <span>TITLE / ARTIST</span>
+                  <span>KEY</span>
+                  <span>BPM</span>
+                  <span>STYLE</span>
                 </div>
                 <div>
-                  {set.songs.map((song, idx) => {
-                    const meta = [];
-                    if (song.key) meta.push(song.key);
-                    if (song.bpm) meta.push(`${song.bpm} BPM`);
-                    return (
-                      <div key={`print-${song.id}-${idx}`} style={{ fontFamily: "'Oswald', 'Helvetica Neue', Arial, sans-serif", fontSize: '20pt', fontWeight: 'bold', lineHeight: 1.0, marginBottom: '8px' }}>
-                        {idx + 1}. {song.title}{song.artist ? ` - ${song.artist}` : ''}{meta.length > 0 ? ` (${meta.join(' | ')})` : ''}
-                      </div>
-                    );
-                  })}
+                  {set.songs.map((song, idx) => (
+                    <div key={`print-${song.id}-${idx}`} style={{ fontFamily: "'Oswald', 'Helvetica Neue', Arial, sans-serif", fontSize: '18pt', fontWeight: 'bold', lineHeight: 1.0, marginBottom: '6px', display: 'grid', gridTemplateColumns: '30px 1fr 50px 50px 70px', gap: '4px', alignItems: 'baseline' }}>
+                      <span style={{ fontSize: '14pt', color: '#666' }}>{idx + 1}</span>
+                      <span>{song.title}{song.artist ? ` - ${song.artist}` : ''}</span>
+                      <span style={{ fontSize: '12pt' }}>{song.key || ''}</span>
+                      <span style={{ fontSize: '12pt' }}>{song.bpm || ''}</span>
+                      <span style={{ fontSize: '10pt', textTransform: 'capitalize' }}>{song.style || ''}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -3809,24 +3907,29 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         showToast('All songs deleted', 'warning');
       };
 
-      // PHASE 2: CSV Export with proper quoting
+      // PHASE 2: CSV Export with proper quoting + enhanced energy/tonal data
       const exportSongs = () => {
-        const headers = ['Title', 'Artist', 'Duration', 'Style', 'Key', 'BPM', 'Vocalist'];
-        const rows = songs.map(s => ([
-          csvEscapeCell(s.title),
-          csvEscapeCell(s.artist),
-          csvEscapeCell(s.duration ?? ''),
-          csvEscapeCell(s.style ?? ''),
-          csvEscapeCell(s.key ?? ''),
-          csvEscapeCell(s.bpm ?? ''),
-          csvEscapeCell(s.vocalist ?? '')
-        ]));
+        const headers = ['Title', 'Artist', 'Duration', 'Style', 'Key', 'BPM', 'Vocalist', 'Energy', 'Status'];
+        const rows = songs.map(s => {
+          const energy = getCompositeEnergy(s);
+          return [
+            csvEscapeCell(s.title),
+            csvEscapeCell(s.artist),
+            csvEscapeCell(s.duration ?? ''),
+            csvEscapeCell(s.style ?? ''),
+            csvEscapeCell(s.key ?? ''),
+            csvEscapeCell(s.bpm ?? ''),
+            csvEscapeCell(s.vocalist ?? ''),
+            csvEscapeCell(Math.round(energy * 10) / 10),
+            csvEscapeCell(s.status || 'active')
+          ];
+        });
         const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `songs-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = `songs-${activeBand?.name || 'band'}-${new Date().toISOString().slice(0, 10)}.csv`;
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 3000);
       };
@@ -3874,16 +3977,31 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           const text = ev.target?.result;
           if (!text) return;
 
-          const lines = String(text).split(/\r?\n/).filter(l => l.trim());
-          if (lines.length < 2) return showToast('CSV empty or invalid', 'error');
+          // Use PapaParse for robust CSV parsing (handles quoted commas, etc.)
+          const result = Papa.parse(String(text), {
+            header: true, skipEmptyLines: 'greedy', dynamicTyping: false
+          });
+          if (!result.data || result.data.length === 0) return showToast('CSV empty or invalid', 'error');
 
           const imported = [];
-          for (let i = 1; i < lines.length; i++) {
-            // NOTE: basic CSV split (kept as-is for this build)
-            const parts = lines[i].split(',').map(p => p.trim().replace(/^"|"$/g, ''));
-            if (parts.length < 3) continue;
+          for (const row of result.data) {
+            // Map column names case-insensitively
+            const get = (keys) => {
+              for (const k of keys) {
+                for (const col of Object.keys(row)) {
+                  if (col.toLowerCase().trim() === k) return (row[col] || '').trim();
+                }
+              }
+              return '';
+            };
+            const title = get(['title', 'song', 'song title', 'name', 'tune', 'track']);
+            const artist = get(['artist', 'band', 'performer', 'by']);
+            const duration = get(['duration', 'dur', 'time', 'length', 'minutes']);
+            const style = get(['style', 'genre', 'type', 'feel']);
+            const key = get(['key', 'tonality', 'pitch']);
+            const bpm = get(['bpm', 'tempo', 'speed']);
+            const vocalist = get(['vocalist', 'singer', 'lead', 'vox', 'vocal']);
 
-            const [title, artist, duration, style, key, bpm, vocalist] = parts;
             if (!title || !artist || !duration) continue;
 
             imported.push({
@@ -3892,7 +4010,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               title: sanitizeInput(title),
               artist: sanitizeInput(artist),
               duration: parseDuration(duration),
-              style: style || 'midtempo',
+              style: (style || 'midtempo').toLowerCase(),
               key: key || '',
               bpm: bpm || '',
               vocalist: vocalist || ''
@@ -3922,7 +4040,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 "La Grange","ZZ Top",3.83,uptempo,A,162,Chris
 "Come Together","The Beatles",4.5,groove,Dm,82,ALL
 "Sweet Home Alabama","Lynyrd Skynyrd",4.75,midtempo,D,100,Chris
-"Billie Jean","Michael Jackson",4.25,uptempo,F#m,117,ALL`;
+"Billie Jean","Michael Jackson",4.25,uptempo,F#m,117,ALL
+"Stormy Monday","Allman Brothers",7.25,blues,G,80,ALL
+"Pride and Joy","Stevie Ray Vaughan",3.62,shuffle,E,127,ALL
+"Fly Away","Lenny Kravitz",3.62,rock,A,138,ALL`;
         const blob = new Blob([sample], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -3951,6 +4072,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               const merged = { ...existing };
               if (!merged.key && row.key) { merged.key = row.key; updated = true; }
               if (!merged.bpm && row.tempo) { merged.bpm = row.tempo; updated = true; }
+              if (!merged.artist && row.artist) { merged.artist = sanitizeInput(row.artist); updated = true; }
+              if ((!merged.duration || merged.duration === DEFAULT_DURATION_MINUTES) && row.duration) { merged.duration = parseDuration(row.duration); updated = true; }
+              if (merged.style === 'midtempo' && row.style && row.style !== 'midtempo') { merged.style = row.style; updated = true; }
               if (updated) {
                 const newSongs = [...songs];
                 newSongs[idx] = merged;
@@ -3966,9 +4090,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             id: genId(),
             status: 'active',
             title: sanitizeInput(row.title),
-            artist: '',
-            duration: 0,
-            style: 'midtempo',
+            artist: sanitizeInput(row.artist || ''),
+            duration: parseDuration(row.duration || 0),
+            style: row.style || 'midtempo',
             key: row.key || '',
             bpm: row.tempo || '',
             vocalist: row.vocalist || ''
@@ -4030,22 +4154,19 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
         const pageW = doc.internal.pageSize.getWidth(); // 612pt
         const pageH = doc.internal.pageSize.getHeight(); // 792pt
-        // Narrow margins: ~0.25in = 18pt
         const margin = 18;
         const contentWidth = pageW - (margin * 2);
 
-        // Register Oswald font fallback - jsPDF uses helvetica as base,
-        // we set font size to 20pt per spec
         const HEADER_SIZE = 20;
-        const BODY_SIZE = 20;
-        const LINE_HEIGHT = 20; // 1.00 line spacing at 20pt = 20pt
+        const BODY_SIZE = 18;
+        const SMALL_SIZE = 10;
+        const LINE_HEIGHT = 20;
 
         const addWatermark = () => {
           if (!watermarkImg) return;
           doc.saveGraphicsState();
           doc.setGState(new doc.GState({ opacity: 0.12 }));
           try {
-            // Fill entire page, portrait orientation aligned
             doc.addImage(watermarkImg, 'AUTO', 0, 0, pageW, pageH);
           } catch (err) {
             console.warn('Watermark image error:', err);
@@ -4053,7 +4174,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           doc.restoreGraphicsState();
         };
 
-        const drawSetHeader = (set, yPos) => {
+        const drawSetHeader = (set, yPos, setIdx) => {
           const heading = set.name.toUpperCase();
 
           doc.setFont('helvetica', 'bold');
@@ -4062,24 +4183,47 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           doc.text(heading, margin, yPos);
 
           const headingWidth = doc.getTextWidth(heading);
-          doc.setLineWidth(1);
+          doc.setLineWidth(1.5);
           doc.line(margin, yPos + 3, margin + headingWidth, yPos + 3);
 
           yPos += HEADER_SIZE + 6;
           doc.setFontSize(BODY_SIZE - 4);
-          doc.text(`${set.songs.length} songs  |  ${Math.round(set.totalTime)} minutes`, margin, yPos);
-          return yPos + HEADER_SIZE + 4;
+          const setInfo = `${set.songs.length} songs  |  ${Math.round(set.totalTime)} minutes`;
+          doc.text(setInfo, margin, yPos);
+
+          // Quality score badge if available
+          const qScores = setlists.qualityScores;
+          if (qScores && qScores[setIdx]) {
+            const q = qScores[setIdx];
+            const scoreText = `Quality: ${q.overall}/100  (E:${q.energy} T:${q.tonal} D:${q.diversity} Dur:${q.duration})`;
+            const scoreX = margin + doc.getTextWidth(setInfo) + 15;
+            doc.setFontSize(SMALL_SIZE);
+            doc.setTextColor(q.overall >= 75 ? 0 : q.overall >= 50 ? 120 : 180, q.overall >= 75 ? 128 : q.overall >= 50 ? 100 : 0, 0);
+            doc.text(scoreText, scoreX, yPos);
+            doc.setTextColor(0, 0, 0);
+          }
+
+          yPos += HEADER_SIZE + 2;
+
+          // Draw column headers
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(SMALL_SIZE);
+          doc.setTextColor(100, 100, 100);
+          doc.text('#', margin, yPos);
+          doc.text('TITLE / ARTIST', margin + 24, yPos);
+          doc.text('KEY', contentWidth - 120 + margin, yPos);
+          doc.text('BPM', contentWidth - 70 + margin, yPos);
+          doc.text('STYLE', contentWidth - 30 + margin, yPos);
+          doc.setTextColor(0, 0, 0);
+          doc.setLineWidth(0.5);
+          doc.line(margin, yPos + 4, margin + contentWidth, yPos + 4);
+
+          return yPos + LINE_HEIGHT - 2;
         };
 
         const formatSongLine = (song, idx) => {
-          // PDF setlist shows what the performer needs on stage: #, title, key, BPM
-          // Duration is excluded (internal-only for set planning). Artist included if available.
           const parts = [`${idx + 1}. ${song.title}`];
           if (song.artist) parts.push(` - ${song.artist}`);
-          const meta = [];
-          if (song.key) meta.push(song.key);
-          if (song.bpm) meta.push(`${song.bpm} BPM`);
-          if (meta.length > 0) parts.push(` (${meta.join(' | ')})`);
           return parts.join('');
         };
 
@@ -4087,34 +4231,122 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           if (setIdx > 0) doc.addPage();
           addWatermark();
 
-          let yPos = drawSetHeader(set, margin + HEADER_SIZE);
-
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(BODY_SIZE);
+          let yPos = drawSetHeader(set, margin + HEADER_SIZE, setIdx);
 
           set.songs.forEach((song, songIdx) => {
-            const lines = doc.splitTextToSize(formatSongLine(song, songIdx), contentWidth);
-            const itemHeight = lines.length * LINE_HEIGHT;
+            const mainText = formatSongLine(song, songIdx);
+            const mainLines = doc.splitTextToSize(mainText, contentWidth - 150);
+            const itemHeight = mainLines.length * LINE_HEIGHT;
 
-            if (yPos + itemHeight > pageH - margin) {
+            if (yPos + itemHeight > pageH - margin - 30) {
               doc.addPage();
               addWatermark();
               yPos = margin + HEADER_SIZE;
-
               doc.setFont('helvetica', 'bold');
               doc.setFontSize(BODY_SIZE);
             }
 
-            lines.forEach((line) => {
+            // Song title and artist
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(BODY_SIZE);
+            doc.setTextColor(0, 0, 0);
+            mainLines.forEach((line) => {
               doc.text(line, margin, yPos);
               yPos += LINE_HEIGHT;
             });
 
-            yPos += 4;
+            // Key, BPM, Style on the right side (aligned with the first line)
+            const metaY = yPos - (mainLines.length * LINE_HEIGHT) + LINE_HEIGHT - 2;
+            doc.setFontSize(SMALL_SIZE + 1);
+            doc.setTextColor(60, 60, 60);
+            if (song.key) doc.text(song.key, contentWidth - 120 + margin, metaY);
+            if (song.bpm) doc.text(String(song.bpm), contentWidth - 70 + margin, metaY);
+            if (song.style) {
+              doc.setFontSize(SMALL_SIZE);
+              doc.text(song.style, contentWidth - 30 + margin, metaY);
+            }
+            doc.setTextColor(0, 0, 0);
+
+            yPos += 2;
           });
+
+          // Footer with tonal diagnostics
+          if (setlists.diagnostics && setlists.diagnostics[setIdx]) {
+            const diag = setlists.diagnostics[setIdx];
+            if (yPos + 30 > pageH - margin) {
+              doc.addPage();
+              addWatermark();
+              yPos = margin + HEADER_SIZE;
+            }
+            doc.setLineWidth(0.5);
+            doc.line(margin, yPos + 4, margin + contentWidth, yPos + 4);
+            yPos += 14;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(SMALL_SIZE);
+            doc.setTextColor(80, 80, 80);
+            const tonalInfo = `Tonal Flow: ${diag.qualityScore} (avg circle distance: ${diag.avgCircleDistance})`;
+            doc.text(tonalInfo, margin, yPos);
+            if (diag.contrastJumps && diag.contrastJumps.length > 0) {
+              yPos += 12;
+              const jumpsText = `Key jumps: ${diag.contrastJumps.map(j => `#${j.position} ${j.from}->${j.to} (${j.distance})`).join(', ')}`;
+              doc.text(jumpsText, margin, yPos);
+            }
+            doc.setTextColor(0, 0, 0);
+          }
         });
 
-        doc.save(`setlist-${new Date().toISOString().slice(0, 10)}.pdf`);
+        // Add summary page
+        if (setlists.length > 0) {
+          doc.addPage();
+          addWatermark();
+          let yPos = margin + HEADER_SIZE;
+
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(HEADER_SIZE);
+          doc.text('SETLIST SUMMARY', margin, yPos);
+          doc.setLineWidth(1.5);
+          doc.line(margin, yPos + 3, margin + doc.getTextWidth('SETLIST SUMMARY'), yPos + 3);
+          yPos += HEADER_SIZE + 10;
+
+          doc.setFontSize(12);
+          doc.text(`Band: ${activeBand?.name || 'Unknown'}`, margin, yPos);
+          yPos += 18;
+          doc.text(`Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, margin, yPos);
+          yPos += 18;
+          doc.text(`Total Sets: ${setlists.length}`, margin, yPos);
+          yPos += 18;
+          const totalSongs = setlists.reduce((s, set) => s + set.songs.length, 0);
+          const totalTime = setlists.reduce((s, set) => s + set.totalTime, 0);
+          doc.text(`Total Songs: ${totalSongs}  |  Total Time: ${Math.round(totalTime)} minutes`, margin, yPos);
+          yPos += 30;
+
+          // Per-set quality breakdown
+          const qScores = setlists.qualityScores;
+          if (qScores && qScores.length > 0) {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(14);
+            doc.text('Quality Scores', margin, yPos);
+            yPos += 20;
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(11);
+            qScores.forEach((q, qi) => {
+              doc.text(`Set ${qi + 1}: Overall ${q.overall}/100  |  Energy: ${q.energy}  |  Tonal: ${q.tonal}  |  Diversity: ${q.diversity}  |  Duration: ${q.duration}`, margin, yPos);
+              yPos += 16;
+            });
+          }
+
+          // Anchor key info
+          if (setlists.anchorKey) {
+            yPos += 10;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(11);
+            doc.text(`Anchor Key: ${setlists.anchorKey}`, margin, yPos);
+          }
+        }
+
+        const safeBandName = (activeBand?.name || 'band').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+        doc.save(`setlist-${safeBandName}-${new Date().toISOString().slice(0, 10)}.pdf`);
       };
 
       const toggleLock = (setIdx, songId) => {
@@ -4473,8 +4705,22 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           color: band.color
         };
         setBands([...bands, newBand]);
-        // note: songs/settings are stored per-band in localStorage and will load based on activeBandId
-        showToast('Band duplicated (band profile only)', 'success');
+        // Copy songs, settings, gigs, and imports from source band to new band
+        const srcSongs = LS.get(LS_KEYS.bandSongs(band.id));
+        const srcSettings = LS.get(LS_KEYS.bandSettings(band.id));
+        const srcGigs = LS.get(LS_KEYS.bandGigs(band.id));
+        const srcImports = LS.get(LS_KEYS.bandImports(band.id));
+        const srcWatermark = LS.get(LS_KEYS.bandWatermark(band.id));
+        if (srcSongs) {
+          // Assign new IDs to duplicated songs to avoid cross-band ID collisions
+          const newSongs = srcSongs.map(s => ({ ...s, id: genId() }));
+          LS.set(LS_KEYS.bandSongs(newBand.id), newSongs);
+        }
+        if (srcSettings) LS.set(LS_KEYS.bandSettings(newBand.id), srcSettings);
+        if (srcGigs) LS.set(LS_KEYS.bandGigs(newBand.id), srcGigs);
+        if (srcImports) LS.set(LS_KEYS.bandImports(newBand.id), srcImports);
+        if (srcWatermark) LS.set(LS_KEYS.bandWatermark(newBand.id), srcWatermark);
+        showToast('Band duplicated with songs & settings', 'success');
       };
 
       // Gig Profile functions
@@ -4533,10 +4779,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const gig = gigs.find(g => g.id === gigId);
         if (!gig || !gig.setlists || gig.setlists.length === 0) return showToast('No setlists saved for this gig', 'warning');
 
-        const headers = ['Set', 'Order', 'Title', 'Artist', 'Duration', 'Style', 'Key', 'BPM', 'Vocalist'];
+        const headers = ['Set', 'Order', 'Title', 'Artist', 'Duration', 'Style', 'Key', 'BPM', 'Vocalist', 'Energy'];
         const rows = [];
         gig.setlists.forEach((set, setIdx) => {
           set.songs.forEach((song, songIdx) => {
+            const energy = getCompositeEnergy(song);
             rows.push([
               csvEscapeCell(set.name || `Set ${setIdx + 1}`),
               csvEscapeCell(songIdx + 1),
@@ -4546,7 +4793,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               csvEscapeCell(song.style || ''),
               csvEscapeCell(song.key || ''),
               csvEscapeCell(song.bpm || ''),
-              csvEscapeCell(song.vocalist || '')
+              csvEscapeCell(song.vocalist || ''),
+              csvEscapeCell(Math.round(energy * 10) / 10)
             ]);
           });
         });
