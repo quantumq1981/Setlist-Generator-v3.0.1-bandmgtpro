@@ -32,12 +32,29 @@
       --warning: #fbbf24;
       --error: #ef4444;
       --ballad: #60a5fa;
+      --acoustic: #93c5fd;
+      --slow-blues: #7dd3fc;
+      --waltz: #a5b4fc;
+      --bossa: #c4b5fd;
+      --blues: #818cf8;
+      --jazz: #c084fc;
+      --latin: #f0abfc;
       --uptempo: #f87171;
       --midtempo: #fbbf24;
       --funk: #a78bfa;
       --shuffle: #34d399;
       --swing: #fb923c;
       --groove: #ec4899;
+      --country: #d97706;
+      --reggae: #4ade80;
+      --soul: #f472b6;
+      --rnb: #e879f9;
+      --pop: #38bdf8;
+      --rock: #ef4444;
+      --ska: #22d3ee;
+      --punk: #fb7185;
+      --metal: #94a3b8;
+      --edm: #a3e635;
       --locked: #4ade80;
       --toast-bg: rgba(45,45,45,.95);
     }
@@ -127,10 +144,18 @@
     .song-title { font-weight:700; margin-bottom: .2rem; }
     .song-meta { font-size: .8rem; color: var(--text-muted); display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
     .song-badge { padding: .15rem .4rem; border-radius: 4px; font-size: .7rem; font-weight:700; text-transform: uppercase; letter-spacing: .04em; }
-    .style-ballad{background:var(--ballad); color:#111;} .style-uptempo{background:var(--uptempo); color:#111;}
-    .style-midtempo{background:var(--midtempo); color:#111;} .style-funk{background:var(--funk); color:#111;}
-    .style-shuffle{background:var(--shuffle); color:#111;} .style-swing{background:var(--swing); color:#111;}
-    .style-groove{background:var(--groove); color:#111;}
+    .style-ballad{background:var(--ballad); color:#111;} .style-acoustic{background:var(--acoustic); color:#111;}
+    .style-slow-blues{background:var(--slow-blues); color:#111;} .style-waltz{background:var(--waltz); color:#111;}
+    .style-bossa{background:var(--bossa); color:#111;} .style-blues{background:var(--blues); color:#fff;}
+    .style-jazz{background:var(--jazz); color:#111;} .style-latin{background:var(--latin); color:#111;}
+    .style-uptempo{background:var(--uptempo); color:#111;} .style-midtempo{background:var(--midtempo); color:#111;}
+    .style-funk{background:var(--funk); color:#111;} .style-shuffle{background:var(--shuffle); color:#111;}
+    .style-swing{background:var(--swing); color:#111;} .style-groove{background:var(--groove); color:#111;}
+    .style-country{background:var(--country); color:#111;} .style-reggae{background:var(--reggae); color:#111;}
+    .style-soul{background:var(--soul); color:#111;} .style-rnb{background:var(--rnb); color:#111;}
+    .style-pop{background:var(--pop); color:#111;} .style-rock{background:var(--rock); color:#fff;}
+    .style-ska{background:var(--ska); color:#111;} .style-punk{background:var(--punk); color:#111;}
+    .style-metal{background:var(--metal); color:#111;} .style-edm{background:var(--edm); color:#111;}
 
     .setlists-container { display:grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1rem; }
     .setlist { background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
@@ -1890,7 +1915,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
           // Fallback to style-based opener if no locked opener available
           if (!opener) {
-            const openerStyles = ['uptempo', 'swing', 'midtempo', 'groove'];
+            const openerStyles = ['uptempo', 'rock', 'funk', 'swing', 'midtempo', 'groove', 'shuffle', 'ska'];
             const openers = pool.filter(s => isAvailable(s) && openerStyles.includes(s.style));
             if (openers.length > 0) {
               // When tonal gravity is active, prefer openers near the anchor key
@@ -2065,7 +2090,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         if (forceCloser && setSongs.length > 0) {
           const lastIdx = setSongs.length - 1;
           const lastSong = setSongs[lastIdx];
-          const closerStyles = ['ballad', 'midtempo', 'swing'];
+          const closerStyles = ['ballad', 'acoustic', 'slow blues', 'blues', 'midtempo', 'swing', 'soul', 'waltz'];
 
           // Check if a locked closer should be used
           let useLockedCloser = false;
@@ -2255,13 +2280,40 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             <div className="input-group">
               <label>Style</label>
               <select value={form.style} onChange={e => setForm({ ...form, style: e.target.value })}>
-                <option value="ballad">Ballad</option>
-                <option value="uptempo">Uptempo</option>
-                <option value="midtempo">Midtempo</option>
-                <option value="funk">Funk</option>
-                <option value="shuffle">Shuffle</option>
-                <option value="swing">Swing</option>
-                <option value="groove">Groove</option>
+                <optgroup label="Low Energy (1-3)">
+                  <option value="ballad">Ballad</option>
+                  <option value="acoustic">Acoustic</option>
+                  <option value="slow blues">Slow Blues</option>
+                  <option value="waltz">Waltz</option>
+                </optgroup>
+                <optgroup label="Moderate (3.5-4)">
+                  <option value="bossa">Bossa</option>
+                  <option value="blues">Blues</option>
+                  <option value="jazz">Jazz</option>
+                  <option value="latin">Latin</option>
+                  <option value="swing">Swing</option>
+                  <option value="country">Country</option>
+                  <option value="reggae">Reggae</option>
+                </optgroup>
+                <optgroup label="Mid-High (4.5-5.5)">
+                  <option value="midtempo">Midtempo</option>
+                  <option value="soul">Soul</option>
+                  <option value="rnb">R&amp;B</option>
+                  <option value="pop">Pop</option>
+                  <option value="shuffle">Shuffle</option>
+                  <option value="groove">Groove</option>
+                </optgroup>
+                <optgroup label="High (6-7)">
+                  <option value="funk">Funk</option>
+                  <option value="rock">Rock</option>
+                  <option value="ska">Ska</option>
+                  <option value="uptempo">Uptempo</option>
+                </optgroup>
+                <optgroup label="Peak (8-10)">
+                  <option value="punk">Punk</option>
+                  <option value="edm">EDM</option>
+                  <option value="metal">Metal</option>
+                </optgroup>
               </select>
             </div>
           </div>
@@ -2312,7 +2364,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     <div className="song-title">{song.title}</div>
                     <div className="song-meta">
                       <span>{song.artist}</span>
-                      <span className={`song-badge style-${song.style}`}>{song.style}</span>
+                      <span className={`song-badge style-${(song.style || '').replace(/\s+/g, '-')}`}>{song.style}</span>
                       <span>{parseDuration(song.duration)}min</span>
                       {song.key && <span>{song.key}</span>}
                       {song.bpm && <span>{song.bpm}bpm</span>}
@@ -2811,7 +2863,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   <div className="song-title">{song.title}</div>
                   <div className="song-meta">
                     <span>{song.artist}</span>
-                    <span className={`song-badge style-${song.style}`}>{song.style}</span>
+                    <span className={`song-badge style-${(song.style || '').replace(/\s+/g, '-')}`}>{song.style}</span>
                     <span>{parseDuration(song.duration)}min</span>
                     {song.key && <span style={{ fontSize: '.7rem', color: 'var(--text-muted)' }}>{song.key}</span>}
                   </div>
@@ -3497,6 +3549,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               Create gig profiles for specific venues and dates. Save and load setlists for each gig. Export gig setlists as CSV.
             </div>
 
+            {setlists.length === 0 && gigs.length > 0 && (
+              <div className="alert" style={{ marginBottom: '1rem', background: 'rgba(255,193,7,0.1)', border: '1px solid var(--warning)', borderRadius: '8px', padding: '.75rem', fontSize: '.82rem', color: 'var(--warning)' }}>
+                <strong>Tip:</strong> Generate setlists first, then return here to save them to a gig profile. The <strong>Save</strong> button appears next to each gig once setlists are available.
+              </div>
+            )}
+
             {/* Basic Gig Info */}
             <div className="set-config">
               <div className="input-group">
@@ -3683,14 +3741,28 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                           {gig.setlists && <span> | {gig.setlists.length} set(s)</span>}
                         </div>
                         {gig.setStartTime && <div style={{ fontSize: '.75rem', color: 'var(--accent)' }}>Start: {gig.setStartTime}</div>}
+                        {gig.savedAt && (
+                          <div style={{ fontSize: '.72rem', color: 'var(--success)' }}>
+                            Setlists saved: {new Date(gig.savedAt).toLocaleString()}
+                          </div>
+                        )}
+                        {!gig.setlists && (
+                          <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                            No setlists saved yet
+                          </div>
+                        )}
                         {gig.notes && <div style={{ fontSize: '.75rem', color: 'var(--text-muted)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{gig.notes}</div>}
                       </div>
                       <div style={{ display: 'flex', gap: '.3rem', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        {setlists.length > 0 && (
-                          <button className="btn btn-small" onClick={() => onSaveToGig(gig.id)} style={{ borderColor: 'var(--success)', color: 'var(--success)' }}>
-                            Save
-                          </button>
-                        )}
+                        <button
+                          className="btn btn-small"
+                          onClick={() => onSaveToGig(gig.id)}
+                          disabled={setlists.length === 0}
+                          title={setlists.length === 0 ? 'Generate setlists first, then save them here' : 'Save current setlists to this gig'}
+                          style={{ borderColor: 'var(--success)', color: setlists.length === 0 ? 'var(--text-muted)' : 'var(--success)', opacity: setlists.length === 0 ? 0.5 : 1 }}
+                        >
+                          Save
+                        </button>
                         {gig.setlists && gig.setlists.length > 0 && (
                           <>
                             <button className="btn btn-small" onClick={() => onLoadGig(gig.id)} style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
