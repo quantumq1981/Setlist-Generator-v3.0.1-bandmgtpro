@@ -4365,15 +4365,29 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const exportPDF = () => {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
-        const pageW = doc.internal.pageSize.getWidth(); // 612pt
-        const pageH = doc.internal.pageSize.getHeight(); // 792pt
-        const margin = 18;
-        const contentWidth = pageW - (margin * 2);
+        const pageW = doc.internal.pageSize.getWidth();   // 612pt
+        const pageH = doc.internal.pageSize.getHeight();  // 792pt
+        const margin = 36;
+        const tableX = margin;
+        const tableW = pageW - margin * 2;                // 540pt
 
-        const HEADER_SIZE = 20;
-        const BODY_SIZE = 18;
-        const SMALL_SIZE = 10;
-        const LINE_HEIGHT = 20;
+        // Column layout (absolute X positions and widths)
+        const cols = {
+          title:  { x: tableX,       w: tableW * 0.30 },  // Song Title ~30%
+          artist: { x: tableX + tableW * 0.30, w: tableW * 0.30 }, // Artist ~30%
+          key:    { x: tableX + tableW * 0.60, w: tableW * 0.10 }, // Key ~10%
+          bpm:    { x: tableX + tableW * 0.70, w: tableW * 0.10 }, // BPM ~10%
+          style:  { x: tableX + tableW * 0.80, w: tableW * 0.20 }, // Style ~20%
+        };
+        const ROW_H = 28;
+        const HEADER_ROW_H = 32;
+        const CELL_PAD = 8;
+        const TITLE_SIZE = 24;
+        const HEADER_FONT = 11;
+        const BODY_FONT = 10;
+
+        // Dark slate header colour (matches template)
+        const HDR_R = 61, HDR_G = 79, HDR_B = 95;
 
         const addWatermark = () => {
           if (!watermarkImg) return;
@@ -4387,151 +4401,162 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           doc.restoreGraphicsState();
         };
 
-        const drawSetHeader = (set, yPos, setIdx) => {
-          const heading = set.name.toUpperCase();
+        // Draw the dark header row for the table
+        const drawTableHeader = (y) => {
+          // Header background
+          doc.setFillColor(HDR_R, HDR_G, HDR_B);
+          doc.rect(tableX, y, tableW, HEADER_ROW_H, 'F');
 
+          // Header text
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(HEADER_SIZE);
+          doc.setFontSize(HEADER_FONT);
+          doc.setTextColor(255, 255, 255);
+          const textY = y + HEADER_ROW_H / 2 + 4;
+          doc.text('Song Title', cols.title.x + CELL_PAD, textY);
+          doc.text('Artist', cols.artist.x + CELL_PAD, textY);
+          doc.text('Key', cols.key.x + cols.key.w / 2, textY, { align: 'center' });
+          doc.text('BPM', cols.bpm.x + cols.bpm.w / 2, textY, { align: 'center' });
+          doc.text('Style', cols.style.x + CELL_PAD, textY);
           doc.setTextColor(0, 0, 0);
-          doc.text(heading, margin, yPos);
 
-          const headingWidth = doc.getTextWidth(heading);
-          doc.setLineWidth(1.5);
-          doc.line(margin, yPos + 3, margin + headingWidth, yPos + 3);
+          return y + HEADER_ROW_H;
+        };
 
-          yPos += HEADER_SIZE + 6;
-          doc.setFontSize(BODY_SIZE - 4);
-          const setInfo = `${set.songs.length} songs  |  ${Math.round(set.totalTime)} minutes`;
-          doc.text(setInfo, margin, yPos);
-
-          // Quality score badge if available
-          const qScores = setlists.qualityScores;
-          if (qScores && qScores[setIdx]) {
-            const q = qScores[setIdx];
-            const scoreText = `Quality: ${q.overall}/100  (E:${q.energy} T:${q.tonal} D:${q.diversity} Dur:${q.duration})`;
-            const scoreX = margin + doc.getTextWidth(setInfo) + 15;
-            doc.setFontSize(SMALL_SIZE);
-            doc.setTextColor(q.overall >= 75 ? 0 : q.overall >= 50 ? 120 : 180, q.overall >= 75 ? 128 : q.overall >= 50 ? 100 : 0, 0);
-            doc.text(scoreText, scoreX, yPos);
-            doc.setTextColor(0, 0, 0);
+        // Draw one song row (with alternating background)
+        const drawSongRow = (song, y, rowIdx) => {
+          // Alternating row fill
+          if (rowIdx % 2 === 1) {
+            doc.setFillColor(245, 245, 245);
+            doc.rect(tableX, y, tableW, ROW_H, 'F');
           }
 
-          yPos += HEADER_SIZE + 2;
-
-          // Draw column headers
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(SMALL_SIZE);
-          doc.setTextColor(100, 100, 100);
-          doc.text('#', margin, yPos);
-          doc.text('TITLE / ARTIST', margin + 24, yPos);
-          doc.text('KEY', contentWidth - 120 + margin, yPos);
-          doc.text('BPM', contentWidth - 70 + margin, yPos);
-          doc.text('STYLE', contentWidth - 30 + margin, yPos);
-          doc.setTextColor(0, 0, 0);
+          // Thin border lines (top of row)
+          doc.setDrawColor(220, 220, 220);
           doc.setLineWidth(0.5);
-          doc.line(margin, yPos + 4, margin + contentWidth, yPos + 4);
+          doc.line(tableX, y, tableX + tableW, y);
 
-          return yPos + LINE_HEIGHT - 2;
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(BODY_FONT);
+          doc.setTextColor(30, 30, 30);
+          const textY = y + ROW_H / 2 + 3.5;
+
+          // Song Title (truncate if needed)
+          const titleMax = cols.title.w - CELL_PAD * 2;
+          let titleText = song.title || '';
+          while (doc.getTextWidth(titleText) > titleMax && titleText.length > 0) {
+            titleText = titleText.slice(0, -1);
+          }
+          doc.text(titleText, cols.title.x + CELL_PAD, textY);
+
+          // Artist (truncate if needed)
+          const artistMax = cols.artist.w - CELL_PAD * 2;
+          let artistText = song.artist || '';
+          while (doc.getTextWidth(artistText) > artistMax && artistText.length > 0) {
+            artistText = artistText.slice(0, -1);
+          }
+          doc.text(artistText, cols.artist.x + CELL_PAD, textY);
+
+          // Key (center aligned)
+          if (song.key) {
+            doc.text(String(song.key), cols.key.x + cols.key.w / 2, textY, { align: 'center' });
+          }
+
+          // BPM (center aligned)
+          if (song.bpm) {
+            doc.text(String(song.bpm), cols.bpm.x + cols.bpm.w / 2, textY, { align: 'center' });
+          }
+
+          // Style
+          if (song.style) {
+            const styleMax = cols.style.w - CELL_PAD * 2;
+            let styleText = song.style;
+            while (doc.getTextWidth(styleText) > styleMax && styleText.length > 0) {
+              styleText = styleText.slice(0, -1);
+            }
+            doc.text(styleText, cols.style.x + CELL_PAD, textY);
+          }
+
+          return y + ROW_H;
         };
 
-        const formatSongLine = (song, idx) => {
-          const parts = [`${idx + 1}. ${song.title}`];
-          if (song.artist) parts.push(` - ${song.artist}`);
-          return parts.join('');
+        // Draw vertical column dividers for the visible table area
+        const drawColumnLines = (startY, endY) => {
+          doc.setDrawColor(220, 220, 220);
+          doc.setLineWidth(0.5);
+          // Outer border
+          doc.rect(tableX, startY, tableW, endY - startY);
+          // Vertical dividers
+          [cols.artist.x, cols.key.x, cols.bpm.x, cols.style.x].forEach(x => {
+            doc.line(x, startY, x, endY);
+          });
         };
 
+        // --- Render each set ---
         setlists.forEach((set, setIdx) => {
           if (setIdx > 0) doc.addPage();
           addWatermark();
 
-          let yPos = drawSetHeader(set, margin + HEADER_SIZE, setIdx);
+          // Set title centred at top
+          let yPos = margin + 10;
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(TITLE_SIZE);
+          doc.setTextColor(0, 0, 0);
+          const setTitle = set.name || `Set ${setIdx + 1}`;
+          doc.text(setTitle, pageW / 2, yPos, { align: 'center' });
+          yPos += TITLE_SIZE + 16;
 
-          set.songs.forEach((song, songIdx) => {
-            const mainText = formatSongLine(song, songIdx);
-            const mainLines = doc.splitTextToSize(mainText, contentWidth - 150);
-            const itemHeight = mainLines.length * LINE_HEIGHT;
+          // Table header
+          let pageTableTop = yPos;
+          yPos = drawTableHeader(yPos);
 
-            if (yPos + itemHeight > pageH - margin - 30) {
+          // Song rows
+          let rowCounter = 0;
+          set.songs.forEach((song) => {
+            // Page break check
+            if (yPos + ROW_H > pageH - margin) {
+              // Close table borders on current page
+              drawColumnLines(pageTableTop, yPos);
+
               doc.addPage();
               addWatermark();
-              yPos = margin + HEADER_SIZE;
-              doc.setFont('helvetica', 'bold');
-              doc.setFontSize(BODY_SIZE);
+              pageTableTop = margin + 10;
+              yPos = pageTableTop;
+              yPos = drawTableHeader(yPos);
+              rowCounter = 0;
             }
 
-            // Song title and artist
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(BODY_SIZE);
-            doc.setTextColor(0, 0, 0);
-            mainLines.forEach((line) => {
-              doc.text(line, margin, yPos);
-              yPos += LINE_HEIGHT;
-            });
-
-            // Key, BPM, Style on the right side (aligned with the first line)
-            const metaY = yPos - (mainLines.length * LINE_HEIGHT) + LINE_HEIGHT - 2;
-            doc.setFontSize(SMALL_SIZE + 1);
-            doc.setTextColor(60, 60, 60);
-            if (song.key) doc.text(song.key, contentWidth - 120 + margin, metaY);
-            if (song.bpm) doc.text(String(song.bpm), contentWidth - 70 + margin, metaY);
-            if (song.style) {
-              doc.setFontSize(SMALL_SIZE);
-              doc.text(song.style, contentWidth - 30 + margin, metaY);
-            }
-            doc.setTextColor(0, 0, 0);
-
-            yPos += 2;
+            yPos = drawSongRow(song, yPos, rowCounter);
+            rowCounter++;
           });
 
-          // Footer with tonal diagnostics
-          if (setlists.diagnostics && setlists.diagnostics[setIdx]) {
-            const diag = setlists.diagnostics[setIdx];
-            if (yPos + 30 > pageH - margin) {
-              doc.addPage();
-              addWatermark();
-              yPos = margin + HEADER_SIZE;
-            }
-            doc.setLineWidth(0.5);
-            doc.line(margin, yPos + 4, margin + contentWidth, yPos + 4);
-            yPos += 14;
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(SMALL_SIZE);
-            doc.setTextColor(80, 80, 80);
-            const tonalInfo = `Tonal Flow: ${diag.qualityScore} (avg circle distance: ${diag.avgCircleDistance})`;
-            doc.text(tonalInfo, margin, yPos);
-            if (diag.contrastJumps && diag.contrastJumps.length > 0) {
-              yPos += 12;
-              const jumpsText = `Key jumps: ${diag.contrastJumps.map(j => `#${j.position} ${j.from}->${j.to} (${j.distance})`).join(', ')}`;
-              doc.text(jumpsText, margin, yPos);
-            }
-            doc.setTextColor(0, 0, 0);
-          }
+          // Close bottom border and column dividers on last page of this set
+          drawColumnLines(pageTableTop, yPos);
         });
 
-        // Add summary page
+        // --- Summary page ---
         if (setlists.length > 0) {
           doc.addPage();
           addWatermark();
-          let yPos = margin + HEADER_SIZE;
+          let yPos = margin + 10;
 
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(HEADER_SIZE);
-          doc.text('SETLIST SUMMARY', margin, yPos);
-          doc.setLineWidth(1.5);
-          doc.line(margin, yPos + 3, margin + doc.getTextWidth('SETLIST SUMMARY'), yPos + 3);
-          yPos += HEADER_SIZE + 10;
+          doc.setFontSize(TITLE_SIZE);
+          doc.setTextColor(0, 0, 0);
+          doc.text('SETLIST SUMMARY', pageW / 2, yPos, { align: 'center' });
+          yPos += TITLE_SIZE + 20;
 
+          doc.setFont('helvetica', 'normal');
           doc.setFontSize(12);
           doc.text(`Band: ${activeBand?.name || 'Unknown'}`, margin, yPos);
-          yPos += 18;
+          yPos += 20;
           doc.text(`Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, margin, yPos);
-          yPos += 18;
+          yPos += 20;
           doc.text(`Total Sets: ${setlists.length}`, margin, yPos);
-          yPos += 18;
+          yPos += 20;
           const totalSongs = setlists.reduce((s, set) => s + set.songs.length, 0);
           const totalTime = setlists.reduce((s, set) => s + set.totalTime, 0);
           doc.text(`Total Songs: ${totalSongs}  |  Total Time: ${Math.round(totalTime)} minutes`, margin, yPos);
-          yPos += 30;
+          yPos += 34;
 
           // Per-set quality breakdown
           const qScores = setlists.qualityScores;
@@ -4539,14 +4564,17 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(14);
             doc.text('Quality Scores', margin, yPos);
-            yPos += 20;
+            yPos += 22;
 
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(11);
             qScores.forEach((q, qi) => {
+              const color = q.overall >= 75 ? [0, 128, 0] : q.overall >= 50 ? [120, 100, 0] : [180, 0, 0];
+              doc.setTextColor(...color);
               doc.text(`Set ${qi + 1}: Overall ${q.overall}/100  |  Energy: ${q.energy}  |  Tonal: ${q.tonal}  |  Diversity: ${q.diversity}  |  Duration: ${q.duration}`, margin, yPos);
-              yPos += 16;
+              yPos += 18;
             });
+            doc.setTextColor(0, 0, 0);
           }
 
           // Anchor key info
@@ -4555,6 +4583,39 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(11);
             doc.text(`Anchor Key: ${setlists.anchorKey}`, margin, yPos);
+          }
+
+          // Tonal diagnostics per set
+          if (setlists.diagnostics) {
+            yPos += 28;
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(14);
+            doc.text('Tonal Diagnostics', margin, yPos);
+            yPos += 22;
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.setTextColor(80, 80, 80);
+            setlists.diagnostics.forEach((diag, di) => {
+              if (!diag) return;
+              if (yPos + 30 > pageH - margin) {
+                doc.addPage();
+                addWatermark();
+                yPos = margin + 20;
+              }
+              doc.text(`Set ${di + 1} - Tonal Flow: ${diag.qualityScore} (avg circle distance: ${diag.avgCircleDistance})`, margin, yPos);
+              yPos += 14;
+              if (diag.contrastJumps && diag.contrastJumps.length > 0) {
+                const jumpsText = `  Key jumps: ${diag.contrastJumps.map(j => `#${j.position} ${j.from}\u2192${j.to} (${j.distance})`).join(', ')}`;
+                const jumpLines = doc.splitTextToSize(jumpsText, tableW);
+                jumpLines.forEach(line => {
+                  doc.text(line, margin, yPos);
+                  yPos += 13;
+                });
+              }
+              yPos += 6;
+            });
+            doc.setTextColor(0, 0, 0);
           }
         }
 
