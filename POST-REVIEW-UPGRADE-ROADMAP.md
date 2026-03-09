@@ -127,3 +127,21 @@ This roadmap translates the findings from **Setlist-Generator-Expert-Review 2.do
 - **Parallel:** Phase 5 in migration branch with parity gates.
 
 Rollback rule: every phase must be removable with a single revert commit and no data migrations that break existing localStorage state.
+
+## Implemented rollback playbook (phase-isolated)
+
+### Phase 1 rollback (Reliability + Data Safety)
+1. Keep `index.html` as production entry point unchanged.
+2. Disable `FEATURE_FLAGS.phase1ReliabilityDataSafety` (set to `false`) to immediately stop:
+   - storage health banner/toasts,
+   - risky-action backup prompts,
+   - snapshot save/recovery UI,
+   - enhanced CSV row validator gating.
+3. If needed, revert snapshot persistence only by removing `setlist_band_snapshots_v3_*` keys from localStorage; song/settings schema remains unchanged.
+4. Verify standard CSV/PDF import/export and generation flows still work with feature flag off.
+
+### Phase 2 rollback (Mobile Compatibility)
+1. Disable `FEATURE_FLAGS.phase2MobileCompatibility` (set to `false`) to immediately restore desktop-only HTML5 drag behavior on all devices.
+2. Keep existing reorder mode and HTML5 DnD handlers unchanged.
+3. Confirmation modal infrastructure can remain; if strict rollback needed, revert delete/clear call-sites in a single commit.
+4. Verify desktop drag/drop, remove, lock, and move controls continue functioning unchanged.
