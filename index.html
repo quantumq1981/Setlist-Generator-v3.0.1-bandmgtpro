@@ -5,15 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Setlist Generator v3.7.0 — Phase 6: Energy Curve + Tonal Gravity Overhaul, SA Optimizer, Templates</title>
 
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <!-- TODO(SRI): add integrity hashes once CDN access is available in this environment. -->
+  <script crossorigin="anonymous" src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin="anonymous" src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin="anonymous" src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/mobile-drag-drop/3.0.0-rc.0/index.min.js"></script>
+  <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/mobile-drag-drop/3.0.0-rc.0/scroll-behaviour.min.js"></script>
   <script>
     if (window.pdfjsLib) {
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    if (window.MobileDragDrop) {
+      window.MobileDragDrop.polyfill({
+        dragImageTranslateOverride: window.MobileDragDrop.scrollBehaviourDragImageTranslateOverride
+      });
+    }
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('SW registration failed:', err));
+      });
     }
   </script>
 
@@ -109,10 +123,8 @@
       padding: .65rem 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--primary); color: var(--text);
       font-weight: 600; font-size: .85rem; letter-spacing: .04em; cursor: pointer; transition: .2s ease;
     }
-    .btn:hover { border-color: var(--accent); }
     .btn:disabled { opacity: .55; cursor: not-allowed; }
     .btn-primary { background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%); border-color: transparent; }
-    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(255, 107, 53, 0.35); }
     .btn-small { padding: .45rem .75rem; font-size: .75rem; }
     .btn-toggle-active { border-color: var(--accent); color: var(--text); }
     .btn-toggle-active.btn-primary { box-shadow: 0 4px 12px rgba(255, 107, 53, 0.35); }
@@ -129,7 +141,7 @@
     label { display:block; margin-bottom: .35rem; font-size: .8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
     input, select, textarea {
       width: 100%; padding: .65rem .75rem; background: var(--primary); border: 1px solid var(--border); border-radius: 8px;
-      color: var(--text); font-size: .9rem;
+      color: var(--text); font-size: 16px !important;
     }
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,107,53,.12); }
     .input-group { margin-bottom: .8rem; }
@@ -173,7 +185,6 @@
       width:26px; height:26px; display:flex; align-items:center; justify-content:center;
       border:1px solid var(--border); border-radius:6px; background: transparent; color:var(--text-muted); cursor:pointer;
     }
-    .action-btn:hover { background: var(--border); color: var(--text); }
     .action-btn:disabled { opacity:.5; cursor:not-allowed; }
     .action-btn.locked { color: var(--locked); }
 
@@ -186,10 +197,8 @@
     .drag-handle { cursor: grab; color: var(--text-muted); font-size: 1rem; user-select: none; -webkit-user-select: none; display: flex; align-items: center; touch-action: none; }
     .drag-handle:active { cursor: grabbing; }
     .drop-zone-between { padding: .6rem; border: 2px dashed var(--border); border-radius: 8px; text-align: center; color: var(--text-muted); font-size: .8rem; margin-top: .35rem; transition: .2s; }
-    .drop-zone-between:hover, .drop-zone-between.drag-over { border-color: var(--accent); color: var(--accent); background: rgba(255,107,53,.06); }
     .setlist.drag-target { outline: 2px solid var(--accent); outline-offset: 2px; }
     .move-to-set-select { font-size: .7rem; padding: .1rem .2rem; background: var(--primary); color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; max-width: 70px; }
-    .move-to-set-select:hover { border-color: var(--accent); color: var(--text); }
     .reset-balance-bar { display: flex; gap: .5rem; align-items: center; }
     .reset-balance-bar .btn { font-size: .8rem; }
 
@@ -202,9 +211,6 @@
       box-shadow: 0 10px 25px rgba(0,0,0,0.5); cursor: alias;
       text-align: center; user-select: none; -webkit-user-select: none;
       animation: removal-zone-pulse 1.5s ease-in-out infinite;
-    }
-    .optimized-removal-zone:hover {
-      background: rgba(220, 38, 38, 0.95); border-color: #fff;
     }
     @keyframes removal-zone-pulse {
       0%, 100% { box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
@@ -283,7 +289,6 @@
     .import-footer { display: flex; gap: .75rem; justify-content: flex-end; margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--border); }
     .import-textarea { width: 100%; min-height: 150px; font-family: 'Space Mono', monospace; font-size: .8rem; resize: vertical; }
     .import-drop-zone { border: 2px dashed var(--border); border-radius: 12px; padding: 2rem; text-align: center; color: var(--text-muted); cursor: pointer; transition: .2s; }
-    .import-drop-zone:hover, .import-drop-zone.dragover { border-color: var(--accent); color: var(--text); }
     .import-drop-zone input[type="file"] { display: none; }
 
     .info-trigger {
@@ -302,7 +307,6 @@
       margin-left: .4rem;
       transition: all .18s ease;
     }
-    .info-trigger:hover { color: var(--text); border-color: var(--accent); transform: translateY(-1px); }
 
     .info-modal-backdrop {
       position: fixed;
@@ -354,6 +358,18 @@
     }
     @keyframes infoFadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes infoPopIn { from { opacity: .1; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+
+    @media (hover: hover) {
+      .btn:hover { border-color: var(--accent); }
+      .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(255, 107, 53, 0.35); }
+      .action-btn:hover { background: var(--border); color: var(--text); }
+      .drop-zone-between:hover, .drop-zone-between.drag-over { border-color: var(--accent); color: var(--accent); background: rgba(255,107,53,.06); }
+      .move-to-set-select:hover { border-color: var(--accent); color: var(--text); }
+      .optimized-removal-zone:hover { background: rgba(220, 38, 38, 0.95); border-color: #fff; }
+      .import-drop-zone:hover, .import-drop-zone.dragover { border-color: var(--accent); color: var(--text); }
+      .info-trigger:hover { color: var(--text); border-color: var(--accent); transform: translateY(-1px); }
+    }
 
     @media (max-width: 1100px){ .main-grid{ grid-template-columns: 1fr; } }
     @media (max-width: 700px){
@@ -456,7 +472,7 @@
           return null;
         }
       },
-      set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (err) { console.error('LS.set error:', err); } },
+      set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (err) { console.error('LS.set error:', err); if (err && (err.name === 'QuotaExceededError' || err.code === 22 || err.code === 1014)) { window.dispatchEvent(new CustomEvent('setlist:storage-quota-warning')); } } },
       remove: (k) => { try { localStorage.removeItem(k); } catch (err) { console.error('LS.remove error:', err); } }
     };
 
@@ -3895,6 +3911,22 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
+    function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', onConfirm, onCancel }) {
+      if (!open) return null;
+      return (
+        <div className="modal-backdrop" onClick={onCancel}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginBottom: '.5rem' }}>{title}</h3>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>{message}</p>
+            <div className="toolbar" style={{ justifyContent: 'flex-end' }}>
+              <button className="btn" onClick={onCancel}>Cancel</button>
+              <button className="btn btn-primary" onClick={onConfirm}>{confirmLabel}</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     /******************* MAIN APP *******************/
     function IDEBackground({ children }) {
       return (
@@ -3923,6 +3955,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [importModal, setImportModal] = useState(false);
       const [gigModal, setGigModal] = useState(false);
       const [toast, setToast] = useState(null);
+      const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', confirmLabel: 'Confirm', onConfirm: null });
       const [lastGenerationStats, setLastGenerationStats] = useState(null);
       const [imports, setImports] = useState([]);
       const [gigs, setGigs] = useState([]);
@@ -3932,6 +3965,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [libraryTab, setLibraryTab] = useState('active');
 
       const showToast = (message, type = 'success') => setToast({ message, type });
+
+      useEffect(() => {
+        const onQuotaWarning = () => showToast('Local storage is full. Export CSV or remove older songs/imports to avoid data loss.', 'warning');
+        window.addEventListener('setlist:storage-quota-warning', onQuotaWarning);
+        return () => window.removeEventListener('setlist:storage-quota-warning', onQuotaWarning);
+      }, []);
 
       const activeBand = useMemo(() => bands.find(b => b.id === activeBandId), [bands, activeBandId]);
 
@@ -4112,12 +4151,20 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       };
 
       const clearAllSongs = () => {
-        if (!window.confirm('Delete all songs? This cannot be undone.')) return;
-        setSongs([]);
-        setSetlists([]);
-        setLocked(new Set());
-        setLastGenerationStats(null);
-        showToast('All songs deleted', 'warning');
+        setConfirmDialog({
+          open: true,
+          title: 'Delete all songs?',
+          message: 'This cannot be undone.',
+          confirmLabel: 'Delete all',
+          onConfirm: () => {
+            setSongs([]);
+            setSetlists([]);
+            setLocked(new Set());
+            setLastGenerationStats(null);
+            showToast('All songs deleted', 'warning');
+            setConfirmDialog(prev => ({ ...prev, open: false }));
+          }
+        });
       };
 
       // PHASE 2: CSV Export with proper quoting + enhanced energy/tonal data
@@ -4952,23 +4999,27 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       // Band deletion cleanup
       const deleteBand = (band) => {
         if (bands.length === 1) return showToast('Cannot delete the last band', 'error');
-        if (!window.confirm(`Delete "${band.name}"? This cannot be undone.`)) return;
-
-        const next = bands.filter(b => b.id !== band.id);
-        setBands(next);
-
-        LS.remove(LS_KEYS.bandSongs(band.id));
-        LS.remove(LS_KEYS.bandSettings(band.id));
-        LS.remove(LS_KEYS.bandHistory(band.id));
-        LS.remove(LS_KEYS.bandImports(band.id));
-        LS.remove(LS_KEYS.bandGigs(band.id));
-
-        if (activeBandId === band.id && next.length) {
-          setActiveBandId(next[0].id);
-          LS.set(LS_KEYS.active, next[0].id);
-        }
-
-        showToast('Band deleted', 'warning');
+        setConfirmDialog({
+          open: true,
+          title: `Delete "${band.name}"?`,
+          message: 'This cannot be undone.',
+          confirmLabel: 'Delete band',
+          onConfirm: () => {
+            const next = bands.filter(b => b.id !== band.id);
+            setBands(next);
+            LS.remove(LS_KEYS.bandSongs(band.id));
+            LS.remove(LS_KEYS.bandSettings(band.id));
+            LS.remove(LS_KEYS.bandHistory(band.id));
+            LS.remove(LS_KEYS.bandImports(band.id));
+            LS.remove(LS_KEYS.bandGigs(band.id));
+            if (activeBandId === band.id && next.length) {
+              setActiveBandId(next[0].id);
+              LS.set(LS_KEYS.active, next[0].id);
+            }
+            showToast('Band deleted', 'warning');
+            setConfirmDialog(prev => ({ ...prev, open: false }));
+          }
+        });
       };
 
       const duplicateBand = (band) => {
@@ -5032,11 +5083,19 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       };
 
       const deleteGig = (gigId) => {
-        if (!window.confirm('Delete this gig profile?')) return;
-        const updated = gigs.filter(g => g.id !== gigId);
-        setGigs(updated);
-        LS.set(LS_KEYS.bandGigs(activeBandId), updated);
-        showToast('Gig profile deleted', 'warning');
+        setConfirmDialog({
+          open: true,
+          title: 'Delete this gig profile?',
+          message: 'This action cannot be undone.',
+          confirmLabel: 'Delete gig',
+          onConfirm: () => {
+            const updated = gigs.filter(g => g.id !== gigId);
+            setGigs(updated);
+            LS.set(LS_KEYS.bandGigs(activeBandId), updated);
+            showToast('Gig profile deleted', 'warning');
+            setConfirmDialog(prev => ({ ...prev, open: false }));
+          }
+        });
       };
 
       const saveSetlistsToGig = (gigId) => {
@@ -5114,6 +5173,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         <>
           <IDEBackground>
             <div className="app-container no-print">
+            <ConfirmDialog
+              open={confirmDialog.open}
+              title={confirmDialog.title}
+              message={confirmDialog.message}
+              confirmLabel={confirmDialog.confirmLabel}
+              onConfirm={confirmDialog.onConfirm || (() => setConfirmDialog(prev => ({ ...prev, open: false })))}
+              onCancel={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+            />
+
             {toast && (
               <div className="toast-container">
                 <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
