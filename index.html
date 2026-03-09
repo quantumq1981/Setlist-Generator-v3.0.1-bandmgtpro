@@ -228,6 +228,18 @@
     .alert-success{ border-color: var(--success); background: rgba(74,222,128,.12); color: var(--success); }
     .alert-warning{ border-color: var(--warning); background: rgba(251,191,36,.12); color: var(--warning); }
 
+    .storage-health-banner {
+      margin:.6rem 0; padding:.65rem .8rem; border-radius:8px; border:1px solid var(--warning);
+      background: rgba(251,191,36,.14); color: var(--warning); font-size:.88rem;
+    }
+
+    .touch-fallback-active .setlist-song[draggable="true"] { cursor: default; }
+
+    @media (max-width: 700px){
+      .song-actions .action-btn { width:34px; height:34px; font-size:1rem; }
+      .song-actions .move-to-set-select { min-height:34px; font-size:.82rem; }
+    }
+
     .modal-backdrop { position:fixed; inset:0; background: rgba(0,0,0,.5); display:flex; justify-content:center; align-items:center; z-index:1500; }
     .modal { width:min(520px, 92vw); background:var(--secondary); border:1px solid var(--border); border-radius:12px; padding:1rem; }
 
@@ -389,6 +401,11 @@
   <script type="text/babel">
     const { useState, useEffect, useMemo } = React;
 
+    const FEATURE_FLAGS = {
+      phase1ReliabilityDataSafety: false,
+      phase2MobileCompatibility: false
+    };
+
     /******************* UTILITIES & GUARDS *******************/
     const genId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() :
       ('id-' + Math.random().toString(36).slice(2) + Date.now().toString(36));
@@ -422,10 +439,33 @@
 
     // PHASE 2: CSV Quoting Fix
     function csvEscapeCell(value) {
-      const s = guardCSVCell(value == null ? '' : String(value));
+      const s = value == null ? '' : String(value);
       if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
       return s;
     }
+
+    const csvSafeCell = (value) => csvEscapeCell(guardCSVCell(value));
+
+    const validateCSVRows = (rows) => {
+      return rows.every(row => Array.isArray(row) && row.every(cell => {
+        const v = String(cell ?? '');
+        return !/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(v);
+      }));
+    };
+
+    const estimateLocalStorageBytes = () => {
+      try {
+        let total = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i) || '';
+          const v = localStorage.getItem(k) || '';
+          total += (k.length + v.length) * 2;
+        }
+        return total;
+      } catch (_) {
+        return 0;
+      }
+    };
 
     // Default song duration in minutes used when a duration is missing or zero.
     const DEFAULT_DURATION_MINUTES = 4;
@@ -484,7 +524,25 @@
       bandHistory: (id) => `setlist_band_history_v3_${id}`,
       bandImports: (id) => `setlist_band_imports_v3_${id}`,
       bandGigs: (id) => `setlist_band_gigs_v3_${id}`,
-      bandWatermark: (id) => `setlist_band_watermark_v3_${id}`
+      bandWatermark: (id) => `setlist_band_watermark_v3_${id}`,
+      bandSnapshots: (id) => `setlist_band_snapshots_v3_${id}`
+    };
+
+    const storageHealth = {
+      warningThreshold: 0.70,
+      criticalThreshold: 0.85,
+      assumedQuotaBytes: 5 * 1024 * 1024,
+      getUsage() {
+        const usedBytes = estimateLocalStorageBytes();
+        const ratio = usedBytes / this.assumedQuotaBytes;
+        return { usedBytes, ratio, percent: Math.round(ratio * 100) };
+      },
+      level() {
+        const usage = this.getUsage();
+        if (usage.ratio >= this.criticalThreshold) return { ...usage, level: 'critical' };
+        if (usage.ratio >= this.warningThreshold) return { ...usage, level: 'warning' };
+        return { ...usage, level: 'normal' };
+      }
     };
 
     const ENERGY_MAP = {
@@ -2101,6 +2159,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           if (current > setDuration + 8) break;
         }
 
+        if (generationAborted && !allowSongReuse) break;
+
         const setSongs = setArr.filter(Boolean);
 
         if (forceCloser && setSongs.length > 0) {
@@ -2130,6 +2190,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           if (useLockedCloser && lockedCloserSong) {
             if (lockedCloserSong.id !== lastSong.id) {
               setSongs[lastIdx] = lockedCloserSong;
+              setUsedIds.delete(lastSong.id);
+              setUsedIds.add(lockedCloserSong.id);
               markUsed(lockedCloserSong);
             } else {
               // Locked closer is already the last song, re-mark it
@@ -2161,6 +2223,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 closer = closerCandidates[Math.floor(Math.random() * closerCandidates.length)];
               }
               setSongs[lastIdx] = closer;
+              setUsedIds.delete(lastSong.id);
+              setUsedIds.add(closer.id);
               markUsed(closer);
             } else {
               if (!allowSongReuse) markUsed(lastSong);
@@ -2512,7 +2576,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, songCount, libraryTime, watermarkImg, onWatermarkUpload, onClearWatermark, activeSongs }) {
+    function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, songCount, libraryTime, watermarkImg, onWatermarkUpload, onClearWatermark, activeSongs, onRecoverSnapshot }) {
       const [activeHelpKey, setActiveHelpKey] = useState(null);
       const activeHelp = activeHelpKey ? window.featureDefinitions?.[activeHelpKey] : null;
       const openHelp = (featureKey) => setActiveHelpKey(featureKey);
@@ -2898,6 +2962,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           <div className="toolbar" style={{ marginTop: '1rem' }}>
             <button className="btn btn-small" onClick={onCopy}>Copy Text</button>
             <button className="btn btn-small" onClick={onExportPDF}>Export PDF</button>
+            {FEATURE_FLAGS.phase1ReliabilityDataSafety && (
+              <button className="btn btn-small" onClick={onRecoverSnapshot} style={{ borderColor: 'var(--warning)', color: 'var(--warning)' }}>
+                Recover previous snapshot
+              </button>
+            )}
           </div>
 
           <div style={{ marginTop: '.75rem', padding: '.5rem', background: 'var(--primary)', borderRadius: '8px', border: '1px solid var(--border)' }}>
@@ -2928,7 +2997,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onMoveSong, onRemoveSong, onLockEntireSet, onDragStart, onDragEnd, onDragOverSong, onDragOverSet, onDropOnSong, onDropOnSet, onMoveToSet, dragState, totalSets, isReorderMode }) {
+    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onMoveSong, onRemoveSong, onLockEntireSet, onDragStart, onDragEnd, onDragOverSong, onDragOverSet, onDropOnSong, onDropOnSet, onMoveToSet, dragState, totalSets, isReorderMode, touchFallbackEnabled, touchDrag, setTouchDrag }) {
       let runningTime = 0;
       const allLocked = setlist.songs.length > 0 && setlist.songs.every(s => locked.has(`${setIdx}:${s.id}`));
       const isSetDragTarget = dragState && dragState.active && dragState.overSetIdx === setIdx && dragState.fromSetIdx !== setIdx;
@@ -2974,12 +3043,22 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               <div
                 key={`${song.id}-${songIdx}`}
                 className={`setlist-song ${isLocked ? 'locked' : ''} ${dragClass}`}
-                draggable={!isLocked && isReorderMode}
+                draggable={!isLocked && isReorderMode && !touchFallbackEnabled}
                 onDragStart={(e) => onDragStart(e, song, setIdx, songIdx)}
                 onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 onDragOver={(e) => onDragOverSong(e, setIdx, songIdx)}
                 onDrop={(e) => onDropOnSong(e, setIdx, songIdx)}
                 onDragEnd={onDragEnd}
+                onTouchStart={() => {
+                  if (!touchFallbackEnabled || !isReorderMode || isLocked) return;
+                  setTouchDrag({ active: true, fromSetIdx: setIdx, fromSongIdx: songIdx });
+                }}
+                onTouchEnd={() => {
+                  if (!touchFallbackEnabled || !touchDrag.active || isLocked) return;
+                  if (touchDrag.fromSetIdx === setIdx) onMoveSong(setIdx, touchDrag.fromSongIdx, songIdx);
+                  else onMoveToSet(touchDrag.fromSetIdx, touchDrag.fromSongIdx, setIdx);
+                  setTouchDrag({ active: false, fromSetIdx: null, fromSongIdx: null });
+                }}
               >
                 <div className="drag-handle" title={!isReorderMode ? 'Enable Reorder Mode to drag' : isLocked ? 'Locked - cannot drag' : 'Drag to reorder or move to another set'}>
                   {isReorderMode && !isLocked ? '⠿' : ''}
@@ -3035,7 +3114,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     }
 
     /******************* IMPORT SONGS MODAL *******************/
-    function ImportSongsModal({ open, onClose, onImport, existingSongs }) {
+    function ImportSongsModal({ open, onClose, onImport, existingSongs, onRiskyAction }) {
       const STEPS = ["input", "map", "normalize", "import"];
       const STEP_LABELS = { input: "1. Input", map: "2. Map Columns", normalize: "3. Review", import: "4. Import" };
 
@@ -3253,7 +3332,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       onChange={(e) => setRawText(e.target.value)}
                     />
                     <div className="import-footer">
-                      <button className="btn btn-primary" onClick={() => parseText(rawText, "pasted-text")} disabled={!rawText.trim()}>
+                      <button className="btn btn-primary" onClick={() => { const run = () => parseText(rawText, "pasted-text"); if (FEATURE_FLAGS.phase1ReliabilityDataSafety && rawText.length > 2000 && onRiskyAction) onRiskyAction('Large pasted import', run); else run(); }} disabled={!rawText.trim()}>
                         Parse Text
                       </button>
                     </div>
@@ -3911,7 +3990,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', onConfirm, onCancel }) {
+    function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', secondaryLabel = '', secondaryAction = null, onConfirm, onCancel }) {
       if (!open) return null;
       return (
         <div className="modal-backdrop" onClick={onCancel}>
@@ -3919,6 +3998,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             <h3 style={{ marginBottom: '.5rem' }}>{title}</h3>
             <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>{message}</p>
             <div className="toolbar" style={{ justifyContent: 'flex-end' }}>
+              {secondaryAction && secondaryLabel && (
+                <button className="btn" onClick={secondaryAction}>{secondaryLabel}</button>
+              )}
               <button className="btn" onClick={onCancel}>Cancel</button>
               <button className="btn btn-primary" onClick={onConfirm}>{confirmLabel}</button>
             </div>
@@ -3955,8 +4037,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [importModal, setImportModal] = useState(false);
       const [gigModal, setGigModal] = useState(false);
       const [toast, setToast] = useState(null);
+      const [storageStatus, setStorageStatus] = useState(storageHealth.level());
       const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', confirmLabel: 'Confirm', onConfirm: null });
       const [lastGenerationStats, setLastGenerationStats] = useState(null);
+      const [touchDrag, setTouchDrag] = useState({ active: false, fromSetIdx: null, fromSongIdx: null });
       const [imports, setImports] = useState([]);
       const [gigs, setGigs] = useState([]);
       const [watermarkImg, setWatermarkImg] = useState(null);
@@ -3966,13 +4050,79 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       const showToast = (message, type = 'success') => setToast({ message, type });
 
+      const promptBackupBeforeRiskyAction = (contextLabel, action) => {
+        if (!FEATURE_FLAGS.phase1ReliabilityDataSafety) {
+          action();
+          return;
+        }
+        setConfirmDialog({
+          open: true,
+          title: 'Export backup before continuing?',
+          message: `${contextLabel} can change a lot of data. Export CSV backup first?`,
+          confirmLabel: 'Continue anyway',
+          onConfirm: () => {
+            action();
+            setConfirmDialog(prev => ({ ...prev, open: false }));
+          },
+          secondaryAction: () => {
+            exportSongs();
+            showToast('Backup CSV exported. Continue when ready.', 'success');
+          },
+          secondaryLabel: 'Export CSV Backup'
+        });
+      };
+
+      const saveSnapshot = () => {
+        if (!FEATURE_FLAGS.phase1ReliabilityDataSafety || !activeBandId) return;
+        const payload = {
+          ts: Date.now(),
+          songs,
+          setlists,
+          settings,
+          locked: Array.from(locked)
+        };
+        const existing = LS.get(LS_KEYS.bandSnapshots(activeBandId)) || [];
+        const next = [payload, ...existing].slice(0, 3).map((snap, idx) => ({ ...snap, id: `snapshot_${idx + 1}` }));
+        LS.set(LS_KEYS.bandSnapshots(activeBandId), next);
+      };
+
+      const recoverPreviousSnapshot = () => {
+        const snapshots = LS.get(LS_KEYS.bandSnapshots(activeBandId)) || [];
+        if (snapshots.length < 2) return showToast('No previous snapshot found.', 'warning');
+        const target = snapshots[1];
+        setSongs(target.songs || []);
+        setSetlists(target.setlists || []);
+        setSettings(target.settings || settings);
+        setLocked(new Set(target.locked || []));
+        showToast(`Recovered snapshot from ${new Date(target.ts).toLocaleString()}`, 'success');
+      };
+
       useEffect(() => {
         const onQuotaWarning = () => showToast('Local storage is full. Export CSV or remove older songs/imports to avoid data loss.', 'warning');
+        const refreshStorage = () => {
+          if (!FEATURE_FLAGS.phase1ReliabilityDataSafety) return;
+          const next = storageHealth.level();
+          setStorageStatus(next);
+          if (next.level === 'critical') showToast(`Storage at ${next.percent}% — export CSV backup soon.`, 'warning');
+          else if (next.level === 'warning') showToast(`Storage at ${next.percent}% — consider exporting backup.`, 'warning');
+        };
         window.addEventListener('setlist:storage-quota-warning', onQuotaWarning);
-        return () => window.removeEventListener('setlist:storage-quota-warning', onQuotaWarning);
+        refreshStorage();
+        const timer = setInterval(refreshStorage, 15000);
+        return () => {
+          window.removeEventListener('setlist:storage-quota-warning', onQuotaWarning);
+          clearInterval(timer);
+        };
       }, []);
 
+      useEffect(() => {
+        if (!FEATURE_FLAGS.phase1ReliabilityDataSafety || !activeBandId) return;
+        const t = setTimeout(saveSnapshot, 1200);
+        return () => clearTimeout(t);
+      }, [songs, setlists, settings, locked, activeBandId]);
+
       const activeBand = useMemo(() => bands.find(b => b.id === activeBandId), [bands, activeBandId]);
+      const touchFallbackEnabled = FEATURE_FLAGS.phase2MobileCompatibility && /iPad|iPhone|iPod/.test(navigator.userAgent || '');
 
       // PHASE 3A: derived active/cold
       const activeSongs = useMemo(() => songs.filter(s => (s.status || 'active') === 'active'), [songs]);
@@ -4126,8 +4276,17 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       };
 
       const deleteSong = (id) => {
-        setSongs(songs.filter(s => s.id !== id));
-        showToast('Song deleted', 'warning');
+        setConfirmDialog({
+          open: true,
+          title: 'Delete song?',
+          message: 'This removes the song from your library.',
+          confirmLabel: 'Delete song',
+          onConfirm: () => {
+            setSongs(songs.filter(s => s.id !== id));
+            showToast('Song deleted', 'warning');
+            setConfirmDialog(prev => ({ ...prev, open: false }));
+          }
+        });
       };
 
       // PHASE 3A: shelf/restore
@@ -4151,7 +4310,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       };
 
       const clearAllSongs = () => {
-        setConfirmDialog({
+        const doClear = () => setConfirmDialog({
           open: true,
           title: 'Delete all songs?',
           message: 'This cannot be undone.',
@@ -4165,6 +4324,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             setConfirmDialog(prev => ({ ...prev, open: false }));
           }
         });
+        promptBackupBeforeRiskyAction('Clearing all songs', doClear);
       };
 
       // PHASE 2: CSV Export with proper quoting + enhanced energy/tonal data
@@ -4173,18 +4333,22 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const rows = songs.map(s => {
           const energy = getCompositeEnergy(s);
           return [
-            csvEscapeCell(s.title),
-            csvEscapeCell(s.artist),
-            csvEscapeCell(s.duration ?? ''),
-            csvEscapeCell(s.style ?? ''),
-            csvEscapeCell(s.key ?? ''),
-            csvEscapeCell(s.bpm ?? ''),
-            csvEscapeCell(s.vocalist ?? ''),
-            csvEscapeCell(Math.round(energy * 10) / 10),
-            csvEscapeCell(s.status || 'active')
+            csvSafeCell(s.title),
+            csvSafeCell(s.artist),
+            csvSafeCell(s.duration ?? ''),
+            csvSafeCell(s.style ?? ''),
+            csvSafeCell(s.key ?? ''),
+            csvSafeCell(s.bpm ?? ''),
+            csvSafeCell(s.vocalist ?? ''),
+            csvSafeCell(Math.round(energy * 10) / 10),
+            csvSafeCell(s.status || 'active')
           ];
         });
-        const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        if (!validateCSVRows(rows)) {
+          showToast('CSV export blocked: invalid control characters detected.', 'error');
+          return;
+        }
+        const csv = [headers.map(csvSafeCell).join(','), ...rows.map(r => r.join(','))].join('\n');
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -4218,12 +4382,16 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               vocalist: s.vocalist || ''
             }));
 
-            setSongs([...songs, ...imported]);
-            const newImport = { ts: Date.now(), count: imported.length, filename: file.name };
-            const updatedImports = [newImport, ...imports].slice(0, 10);
-            setImports(updatedImports);
-            LS.set(LS_KEYS.bandImports(activeBandId), updatedImports);
-            showToast(`Imported ${imported.length} songs from PDF`, 'success');
+            const commitImport = () => {
+              setSongs([...songs, ...imported]);
+              const newImport = { ts: Date.now(), count: imported.length, filename: file.name };
+              const updatedImports = [newImport, ...imports].slice(0, 10);
+              setImports(updatedImports);
+              LS.set(LS_KEYS.bandImports(activeBandId), updatedImports);
+              showToast(`Imported ${imported.length} songs from PDF`, 'success');
+            };
+            if (imported.length >= 25) promptBackupBeforeRiskyAction('Bulk PDF import', commitImport);
+            else commitImport();
           } catch (err) {
             console.error('PDF parse error:', err);
             showToast('Failed to parse PDF: ' + (err.message || 'Unknown error'), 'error');
@@ -4279,12 +4447,16 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
           if (imported.length === 0) return showToast('No valid songs found', 'error');
 
-          setSongs([...songs, ...imported]);
-          const newImport = { ts: Date.now(), count: imported.length, filename: file.name };
-          const updatedImports = [newImport, ...imports].slice(0, 10);
-          setImports(updatedImports);
-          LS.set(LS_KEYS.bandImports(activeBandId), updatedImports);
-          showToast(`Imported ${imported.length} songs`, 'success');
+          const commitImport = () => {
+            setSongs([...songs, ...imported]);
+            const newImport = { ts: Date.now(), count: imported.length, filename: file.name };
+            const updatedImports = [newImport, ...imports].slice(0, 10);
+            setImports(updatedImports);
+            LS.set(LS_KEYS.bandImports(activeBandId), updatedImports);
+            showToast(`Imported ${imported.length} songs`, 'success');
+          };
+          if (imported.length >= 25) promptBackupBeforeRiskyAction('Bulk CSV import', commitImport);
+          else commitImport();
         };
         reader.readAsText(file);
         e.target.value = '';
@@ -4359,19 +4531,24 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           });
         }
 
-        if (imported.length > 0) {
-          setSongs(prev => [...prev, ...imported]);
-        }
+        const commitImport = () => {
+          if (imported.length > 0) {
+            setSongs(prev => [...prev, ...imported]);
+          }
 
-        const newImport = { ts: Date.now(), count: imported.length, filename: 'canonical-import', dupes: dupeCount };
-        const updatedImports = [newImport, ...imports].slice(0, 10);
-        setImports(updatedImports);
-        LS.set(LS_KEYS.bandImports(activeBandId), updatedImports);
+          const newImport = { ts: Date.now(), count: imported.length, filename: 'canonical-import', dupes: dupeCount };
+          const updatedImports = [newImport, ...imports].slice(0, 10);
+          setImports(updatedImports);
+          LS.set(LS_KEYS.bandImports(activeBandId), updatedImports);
 
-        let msg = `Imported ${imported.length} songs`;
-        if (dupeCount > 0) msg += ` (${dupeCount} duplicates merged/skipped)`;
-        msg += ` | Parsed: ${report.rowsParsed}, Rejected: ${report.rowsRejected}`;
-        showToast(msg, 'success');
+          let msg = `Imported ${imported.length} songs`;
+          if (dupeCount > 0) msg += ` (${dupeCount} duplicates merged/skipped)`;
+          msg += ` | Parsed: ${report.rowsParsed}, Rejected: ${report.rowsRejected}`;
+          showToast(msg, 'success');
+        };
+
+        if (report.rowsParsed >= 25) promptBackupBeforeRiskyAction('Bulk normalized import', commitImport);
+        else commitImport();
       };
 
       const copyToClipboard = () => {
@@ -4755,27 +4932,33 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const song = set.songs[songIdx];
         if (!song) return;
 
-        // Remove from setlist
-        const newSongs = set.songs.filter((_, i) => i !== songIdx);
-        const newSetlists = [...setlists];
-        newSetlists[setIdx] = {
-          ...set,
-          songs: newSongs,
-          totalTime: newSongs.reduce((sum, s) => sum + (Number(parseDuration(s.duration)) || 0), 0)
-        };
-        setSetlists(newSetlists);
+        setConfirmDialog({
+          open: true,
+          title: 'Remove song from set?',
+          message: `"${song.title}" will be removed and sent to Cold List.`,
+          confirmLabel: 'Remove song',
+          onConfirm: () => {
+            const newSongs = set.songs.filter((_, i) => i !== songIdx);
+            const newSetlists = [...setlists];
+            newSetlists[setIdx] = {
+              ...set,
+              songs: newSongs,
+              totalTime: newSongs.reduce((sum, s) => sum + (Number(parseDuration(s.duration)) || 0), 0)
+            };
+            setSetlists(newSetlists);
 
-        // Remove any lock for this song
-        const lockKey = `${setIdx}:${song.id}`;
-        if (locked.has(lockKey)) {
-          const newLocked = new Set(locked);
-          newLocked.delete(lockKey);
-          setLocked(newLocked);
-        }
+            const lockKey = `${setIdx}:${song.id}`;
+            if (locked.has(lockKey)) {
+              const newLocked = new Set(locked);
+              newLocked.delete(lockKey);
+              setLocked(newLocked);
+            }
 
-        // Move song to cold list
-        setSongs(prev => prev.map(s => s.id === song.id ? { ...s, status: 'cold' } : s));
-        showToast(`"${song.title}" removed and shelved to Cold List`, 'success');
+            setSongs(prev => prev.map(s => s.id === song.id ? { ...s, status: 'cold' } : s));
+            showToast(`"${song.title}" removed and shelved to Cold List`, 'success');
+            setConfirmDialog(prev => ({ ...prev, open: false }));
+          }
+        });
       };
 
       // Lock or unlock all songs in a set
@@ -5118,34 +5301,38 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           set.songs.forEach((song, songIdx) => {
             const energy = getCompositeEnergy(song);
             rows.push([
-              csvEscapeCell(set.name || `Set ${setIdx + 1}`),
-              csvEscapeCell(songIdx + 1),
-              csvEscapeCell(song.title),
-              csvEscapeCell(song.artist),
-              csvEscapeCell(parseDuration(song.duration)),
-              csvEscapeCell(song.style || ''),
-              csvEscapeCell(song.key || ''),
-              csvEscapeCell(song.bpm || ''),
-              csvEscapeCell(song.vocalist || ''),
-              csvEscapeCell(Math.round(energy * 10) / 10)
+              csvSafeCell(set.name || `Set ${setIdx + 1}`),
+              csvSafeCell(songIdx + 1),
+              csvSafeCell(song.title),
+              csvSafeCell(song.artist),
+              csvSafeCell(parseDuration(song.duration)),
+              csvSafeCell(song.style || ''),
+              csvSafeCell(song.key || ''),
+              csvSafeCell(song.bpm || ''),
+              csvSafeCell(song.vocalist || ''),
+              csvSafeCell(Math.round(energy * 10) / 10)
             ]);
           });
         });
 
         // Add gig metadata as footer rows
         rows.push([]);
-        rows.push([csvEscapeCell('Gig Info')]);
-        rows.push([csvEscapeCell('Gig Name'), csvEscapeCell(gig.name || '')]);
-        rows.push([csvEscapeCell('Venue'), csvEscapeCell(gig.venue || '')]);
-        rows.push([csvEscapeCell('Date'), csvEscapeCell(gig.date || '')]);
-        if (gig.venueCity) rows.push([csvEscapeCell('City'), csvEscapeCell(gig.venueCity)]);
-        if (gig.venueState) rows.push([csvEscapeCell('State'), csvEscapeCell(gig.venueState)]);
-        if (gig.eventType) rows.push([csvEscapeCell('Event Type'), csvEscapeCell(gig.eventType.replace(/_/g, ' '))]);
-        if (gig.contactName) rows.push([csvEscapeCell('Contact'), csvEscapeCell(gig.contactName)]);
-        if (gig.contactEmail) rows.push([csvEscapeCell('Email'), csvEscapeCell(gig.contactEmail)]);
-        if (gig.notes) rows.push([csvEscapeCell('Notes'), csvEscapeCell(gig.notes)]);
+        rows.push([csvSafeCell('Gig Info')]);
+        rows.push([csvSafeCell('Gig Name'), csvSafeCell(gig.name || '')]);
+        rows.push([csvSafeCell('Venue'), csvSafeCell(gig.venue || '')]);
+        rows.push([csvSafeCell('Date'), csvSafeCell(gig.date || '')]);
+        if (gig.venueCity) rows.push([csvSafeCell('City'), csvSafeCell(gig.venueCity)]);
+        if (gig.venueState) rows.push([csvSafeCell('State'), csvSafeCell(gig.venueState)]);
+        if (gig.eventType) rows.push([csvSafeCell('Event Type'), csvSafeCell(gig.eventType.replace(/_/g, ' '))]);
+        if (gig.contactName) rows.push([csvSafeCell('Contact'), csvSafeCell(gig.contactName)]);
+        if (gig.contactEmail) rows.push([csvSafeCell('Email'), csvSafeCell(gig.contactEmail)]);
+        if (gig.notes) rows.push([csvSafeCell('Notes'), csvSafeCell(gig.notes)]);
 
-        const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        if (!validateCSVRows(rows)) {
+          showToast('CSV export blocked: invalid control characters detected.', 'error');
+          return;
+        }
+        const csv = [headers.map(csvSafeCell).join(','), ...rows.map(r => r.join(','))].join('\n');
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -5172,12 +5359,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       return (
         <>
           <IDEBackground>
-            <div className="app-container no-print">
+            <div className={`app-container no-print ${FEATURE_FLAGS.phase2MobileCompatibility && touchDrag.active ? 'touch-fallback-active' : ''}`}>
             <ConfirmDialog
               open={confirmDialog.open}
               title={confirmDialog.title}
               message={confirmDialog.message}
               confirmLabel={confirmDialog.confirmLabel}
+              secondaryLabel={confirmDialog.secondaryLabel}
+              secondaryAction={confirmDialog.secondaryAction}
               onConfirm={confirmDialog.onConfirm || (() => setConfirmDialog(prev => ({ ...prev, open: false })))}
               onCancel={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
             />
@@ -5192,6 +5381,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               <h1>SETLIST GENERATOR</h1>
               <div className="subtitle">v3.7.0 — SA Optimizer • Continuous Energy Curves • Tonal Gravity v2 • Templates</div>
             </header>
+
+            {FEATURE_FLAGS.phase1ReliabilityDataSafety && storageStatus.level !== 'normal' && (
+              <div className="storage-health-banner">
+                Storage usage is at {storageStatus.percent}% capacity. Export CSV backup to avoid local save failures.
+              </div>
+            )}
 
             <div className="band-bar">
               <div className="band-left">
@@ -5242,6 +5437,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 onWatermarkUpload={handleWatermarkUpload}
                 onClearWatermark={clearWatermark}
                 activeSongs={activeSongs}
+                onRecoverSnapshot={recoverPreviousSnapshot}
               />
             </div>
 
@@ -5352,6 +5548,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       dragState={dragState}
                       totalSets={setlists.length}
                       isReorderMode={isReorderMode}
+                      touchFallbackEnabled={touchFallbackEnabled}
+                      touchDrag={touchDrag}
+                      setTouchDrag={setTouchDrag}
                     />
                   ))}
                 </div>
@@ -5372,6 +5571,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               onClose={() => setImportModal(false)}
               onImport={importCanonicalRows}
               existingSongs={songs}
+              onRiskyAction={promptBackupBeforeRiskyAction}
             />
 
             <GigProfileModal
