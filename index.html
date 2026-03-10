@@ -194,8 +194,25 @@
     .setlist-song.dragging { opacity: 0.4; border: 1px dashed var(--accent); pointer-events: none; }
     .setlist-song.drag-over-top { border-top: 3px solid var(--accent); margin-top: -2px; }
     .setlist-song.drag-over-bottom { border-bottom: 3px solid var(--accent); margin-bottom: -2px; }
+    .reorder-controls { display: flex; align-items: center; justify-content: center; }
     .drag-handle { cursor: grab; color: var(--text-muted); font-size: 1rem; user-select: none; -webkit-user-select: none; display: flex; align-items: center; touch-action: none; }
     .drag-handle:active { cursor: grabbing; }
+    .mobile-updown { display: none; }
+    .mobile-move-btn {
+      width: 44px; min-width: 44px; height: 44px;
+      border: 1px solid var(--border); border-radius: 8px;
+      background: var(--primary); color: var(--text);
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; line-height: 1; cursor: pointer;
+    }
+    .mobile-move-btn:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+    .mobile-move-btn:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
     .drop-zone-between { padding: .6rem; border: 2px dashed var(--border); border-radius: 8px; text-align: center; color: var(--text-muted); font-size: .8rem; margin-top: .35rem; transition: .2s; }
     .setlist.drag-target { outline: 2px solid var(--accent); outline-offset: 2px; }
     .move-to-set-select { font-size: .7rem; padding: .1rem .2rem; background: var(--primary); color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; max-width: 70px; }
@@ -387,6 +404,11 @@
     @media (max-width: 700px){
       h1{ font-size: 1.8rem; }
       .setlist-song{ grid-template-columns: 18px 26px 1fr 46px 50px; }
+    }
+    @media (pointer: coarse) {
+      .drag-handle { display: none; }
+      .mobile-updown { display: inline-flex; flex-direction: column; gap: .35rem; }
+      .setlist-song { grid-template-columns: 52px 26px 1fr 46px 50px; }
     }
   </style>
 </head>
@@ -3060,8 +3082,30 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   setTouchDrag({ active: false, fromSetIdx: null, fromSongIdx: null });
                 }}
               >
-                <div className="drag-handle" title={!isReorderMode ? 'Enable Reorder Mode to drag' : isLocked ? 'Locked - cannot drag' : 'Drag to reorder or move to another set'}>
-                  {isReorderMode && !isLocked ? '⠿' : ''}
+                <div className="reorder-controls">
+                  <div className="drag-handle" title={!isReorderMode ? 'Enable Reorder Mode to drag' : isLocked ? 'Locked - cannot drag' : 'Drag to reorder or move to another set'}>
+                    {isReorderMode && !isLocked ? '⠿' : ''}
+                  </div>
+                  <div className="mobile-updown" role="group" aria-label={`Reorder ${song.title}`}>
+                    <button
+                      type="button"
+                      className="mobile-move-btn"
+                      aria-label={`Move ${song.title} up`}
+                      disabled={!isReorderMode || isLocked || songIdx === 0}
+                      onClick={() => onMoveSong(setIdx, songIdx, songIdx - 1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="mobile-move-btn"
+                      aria-label={`Move ${song.title} down`}
+                      disabled={!isReorderMode || isLocked || songIdx === setlist.songs.length - 1}
+                      onClick={() => onMoveSong(setIdx, songIdx, songIdx + 1)}
+                    >
+                      ↓
+                    </button>
+                  </div>
                 </div>
                 <div className="song-number">{songIdx + 1}</div>
                 <div>
