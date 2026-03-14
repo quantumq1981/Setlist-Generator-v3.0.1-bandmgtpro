@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Setlist Generator v3.7.0 — Phase 6: Energy Curve + Tonal Gravity Overhaul, SA Optimizer, Templates</title>
+  <title>Setlist Generator v3.8.0 — Force Opener/Closer Fix, Affinity Engine v2, Song-to-Set Pinning</title>
 
   <link rel="manifest" href="./manifest.webmanifest" />
   <!-- TODO(SRI): add integrity hashes once CDN access is available in this environment. -->
@@ -1455,7 +1455,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
   // Always use core generator to satisfy duration/energy/locks robustly
   const base = generateSetlistsCore(enriched, opts);
 
-  // Build a set of locked song IDs from the lockPlan so we skip them during tonal swaps
+  // Build a set of locked song IDs from the lockPlan, openers, closers and pins.
+  // These must never be repositioned during tonal-gravity refinement sweeps.
   const lockedIds = new Set();
   if (Array.isArray(opts.lockPlan)) {
     for (const plan of opts.lockPlan) {
@@ -1463,6 +1464,17 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       for (const entry of plan) {
         if (entry && entry.song && entry.song.id) lockedIds.add(entry.song.id);
       }
+    }
+  }
+  if (Array.isArray(opts.lockedOpeners)) {
+    for (const id of opts.lockedOpeners) lockedIds.add(id);
+  }
+  if (Array.isArray(opts.lockedClosers)) {
+    for (const id of opts.lockedClosers) lockedIds.add(id);
+  }
+  if (Array.isArray(opts.songSetPins)) {
+    for (const pin of opts.songSetPins) {
+      if (pin && pin.songId) lockedIds.add(pin.songId);
     }
   }
 
@@ -1575,6 +1587,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
   // Simulated annealing deep optimization pass (when enabled)
   if (opts.optimizationLevel === 'deep') {
+    // Collect all explicitly locked IDs so SA never swaps them out of position.
+    // This includes lockPlan entries, designated openers/closers, and set-pin songs.
     const lockedIdSet = new Set();
     if (Array.isArray(opts.lockPlan)) {
       for (const plan of opts.lockPlan) {
@@ -1582,6 +1596,19 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         for (const entry of plan) {
           if (entry && entry.song && entry.song.id) lockedIdSet.add(entry.song.id);
         }
+      }
+    }
+    // Protect designated openers and closers from SA reordering
+    if (Array.isArray(opts.lockedOpeners)) {
+      for (const id of opts.lockedOpeners) lockedIdSet.add(id);
+    }
+    if (Array.isArray(opts.lockedClosers)) {
+      for (const id of opts.lockedClosers) lockedIdSet.add(id);
+    }
+    // Protect set-pinned songs
+    if (Array.isArray(opts.songSetPins)) {
+      for (const pin of opts.songSetPins) {
+        if (pin && pin.songId) lockedIdSet.add(pin.songId);
       }
     }
 
@@ -1932,6 +1959,23 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       }
       const cachedEnergy = (s) => energyCache.get(s.id) ?? getCompositeEnergy(s);
 
+      // PERF: Pre-build O(1) affinity/anti-affinity lookup sets.
+      // Key format: "idA|idB" stored bidirectionally so either order matches in O(1).
+      const affinitySet = new Set();
+      const antiAffinitySet = new Set();
+      if (opts.songAffinities && opts.songAffinities.length > 0) {
+        for (const [a, b] of opts.songAffinities) {
+          affinitySet.add(`${a}|${b}`);
+          affinitySet.add(`${b}|${a}`);
+        }
+      }
+      if (opts.songAntiAffinities && opts.songAntiAffinities.length > 0) {
+        for (const [a, b] of opts.songAntiAffinities) {
+          antiAffinitySet.add(`${a}|${b}`);
+          antiAffinitySet.add(`${b}|${a}`);
+        }
+      }
+
       const getSongDedupKeys = (s) => {
         const k = [];
         if (s.id) k.push(`id:${s.id}`);
@@ -1961,6 +2005,21 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         return !keys.some(k => used.has(k) && used.get(k) > 0);
       };
 
+      // FEATURE: Song-to-Set pinning.
+      // opts.songSetPins = [{ songId, setIndex }] — songs pre-assigned to specific sets.
+      // These are treated as locked entries at position 0 of the designated set (or
+      // appended to the lockPlan at a free slot) so they are guaranteed to appear.
+      // Build a map: setIndex -> [songId, ...] for quick lookup during set generation.
+      const songSetPinsBySet = new Map();
+      if (Array.isArray(opts.songSetPins)) {
+        for (const pin of opts.songSetPins) {
+          if (pin == null || pin.songId == null || pin.setIndex == null) continue;
+          const si = Math.max(0, Math.floor(pin.setIndex));
+          if (!songSetPinsBySet.has(si)) songSetPinsBySet.set(si, []);
+          songSetPinsBySet.get(si).push(pin.songId);
+        }
+      }
+
       const results = [];
 
       for (let setNum = 0; setNum < numSets; setNum++) {
@@ -1980,6 +2039,19 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           }
         }
 
+        // Apply song-to-set pins for this set: find the next free slot and insert.
+        const pinnedSongIds = songSetPinsBySet.get(setNum) || [];
+        for (const pinId of pinnedSongIds) {
+          const pinnedSong = pool.find(s => s.id === pinId);
+          if (!pinnedSong) continue;
+          if (!allowSongReuse && !isAvailable(pinnedSong)) continue;
+          // Find a free slot (not already occupied by another locked song)
+          let freeSlot = 0;
+          while (lockedSlots.has(freeSlot)) freeSlot++;
+          lockedSlots.set(freeSlot, pinnedSong);
+          markUsed(pinnedSong);
+        }
+
         let setArr = [];
         let current = 0;
         const setUsedIds = new Set(); // O(1) dedup within a single set
@@ -1996,16 +2068,37 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           setArr = [];
         }
 
-        if (lockedSlots.size === 0 && forceOpener) {
+        // FIX: only skip opener if slot 0 is already occupied by a locked song;
+        // previously the check was lockedSlots.size === 0 which skipped the opener
+        // entirely whenever ANY song was locked (e.g. from a prior generation).
+        if (!lockedSlots.has(0) && forceOpener) {
           let opener = null;
 
-          // Prefer user-selected locked openers
+          // Prefer user-selected locked openers.
+          // Designated opener/closer songs are allowed to bypass the global
+          // allowSongReuse guard so that the same opener can appear in every set
+          // when only one opener is designated.
           if (lockedOpeners.length > 0) {
             const availableLockedOpeners = lockedOpeners
               .map(id => pool.find(s => s.id === id))
-              .filter(s => s && isAvailable(s));
+              .filter(s => {
+                if (!s) return false;
+                // If globally available, use it; otherwise allow reuse for opener role
+                return isAvailable(s) || lockedOpeners.includes(s.id);
+              });
             if (availableLockedOpeners.length > 0) {
-              opener = availableLockedOpeners[Math.floor(Math.random() * availableLockedOpeners.length)];
+              // Pick the least-used designated opener to distribute evenly across sets
+              const sorted = [...availableLockedOpeners].sort((a, b) => {
+                const countA = lockedOpeners.indexOf(a.id) >= 0 ? (used.get(`id:${a.id}`) || 0) : 99;
+                const countB = lockedOpeners.indexOf(b.id) >= 0 ? (used.get(`id:${b.id}`) || 0) : 99;
+                return countA - countB;
+              });
+              // Use the least-used designated opener; if tie, pick randomly among tied
+              const minCount = (used.get(`id:${sorted[0].id}`) || 0);
+              const tied = sorted.filter(s => (used.get(`id:${s.id}`) || 0) === minCount);
+              opener = tied[Math.floor(Math.random() * tied.length)];
+              // Unmark so re-marking below correctly increments the count
+              if (opener) unmarkUsed(opener);
             }
           }
 
@@ -2128,19 +2221,29 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               templatePenalty = templateStylePenalty(s.style, pos, opts.setTemplate);
             }
 
-            // Song affinity: bonus for placing next to an affinity partner
+            // Song affinity / anti-affinity scoring using pre-built O(1) Sets.
+            // Affinity: strong bonus (-4.0) for placing adjacent to a paired song.
+            // Anti-affinity: strong penalty (+8.0) for adjacent placement;
+            //   also check the last 3 slots so "keep apart" songs stay separated
+            //   by more than one position.
             let affinityPenalty = 0;
-            if (last && opts.songAffinities && opts.songAffinities.length > 0) {
-              const isAffinity = opts.songAffinities.some(
-                pair => (pair[0] === last.id && pair[1] === s.id) || (pair[1] === last.id && pair[0] === s.id)
-              );
-              if (isAffinity) affinityPenalty = -2.0; // bonus
+            if (last && affinitySet.has(`${last.id}|${s.id}`)) {
+              affinityPenalty = -4.0; // strong adjacency bonus
             }
-            if (last && opts.songAntiAffinities && opts.songAntiAffinities.length > 0) {
-              const isAnti = opts.songAntiAffinities.some(
-                pair => (pair[0] === last.id && pair[1] === s.id) || (pair[1] === last.id && pair[0] === s.id)
-              );
-              if (isAnti) affinityPenalty = 2.5; // penalty
+            if (antiAffinitySet.size > 0) {
+              // Check the last 3 songs placed (not just the immediate predecessor)
+              const recentSongs = setArr.filter(Boolean).slice(-3);
+              let maxAntiPenalty = 0;
+              for (let ri = 0; ri < recentSongs.length; ri++) {
+                const rs = recentSongs[ri];
+                if (antiAffinitySet.has(`${rs.id}|${s.id}`)) {
+                  // Penalty decays with distance: adjacent = 8, gap-2 = 5, gap-3 = 3
+                  const distFromEnd = recentSongs.length - 1 - ri;
+                  const penalty = distFromEnd === 0 ? 8.0 : distFromEnd === 1 ? 5.0 : 3.0;
+                  if (penalty > maxAntiPenalty) maxAntiPenalty = penalty;
+                }
+              }
+              if (maxAntiPenalty > 0) affinityPenalty = maxAntiPenalty;
             }
 
             const score = timePenalty + diversityPenalty + energyPenalty + tonalPenalty + templatePenalty + affinityPenalty;
@@ -2190,49 +2293,61 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           const lastSong = setSongs[lastIdx];
           const closerStyles = ['ballad', 'acoustic', 'slow blues', 'blues', 'midtempo', 'swing', 'soul', 'waltz'];
 
-          // Check if a locked closer should be used
+          // Check if a locked closer should be used.
+          // FIX: designated closer songs bypass the global used-check (same as opener)
+          // so the same closer song can appear in every set when only one is designated.
           let useLockedCloser = false;
           let lockedCloserSong = null;
 
           if (lockedClosers.length > 0) {
-            const availableLockedClosers = lockedClosers
-              .map(id => pool.find(s => s.id === id))
-              .filter(s => s && (s.id === lastSong.id || (allowSongReuse || !setSongs.some((x, xi) => xi !== lastIdx && x.id === s.id))));
-
-            // Find one that's available globally
+            // Temporarily unmark the last song so the closer pool search works correctly
             if (!allowSongReuse) unmarkUsed(lastSong);
-            const reallyAvailable = availableLockedClosers.filter(s => s.id === lastSong.id || isAvailable(s));
-            if (reallyAvailable.length > 0) {
-              lockedCloserSong = reallyAvailable[Math.floor(Math.random() * reallyAvailable.length)];
+
+            // Build candidate list: designated closers not already in this set (except as last slot)
+            const closerCandidates = lockedClosers
+              .map(id => pool.find(s => s.id === id))
+              .filter(s => s && !setSongs.some((x, xi) => xi !== lastIdx && x.id === s.id));
+
+            if (closerCandidates.length > 0) {
+              // Prefer the least-used designated closer to distribute evenly across sets
+              const sorted = [...closerCandidates].sort((a, b) => {
+                return (used.get(`id:${a.id}`) || 0) - (used.get(`id:${b.id}`) || 0);
+              });
+              const minCount = (used.get(`id:${sorted[0].id}`) || 0);
+              const tied = sorted.filter(s => (used.get(`id:${s.id}`) || 0) === minCount);
+              lockedCloserSong = tied[Math.floor(Math.random() * tied.length)];
               useLockedCloser = true;
             }
+
             if (!useLockedCloser && !allowSongReuse) markUsed(lastSong);
           }
 
           if (useLockedCloser && lockedCloserSong) {
             if (lockedCloserSong.id !== lastSong.id) {
+              // Unmark the closer song before re-marking so count is accurate
+              unmarkUsed(lockedCloserSong);
               setSongs[lastIdx] = lockedCloserSong;
               setUsedIds.delete(lastSong.id);
               setUsedIds.add(lockedCloserSong.id);
               markUsed(lockedCloserSong);
             } else {
-              // Locked closer is already the last song, re-mark it
+              // Locked closer is already the last song; re-mark it
               if (!allowSongReuse) markUsed(lastSong);
             }
           } else if (!closerStyles.includes(lastSong.style)) {
             // Fallback to style-based closer selection
-            if (!allowSongReuse) unmarkUsed(lastSong);
+            if (!allowSongReuse && useLockedCloser === false) unmarkUsed(lastSong);
 
-            const closerCandidates = pool.filter(s =>
+            const styleCloserCandidates = pool.filter(s =>
               isAvailable(s) && closerStyles.includes(s.style) && s.id !== lastSong.id
               && !setSongs.some((x, xi) => xi !== lastIdx && x.id === s.id)
             );
-            if (closerCandidates.length > 0) {
+            if (styleCloserCandidates.length > 0) {
               let closer;
               // Tonal-aware closer: prefer closers harmonically close to the penultimate song
               const penultimate = setSongs.length > 1 ? setSongs[lastIdx - 1] : null;
-              if (opts.useTonalGravity && penultimate?.normalizedKey && closerCandidates.length > 1) {
-                const scoredClosers = closerCandidates.map(s => {
+              if (opts.useTonalGravity && penultimate?.normalizedKey && styleCloserCandidates.length > 1) {
+                const scoredClosers = styleCloserCandidates.map(s => {
                   const nk = s.normalizedKey || normalizeKey_TG(s.key, s.tags || []);
                   const dist = nk && penultimate.normalizedKey
                     ? circleDistance_TG(nk.tonic, penultimate.normalizedKey.tonic)
@@ -2242,7 +2357,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 const topClosers = scoredClosers.slice(0, Math.min(3, scoredClosers.length));
                 closer = topClosers[Math.floor(Math.random() * topClosers.length)].s;
               } else {
-                closer = closerCandidates[Math.floor(Math.random() * closerCandidates.length)];
+                closer = styleCloserCandidates[Math.floor(Math.random() * styleCloserCandidates.length)];
               }
               setSongs[lastIdx] = closer;
               setUsedIds.delete(lastSong.id);
@@ -2975,6 +3090,52 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       </div>
     )}
   </div>
+
+  {/* Song-to-Set Pinning */}
+  <div className="input-group" style={{ marginTop: '.75rem', paddingTop: '.75rem', borderTop: '1px solid var(--border)' }}>
+    <label style={{ textTransform: 'none', fontSize: '.75rem', fontWeight: 600 }}>
+      Pin Songs to Specific Sets ({(settings.songSetPins || []).length} pinned)
+    </label>
+    <div style={{ fontSize: '.7rem', color: 'var(--text-muted)', marginBottom: '.35rem' }}>
+      Guarantee a song appears in a particular set during generation.
+    </div>
+    <div style={{ display: 'flex', gap: '.3rem', flexWrap: 'wrap' }}>
+      <select id="pinSongSelect" style={{ fontSize: '.75rem', flex: 2, minWidth: 0 }}>
+        <option value="">Song...</option>
+        {(activeSongs || []).map(s => (
+          <option key={s.id} value={s.id}>{s.title}</option>
+        ))}
+      </select>
+      <select id="pinSetSelect" style={{ fontSize: '.75rem', flex: 1, minWidth: 0 }}>
+        <option value="">Set...</option>
+        {Array.from({ length: settings.numSets || 2 }, (_, i) => (
+          <option key={i} value={i}>Set {i + 1}</option>
+        ))}
+      </select>
+      <button className="btn btn-small" style={{ fontSize: '.65rem', whiteSpace: 'nowrap' }} onClick={() => {
+        const songId = document.getElementById('pinSongSelect')?.value;
+        const setIndex = document.getElementById('pinSetSelect')?.value;
+        if (!songId || setIndex === '' || setIndex == null) return;
+        const existing = settings.songSetPins || [];
+        const si = parseInt(setIndex, 10);
+        if (existing.some(p => p.songId === songId && p.setIndex === si)) return;
+        onChange({ ...settings, songSetPins: [...existing, { songId, setIndex: si }] });
+      }}>Pin</button>
+    </div>
+    {(settings.songSetPins || []).length > 0 && (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.25rem', marginTop: '.35rem' }}>
+        {(settings.songSetPins || []).map((pin, idx) => {
+          const song = (activeSongs || []).find(s => s.id === pin.songId);
+          return song ? (
+            <span key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: '.25rem', background: 'var(--primary)', border: '1px solid var(--accent)', borderRadius: '6px', padding: '.2rem .45rem', fontSize: '.7rem', color: 'var(--accent)' }}>
+              {song.title} → Set {pin.setIndex + 1}
+              <span style={{ cursor: 'pointer', opacity: 0.7 }} onClick={() => onChange({ ...settings, songSetPins: (settings.songSetPins || []).filter((_, i) => i !== idx) })}>x</span>
+            </span>
+          ) : null;
+        })}
+      </div>
+    )}
+  </div>
 </div>
 
           <button className="btn btn-primary" onClick={onGenerate} disabled={songCount === 0} style={{ width: '100%', marginTop: '.5rem' }}>
@@ -3015,6 +3176,88 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           </div>
 
           <InfoModal isOpen={!!activeHelp} onClose={closeHelp} data={activeHelp} />
+        </div>
+      );
+    }
+
+    // FEATURE: Shows active songs that are not currently in any generated set.
+    // Allows users to add them to a specific set (append) or swap them into a slot.
+    function UnusedSongsPanel({ activeSongs, setlists, onAddToSet, onReplaceInSet }) {
+      const [open, setOpen] = useState(true);
+      const [replaceMode, setReplaceMode] = useState(false); // if true, next click on a set-song replaces it
+      const [pendingReplace, setPendingReplace] = useState(null); // { song } awaiting slot selection
+
+      const usedIds = new Set(setlists.flatMap(s => s.songs.map(x => x.id)));
+      const unused = activeSongs.filter(s => !usedIds.has(s.id));
+
+      if (unused.length === 0) return null;
+
+      return (
+        <div className="panel" style={{ marginTop: '1rem' }}>
+          <div className="panel-header" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => setOpen(o => !o)}>
+            <h3 className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+              <span>{open ? '▾' : '▸'}</span>
+              Songs Not In Any Set
+              <span style={{ fontSize: '.75rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '.25rem' }}>
+                ({unused.length} available from master list)
+              </span>
+            </h3>
+          </div>
+          {open && (
+            <div style={{ marginTop: '.5rem' }}>
+              <div style={{ fontSize: '.75rem', color: 'var(--text-muted)', marginBottom: '.5rem' }}>
+                These songs are in your active library but were not included in the generated sets.
+                Use <strong>Add →</strong> to append to a set, or <strong>Swap</strong> to replace a song in a set.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+                {unused.map(song => (
+                  <div key={song.id} style={{ display: 'flex', alignItems: 'center', gap: '.4rem', padding: '.4rem .6rem', background: 'var(--primary)', borderRadius: '6px', border: '1px solid var(--border)', flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: '.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{song.title}</div>
+                      <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', display: 'flex', gap: '.4rem', flexWrap: 'wrap' }}>
+                        <span>{song.artist}</span>
+                        {song.style && <span className={`song-badge style-${(song.style || '').replace(/\s+/g, '-')}`}>{song.style}</span>}
+                        <span>{parseDuration(song.duration)}min</span>
+                        {song.key && <span>{song.key}</span>}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '.3rem', flexWrap: 'wrap' }}>
+                      {setlists.map((set, si) => (
+                        <button
+                          key={si}
+                          className="btn btn-small"
+                          style={{ fontSize: '.65rem', borderColor: 'var(--success)', color: 'var(--success)', padding: '.15rem .4rem' }}
+                          title={`Append "${song.title}" to Set ${si + 1}`}
+                          onClick={() => onAddToSet(song, si)}
+                        >
+                          + Set {si + 1}
+                        </button>
+                      ))}
+                      {setlists.map((set, si) => (
+                        <select
+                          key={`swap-${si}`}
+                          className="move-to-set-select"
+                          value=""
+                          style={{ fontSize: '.65rem' }}
+                          title={`Swap a song in Set ${si + 1} with "${song.title}"`}
+                          onChange={e => {
+                            if (e.target.value === '') return;
+                            onReplaceInSet(song, si, Number(e.target.value));
+                            e.target.value = '';
+                          }}
+                        >
+                          <option value="" disabled>Swap in Set {si + 1}...</option>
+                          {set.songs.map((s, idx) => (
+                            <option key={idx} value={idx}>#{idx + 1} {s.title}</option>
+                          ))}
+                        </select>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       );
     }
@@ -4224,6 +4467,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         if (!storedSettings.setTemplate) storedSettings.setTemplate = 'freeform';
         if (!storedSettings.songAffinities) storedSettings.songAffinities = [];
         if (!storedSettings.songAntiAffinities) storedSettings.songAntiAffinities = [];
+        // Backward-compat for song-to-set pinning (new in this version)
+        if (!storedSettings.songSetPins) storedSettings.songSetPins = [];
         const storedImports = LS.get(LS_KEYS.bandImports(activeBandId)) || [];
         const storedGigs = LS.get(LS_KEYS.bandGigs(activeBandId)) || [];
         const storedWatermark = LS.get(LS_KEYS.bandWatermark(activeBandId)) || null;
@@ -4910,17 +5155,22 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         // PHASE 3A: candidates should come from ACTIVE songs only
         const candidatePool = activeSongs;
 
+        // Build global used keys from OTHER sets only.
+        // Songs in the current set are excluded here; the per-set dedup below
+        // (set.songs.some(x => x.id === s.id)) handles intra-set uniqueness.
         const globalUsedSongKeys = new Set();
-        setlists.forEach((s, i) => {
-          if (i !== setIdx || !settings.allowSongReuse) {
-            s.songs.forEach(song => {
-              globalUsedSongKeys.add(`id:${song.id}`);
-              if (song.title && song.artist) {
-                globalUsedSongKeys.add(`ta:${song.title.toLowerCase().trim()}|${song.artist.toLowerCase().trim()}`);
-              }
-            });
-          }
-        });
+        if (!settings.allowSongReuse) {
+          setlists.forEach((s, i) => {
+            if (i !== setIdx) {
+              s.songs.forEach(song => {
+                globalUsedSongKeys.add(`id:${song.id}`);
+                if (song.title && song.artist) {
+                  globalUsedSongKeys.add(`ta:${song.title.toLowerCase().trim()}|${song.artist.toLowerCase().trim()}`);
+                }
+              });
+            }
+          });
+        }
 
         const getSongDedupKeys = (s) => {
           const k = [];
@@ -5150,6 +5400,54 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         showToast('Order reset to original', 'success');
       };
 
+      // FEATURE: Add a song from the master library directly into a specific set.
+      // Appends the song to the end of the target set.
+      const addSongToSet = (song, toSetIdx) => {
+        const set = setlists[toSetIdx];
+        if (!set) return;
+        // Prevent duplicates within same set
+        if (set.songs.some(s => s.id === song.id)) {
+          return showToast(`"${song.title}" is already in Set ${toSetIdx + 1}`, 'warning');
+        }
+        if (!originalSetlists) setOriginalSetlists(JSON.parse(JSON.stringify(setlists)));
+        const parsedSong = { ...song, duration: parseDuration(song.duration) };
+        const newSongs = [...set.songs, parsedSong];
+        const newSetlists = [...setlists];
+        newSetlists[toSetIdx] = {
+          ...set,
+          songs: newSongs,
+          totalTime: newSongs.reduce((sum, s) => sum + (Number(parseDuration(s.duration)) || 0), 0)
+        };
+        setSetlists(newSetlists);
+        showToast(`Added "${song.title}" to Set ${toSetIdx + 1}`, 'success');
+      };
+
+      // FEATURE: Swap a song from the master library with a specific slot in a set.
+      const replaceSongInSet = (newSong, toSetIdx, toSongIdx) => {
+        const set = setlists[toSetIdx];
+        if (!set || toSongIdx < 0 || toSongIdx >= set.songs.length) return;
+        const oldSong = set.songs[toSongIdx];
+        if (locked.has(`${toSetIdx}:${oldSong.id}`)) return showToast('Cannot replace a locked song', 'warning');
+        if (!originalSetlists) setOriginalSetlists(JSON.parse(JSON.stringify(setlists)));
+        const parsedSong = { ...newSong, duration: parseDuration(newSong.duration) };
+        const newSongs = set.songs.map((s, i) => i === toSongIdx ? parsedSong : s);
+        const newSetlists = [...setlists];
+        newSetlists[toSetIdx] = {
+          ...set,
+          songs: newSongs,
+          totalTime: newSongs.reduce((sum, s) => sum + (Number(parseDuration(s.duration)) || 0), 0)
+        };
+        // Clean up lock for the replaced song
+        const lockKey = `${toSetIdx}:${oldSong.id}`;
+        if (locked.has(lockKey)) {
+          const newLocked = new Set(locked);
+          newLocked.delete(lockKey);
+          setLocked(newLocked);
+        }
+        setSetlists(newSetlists);
+        showToast(`Replaced "${oldSong.title}" with "${newSong.title}"`, 'success');
+      };
+
       const [swapFrom, setSwapFrom] = useState(null);
 
       const swapSets = (idxA, idxB) => {
@@ -5163,7 +5461,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         // Rename sets to reflect positions and remap locks
         const newLocked = new Set();
         locked.forEach(key => {
-          const [setIdxStr, songId] = key.split(':');
+          // Lock keys are formatted as "setIdx:songId". Split only on the FIRST colon
+          // so that song IDs containing colons (edge case) are not truncated.
+          const colonPos = key.indexOf(':');
+          if (colonPos === -1) return;
+          const setIdxStr = key.slice(0, colonPos);
+          const songId = key.slice(colonPos + 1);
           const oldIdx = Number(setIdxStr);
           let newIdx = oldIdx;
           if (oldIdx === idxA) newIdx = idxB;
@@ -5423,7 +5726,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
             <header className="header">
               <h1>SETLIST GENERATOR</h1>
-              <div className="subtitle">v3.7.0 — SA Optimizer • Continuous Energy Curves • Tonal Gravity v2 • Templates</div>
+              <div className="subtitle">v3.8.0 — Force Opener/Closer Fix • Affinity Engine v2 • Song-to-Set Pinning • Master Library Injection</div>
             </header>
 
             {FEATURE_FLAGS.phase1ReliabilityDataSafety && storageStatus.level !== 'normal' && (
@@ -5598,6 +5901,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     />
                   ))}
                 </div>
+
+                {/* FEATURE: Songs Not In Any Set — master library injection panel */}
+                <UnusedSongsPanel
+                  activeSongs={activeSongs}
+                  setlists={setlists}
+                  onAddToSet={addSongToSet}
+                  onReplaceInSet={replaceSongInSet}
+                />
               </>
             )}
 
