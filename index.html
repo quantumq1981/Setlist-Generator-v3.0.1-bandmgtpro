@@ -2163,6 +2163,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             candidates = pool.filter(s => !setUsedIds.has(s.id) && isAvailable(s));
             if (candidates.length === 0) {
               if (!allowSongReuse) {
+                // FIX (LEAK #2 — v3.8.0): Hard-abort the entire generation when the unique
+                // song pool is exhausted. Previously this only broke the inner while loop,
+                // allowing the outer for loop to continue and produce partial/duplicate sets.
+                // Now we set generationAborted=true so the outer loop guard at the end of
+                // this iteration also exits, preventing any further set generation.
                 generationWarnings.add(`Set ${setNum + 1}: Ran out of unique songs at ${Math.round(current)}min.`);
                 generationAborted = true;
               }
@@ -2284,6 +2289,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           if (current > setDuration + 8) break;
         }
 
+        // FIX (LEAK #2 — v3.8.0): Outer loop hard-abort guard.
+        // When generationAborted is set (pool exhausted with allowSongReuse=false),
+        // break here before force-closer logic and results.push so no partial set
+        // is added to results and no further sets are attempted.
         if (generationAborted && !allowSongReuse) break;
 
         const setSongs = setArr.filter(Boolean);
@@ -2300,7 +2309,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           let lockedCloserSong = null;
 
           if (lockedClosers.length > 0) {
-            // Temporarily unmark the last song so the closer pool search works correctly
+            // FIX (LEAK #1 — v3.8.0): Temporarily remove lastSong from the global dedup
+            // map before searching for a locked closer. Without this, lastSong occupies
+            // a slot in `used` while also being the song we intend to replace — causing
+            // the closer search to see a falsely-full used-set and potentially fall back
+            // to a duplicate. It is re-markd below if no replacement is made.
             if (!allowSongReuse) unmarkUsed(lastSong);
 
             // Build candidate list: designated closers not already in this set (except as last slot)
@@ -2335,7 +2348,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               if (!allowSongReuse) markUsed(lastSong);
             }
           } else if (!closerStyles.includes(lastSong.style)) {
-            // Fallback to style-based closer selection
+            // Fallback to style-based closer selection.
+            // FIX (LEAK #1 — v3.8.0): Unmark lastSong before the isAvailable() candidate
+            // scan so the song being replaced doesn't falsely occupy a dedup slot. If no
+            // suitable closer is found, lastSong is re-markd at the end of this block.
             if (!allowSongReuse && useLockedCloser === false) unmarkUsed(lastSong);
 
             const styleCloserCandidates = pool.filter(s =>
@@ -2376,6 +2392,25 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           songs: setSongs,
           totalTime
         });
+      }
+
+      // POST-GENERATION DUPLICATE AUDIT (regression guard)
+      // Scans the final output for cross-set duplicate songs when allowSongReuse=false.
+      // This should never trigger after the LEAK #1 and LEAK #2 fixes (v3.8.0).
+      // If it does, the warning surfaces in the UI so the bug can be reproduced and fixed.
+      if (!allowSongReuse && results.length > 1) {
+        const auditSeen = new Set();
+        outer: for (const set of results) {
+          for (const song of set.songs) {
+            if (auditSeen.has(song.id)) {
+              generationWarnings.add(
+                `INTEGRITY ERROR: Song "${song.title || song.id}" appears in multiple sets — dedup leak detected. Please report this bug.`
+              );
+              break outer;
+            }
+            auditSeen.add(song.id);
+          }
+        }
       }
 
       const songsUsed = new Set(results.flatMap(r => r.songs.map(s => s.id))).size;

@@ -1,15 +1,29 @@
 
 AGENT.MD latest report
 
+--- STATUS UPDATE (implemented in v3.8.0 + confirmed in current build) ---
 
+✅ LEAK #1 (Force Closer dedup key removal) — FIXED
+   index.html ~line 2304: unmarkUsed(lastSong) called before locked-closer search.
+   index.html ~line 2339: unmarkUsed(lastSong) called before style-based closer search.
+   index.html ~line 2332/2365: markUsed(closer) called after closer is placed.
+
+✅ LEAK #2 (Cross-set hard abort on pool exhaustion) — FIXED
+   index.html ~line 2167: generationAborted = true set on pool exhaustion.
+   index.html ~line 2291: outer for-loop guard breaks before partial set is pushed.
+
+✅ Post-generation duplicate audit guard added (~line 2381):
+   Runtime scan flags any cross-set duplicate as an INTEGRITY ERROR warning
+   in the UI. Serves as a regression detector for both leaks going forward.
+
+All previously correct items remain correct:
 
 	•	Your print formatting is already correct ✅ (Times New Roman, 19pt, line-height 1.0, per-set page breaks).
 	•	Your manual edit mode is implemented correctly ✅.
 	•	Your CSV hardening work is solid ✅.
 
-The remaining issue — duplicates still appearing — is real, reproducible, and caused by two subtle but critical logic leaks in the generator.
+Original diagnosis (for reference) — both issues below are now resolved:
 
-I’ll be precise and concrete so you (or Rob) can fix this in one pass.
 
 ⸻
 
