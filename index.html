@@ -2083,6 +2083,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               .map(id => pool.find(s => s.id === id))
               .filter(s => {
                 if (!s) return false;
+                // Never pick a song already placed in this set via a pin or lockPlan slot.
+                // setUsedIds is populated from lockedSlots before the opener runs, so any
+                // pinned song is already tracked here — prevents intra-set duplicates when
+                // allowSongReuse=true makes isAvailable() always return true.
+                if (setUsedIds.has(s.id)) return false;
                 // If globally available, use it; otherwise allow reuse for opener role
                 return isAvailable(s) || lockedOpeners.includes(s.id);
               });
@@ -2105,7 +2110,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           // Fallback to style-based opener if no locked opener available
           if (!opener) {
             const openerStyles = ['uptempo', 'rock', 'funk', 'swing', 'midtempo', 'groove', 'shuffle', 'ska'];
-            const openers = pool.filter(s => isAvailable(s) && openerStyles.includes(s.style));
+            // Exclude songs already in this set via pins/lockPlan (setUsedIds guard).
+            // Without this, allowSongReuse=true would allow a pinned song to also become
+            // the opener, producing an intra-set duplicate.
+            const openers = pool.filter(s => isAvailable(s) && !setUsedIds.has(s.id) && openerStyles.includes(s.style));
             if (openers.length > 0) {
               // When tonal gravity is active, prefer openers near the anchor key
               if (opts.useTonalGravity && opts._anchorKey) {
@@ -2163,6 +2171,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             candidates = pool.filter(s => !setUsedIds.has(s.id) && isAvailable(s));
             if (candidates.length === 0) {
               if (!allowSongReuse) {
+                // FIX (LEAK #2 — v3.8.0): Hard-abort the entire generation when the unique
+                // song pool is exhausted. Previously this only broke the inner while loop,
+                // allowing the outer for loop to continue and produce partial/duplicate sets.
+                // Now we set generationAborted=true so the outer loop guard at the end of
+                // this iteration also exits, preventing any further set generation.
                 generationWarnings.add(`Set ${setNum + 1}: Ran out of unique songs at ${Math.round(current)}min.`);
                 generationAborted = true;
               }
@@ -2284,6 +2297,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           if (current > setDuration + 8) break;
         }
 
+        // FIX (LEAK #2 — v3.8.0): Outer loop hard-abort guard.
+        // When generationAborted is set (pool exhausted with allowSongReuse=false),
+        // break here before force-closer logic and results.push so no partial set
+        // is added to results and no further sets are attempted.
         if (generationAborted && !allowSongReuse) break;
 
         const setSongs = setArr.filter(Boolean);
@@ -2300,7 +2317,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           let lockedCloserSong = null;
 
           if (lockedClosers.length > 0) {
-            // Temporarily unmark the last song so the closer pool search works correctly
+            // FIX (LEAK #1 — v3.8.0): Temporarily remove lastSong from the global dedup
+            // map before searching for a locked closer. Without this, lastSong occupies
+            // a slot in `used` while also being the song we intend to replace — causing
+            // the closer search to see a falsely-full used-set and potentially fall back
+            // to a duplicate. It is re-markd below if no replacement is made.
             if (!allowSongReuse) unmarkUsed(lastSong);
 
             // Build candidate list: designated closers not already in this set (except as last slot)
@@ -2335,7 +2356,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               if (!allowSongReuse) markUsed(lastSong);
             }
           } else if (!closerStyles.includes(lastSong.style)) {
-            // Fallback to style-based closer selection
+            // Fallback to style-based closer selection.
+            // FIX (LEAK #1 — v3.8.0): Unmark lastSong before the isAvailable() candidate
+            // scan so the song being replaced doesn't falsely occupy a dedup slot. If no
+            // suitable closer is found, lastSong is re-markd at the end of this block.
             if (!allowSongReuse && useLockedCloser === false) unmarkUsed(lastSong);
 
             const styleCloserCandidates = pool.filter(s =>
@@ -2376,6 +2400,37 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           songs: setSongs,
           totalTime
         });
+      }
+
+      // POST-GENERATION DUPLICATE AUDIT (regression guard)
+      // Scans the final output for cross-set duplicate songs when allowSongReuse=false.
+      // Checks by BOTH song ID and normalized title+artist so spelling variants of the
+      // same song (e.g. "Don't Stop Believin'" vs "Dont Stop Believin") are also caught.
+      // This should never trigger after the v3.8.0 fixes + the pin/opener guard.
+      if (!allowSongReuse && results.length > 1) {
+        // Normalize a string for fuzzy comparison: lowercase, strip punctuation/articles.
+        const auditNorm = (s) => (s || '').toLowerCase()
+          .replace(/[''"`]/g, '')          // strip smart/straight quotes
+          .replace(/[^a-z0-9\s]/g, ' ')   // punctuation → space
+          .replace(/\b(the|a|an)\b/g, '')  // remove leading articles
+          .replace(/\s+/g, ' ')
+          .trim();
+        const auditSeenIds = new Set();
+        const auditSeenTitleArtist = new Set();
+        outer: for (const set of results) {
+          for (const song of set.songs) {
+            const idKey = song.id;
+            const taKey = `${auditNorm(song.title)}|${auditNorm(song.artist)}`;
+            if (auditSeenIds.has(idKey) || auditSeenTitleArtist.has(taKey)) {
+              generationWarnings.add(
+                `INTEGRITY ERROR: "${song.title || song.id}" appears in multiple sets — dedup leak detected. Please report this bug.`
+              );
+              break outer;
+            }
+            auditSeenIds.add(idKey);
+            if (taKey !== '|') auditSeenTitleArtist.add(taKey);
+          }
+        }
       }
 
       const songsUsed = new Set(results.flatMap(r => r.songs.map(s => s.id))).size;
@@ -2579,9 +2634,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           </button>
 
           <div className="toolbar" style={{ marginBottom: '1rem' }}>
-            <label className="btn btn-small" style={{ margin: 0, cursor: 'pointer' }}>
-              Quick Import
-              <input type="file" accept=".csv,.pdf,.txt" onChange={onImportCSVRobust} style={{ display: 'none' }} />
+            <label className="btn btn-small" style={{ margin: 0, cursor: 'pointer' }} title="Select one or multiple CSV/PDF files — duplicates are automatically removed">
+              Import CSV
+              <input type="file" accept=".csv,.pdf,.txt" multiple onChange={onImportCSVRobust} style={{ display: 'none' }} />
             </label>
             <button className="btn btn-small" onClick={onOpenImportModal} style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>Import + Normalize</button>
             <button className="btn btn-small" onClick={onExportCSV} disabled={songs.length === 0}>Export CSV</button>
@@ -4648,61 +4703,39 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       };
 
       const importCSVRobust = async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
 
-        // Handle PDF files via Quick Import
-        if (file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf') {
-          try {
-            const arrayBuffer = await file.arrayBuffer();
-            const pageTexts = await pdfExtractText(arrayBuffer);
-            const pdfSongs = pdfParseAllPages(pageTexts);
-            if (pdfSongs.length === 0) return showToast('No song data found in PDF', 'error');
+        // Normalize a song title or artist for fuzzy dedup comparison.
+        // Strips punctuation, smart quotes, and common articles so that
+        // "Don't Stop Believin'" and "Dont Stop Believin" resolve to the same key.
+        const normDedup = (s) => (s || '').toLowerCase()
+          .replace(/[''"`]/g, '')
+          .replace(/[^a-z0-9\s]/g, ' ')
+          .replace(/\b(the|a|an)\b/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        const songDedupKey = (title, artist) => `${normDedup(title)}|${normDedup(artist)}`;
 
-            const imported = pdfSongs.map(s => ({
-              id: genId(),
-              status: 'active',
-              title: sanitizeInput(s.title),
-              artist: sanitizeInput(s.artist),
-              duration: parseDuration(s.duration),
-              style: (s.style && PDF_KNOWN_STYLES.has(s.style.toLowerCase())) ? s.style.toLowerCase() : 'midtempo',
-              key: s.key || '',
-              bpm: s.bpm || '',
-              vocalist: s.vocalist || ''
-            }));
+        // Seed the dedup set from the existing library so imports never add songs
+        // already present regardless of minor spelling differences.
+        const existingKeys = new Set(songs.map(s => songDedupKey(s.title, s.artist)));
 
-            const commitImport = () => {
-              setSongs([...songs, ...imported]);
-              const newImport = { ts: Date.now(), count: imported.length, filename: file.name };
-              const updatedImports = [newImport, ...imports].slice(0, 10);
-              setImports(updatedImports);
-              LS.set(LS_KEYS.bandImports(activeBandId), updatedImports);
-              showToast(`Imported ${imported.length} songs from PDF`, 'success');
-            };
-            if (imported.length >= 25) promptBackupBeforeRiskyAction('Bulk PDF import', commitImport);
-            else commitImport();
-          } catch (err) {
-            console.error('PDF parse error:', err);
-            showToast('Failed to parse PDF: ' + (err.message || 'Unknown error'), 'error');
-          }
-          e.target.value = '';
-          return;
-        }
+        // Collect all parsed songs across all files, scrubbing duplicates as we go.
+        const allImported = [];
+        let crossFileDupes = 0;
+        let crossLibraryDupes = 0;
+        const fileNames = [];
+        let pdfErrors = 0;
 
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const text = ev.target?.result;
-          if (!text) return;
-
-          // Use PapaParse for robust CSV parsing (handles quoted commas, etc.)
+        // Parse a single CSV/TXT text blob and return song objects.
+        const parseCSVText = (text) => {
           const result = Papa.parse(String(text), {
             header: true, skipEmptyLines: 'greedy', dynamicTyping: false
           });
-          if (!result.data || result.data.length === 0) return showToast('CSV empty or invalid', 'error');
-
-          const imported = [];
+          if (!result.data || result.data.length === 0) return [];
+          const out = [];
           for (const row of result.data) {
-            // Map column names case-insensitively
             const get = (keys) => {
               for (const k of keys) {
                 for (const col of Object.keys(row)) {
@@ -4714,40 +4747,102 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             const title = get(['title', 'song', 'song title', 'name', 'tune', 'track']);
             const artist = get(['artist', 'band', 'performer', 'by']);
             const duration = get(['duration', 'dur', 'time', 'length', 'minutes']);
-            const style = get(['style', 'genre', 'type', 'feel']);
-            const key = get(['key', 'tonality', 'pitch']);
-            const bpm = get(['bpm', 'tempo', 'speed']);
-            const vocalist = get(['vocalist', 'singer', 'lead', 'vox', 'vocal']);
-
             if (!title || !artist || !duration) continue;
-
-            imported.push({
-              id: genId(),
-              status: 'active',
+            out.push({
               title: sanitizeInput(title),
               artist: sanitizeInput(artist),
               duration: parseDuration(duration),
-              style: (style || 'midtempo').toLowerCase(),
-              key: key || '',
-              bpm: bpm || '',
-              vocalist: vocalist || ''
+              style: (get(['style', 'genre', 'type', 'feel']) || 'midtempo').toLowerCase(),
+              key: get(['key', 'tonality', 'pitch']) || '',
+              bpm: get(['bpm', 'tempo', 'speed']) || '',
+              vocalist: get(['vocalist', 'singer', 'lead', 'vox', 'vocal']) || ''
+            });
+          }
+          return out;
+        };
+
+        // Process files sequentially; PDFs use the async path, CSVs use FileReader.
+        for (const file of files) {
+          fileNames.push(file.name);
+          let parsedSongs = [];
+
+          if (file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf') {
+            try {
+              const arrayBuffer = await file.arrayBuffer();
+              const pageTexts = await pdfExtractText(arrayBuffer);
+              const pdfSongs = pdfParseAllPages(pageTexts);
+              parsedSongs = pdfSongs.map(s => ({
+                title: sanitizeInput(s.title),
+                artist: sanitizeInput(s.artist),
+                duration: parseDuration(s.duration),
+                style: (s.style && PDF_KNOWN_STYLES.has(s.style.toLowerCase())) ? s.style.toLowerCase() : 'midtempo',
+                key: s.key || '',
+                bpm: s.bpm || '',
+                vocalist: s.vocalist || ''
+              }));
+            } catch (err) {
+              console.error('PDF parse error:', err);
+              pdfErrors++;
+              continue;
+            }
+          } else {
+            // CSV / TXT — read synchronously via FileReader wrapped in a Promise.
+            parsedSongs = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onload = (ev) => resolve(parseCSVText(ev.target?.result || ''));
+              reader.onerror = () => resolve([]);
+              reader.readAsText(file);
             });
           }
 
-          if (imported.length === 0) return showToast('No valid songs found', 'error');
+          // Scrub each song against the existing library AND songs already collected
+          // from earlier files in this batch (cross-file dedup).
+          for (const song of parsedSongs) {
+            const key = songDedupKey(song.title, song.artist);
+            if (existingKeys.has(key)) {
+              crossLibraryDupes++;
+            } else {
+              existingKeys.add(key); // block the same song appearing in a later file
+              allImported.push({ id: genId(), status: 'active', ...song });
+            }
+          }
+        }
 
-          const commitImport = () => {
-            setSongs([...songs, ...imported]);
-            const newImport = { ts: Date.now(), count: imported.length, filename: file.name };
-            const updatedImports = [newImport, ...imports].slice(0, 10);
-            setImports(updatedImports);
-            LS.set(LS_KEYS.bandImports(activeBandId), updatedImports);
-            showToast(`Imported ${imported.length} songs`, 'success');
+        // Cross-file dupes are already counted in crossLibraryDupes above (second file
+        // that introduces a song already seen in file 1 hits the existingKeys guard).
+        // Split the counts for the user-facing message.
+        const totalDupes = crossLibraryDupes;
+        if (allImported.length === 0 && totalDupes === 0 && pdfErrors === 0) {
+          e.target.value = '';
+          return showToast('No valid songs found in selected file(s)', 'error');
+        }
+
+        const label = files.length > 1
+          ? `${files.length} files (${fileNames.join(', ').slice(0, 60)}${fileNames.join(', ').length > 60 ? '…' : ''})`
+          : fileNames[0];
+
+        const commitImport = () => {
+          if (allImported.length > 0) setSongs(prev => [...prev, ...allImported]);
+          const newImport = {
+            ts: Date.now(),
+            count: allImported.length,
+            filename: label,
+            dupes: totalDupes
           };
-          if (imported.length >= 25) promptBackupBeforeRiskyAction('Bulk CSV import', commitImport);
-          else commitImport();
+          const updatedImports = [newImport, ...imports].slice(0, 10);
+          setImports(updatedImports);
+          LS.set(LS_KEYS.bandImports(activeBandId), updatedImports);
+
+          let msg = `Imported ${allImported.length} song${allImported.length !== 1 ? 's' : ''}`;
+          if (files.length > 1) msg += ` from ${files.length} files`;
+          if (totalDupes > 0) msg += ` — ${totalDupes} duplicate${totalDupes !== 1 ? 's' : ''} removed`;
+          if (pdfErrors > 0) msg += ` — ${pdfErrors} PDF failed`;
+          showToast(msg, allImported.length > 0 ? 'success' : 'warning');
         };
-        reader.readAsText(file);
+
+        if (allImported.length >= 25) promptBackupBeforeRiskyAction(`Bulk import (${allImported.length} songs)`, commitImport);
+        else commitImport();
+
         e.target.value = '';
       };
 
