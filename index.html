@@ -1936,7 +1936,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     function generateSetlistsCore(songs, opts) {
       const {
         numSets = 2,
-        setDuration = 45,
+        defaultSetDuration = 45,
+        setDuration: _legacySetDuration = 45,
+        setDurations = [],
         allowSongReuse = false,
         useEnergyCurve = true,
         forceOpener = false,
@@ -1945,6 +1947,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         lockedClosers = [],
         lockPlan = null
       } = opts || {};
+
+      // Resolve the uniform fallback duration from whichever field is present.
+      const uniformDuration = defaultSetDuration !== 45 ? defaultSetDuration : (_legacySetDuration || 45);
 
       const pool = [...songs].map(s => ({ ...s, duration: parseDuration(s.duration) }));
       const used = new Map();
@@ -2024,6 +2029,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       for (let setNum = 0; setNum < numSets; setNum++) {
         if (generationAborted) break;
+
+        // Resolve this set's target duration: per-set override takes priority,
+        // falling back to the uniform duration when no override is configured.
+        const setDuration = (Array.isArray(setDurations) && setDurations[setNum] > 0)
+          ? setDurations[setNum]
+          : uniformDuration;
+
         const lockedSlots = new Map(); // idx -> song
         const plan = Array.isArray(lockPlan) && Array.isArray(lockPlan[setNum]) ? lockPlan[setNum] : null;
 
@@ -2784,13 +2796,52 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             <div className="input-group">
               <label>Number of Sets</label>
               <input type="number" min="1" max="10" value={settings.numSets}
-                onChange={e => onChange({ ...settings, numSets: parseInt(e.target.value) || 1 })} />
+                onChange={e => {
+                  const n = Math.max(1, Math.min(10, parseInt(e.target.value) || 1));
+                  const base = settings.setDuration || 45;
+                  const prev = settings.setDurations || [];
+                  // Preserve existing per-set values; fill new slots with the uniform default.
+                  const next = Array.from({ length: n }, (_, i) => prev[i] > 0 ? prev[i] : base);
+                  onChange({ ...settings, numSets: n, setDurations: next });
+                }} />
             </div>
-            <div className="input-group">
-              <label>Set Duration (min)</label>
-              <input type="number" min="15" max="180" value={settings.setDuration}
-                onChange={e => onChange({ ...settings, setDuration: parseInt(e.target.value) || 45 })} />
-            </div>
+            {(settings.numSets || 1) === 1 ? (
+              <div className="input-group">
+                <label>Duration (min)</label>
+                <input type="number" min="15" max="180"
+                  value={(settings.setDurations && settings.setDurations[0]) || settings.setDuration || 45}
+                  onChange={e => {
+                    const v = parseInt(e.target.value) || 45;
+                    onChange({ ...settings, setDuration: v, setDurations: [v] });
+                  }} />
+              </div>
+            ) : (
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: '.75rem', textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-muted)', display: 'block', marginBottom: '.35rem' }}>
+                  Duration per Set (min)
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.4rem' }}>
+                  {Array.from({ length: settings.numSets || 2 }, (_, i) => {
+                    const durations = settings.setDurations || [];
+                    const val = durations[i] > 0 ? durations[i] : (settings.setDuration || 45);
+                    return (
+                      <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '.15rem' }}>
+                        <span style={{ fontSize: '.62rem', color: 'var(--text-muted)' }}>Set {i + 1}</span>
+                        <input type="number" min="15" max="180" value={val}
+                          style={{ width: '4rem', textAlign: 'center', padding: '.25rem .3rem', fontSize: '.82rem' }}
+                          onChange={e => {
+                            const base = settings.setDuration || 45;
+                            const prev = settings.setDurations || Array.from({ length: settings.numSets || 2 }, () => base);
+                            const next = [...prev];
+                            next[i] = parseInt(e.target.value) || base;
+                            onChange({ ...settings, setDurations: next });
+                          }} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="input-group">
@@ -4365,7 +4416,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [activeBandId, setActiveBandId] = useState(null);
 
       const [songs, setSongs] = useState([]);
-      const [settings, setSettings] = useState({ numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, lockedOpeners: [], lockedClosers: [], useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false, energyCurveType: 'standard', energyWeight: 0.35, tonalWeight: 0.25, diversityWeight: 1.0, randomness: 50, optimizationLevel: 'standard', setTemplate: 'freeform', songAffinities: [], songAntiAffinities: [] });
+      const [settings, setSettings] = useState({ numSets: 2, setDuration: 45, setDurations: [], allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, lockedOpeners: [], lockedClosers: [], useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false, energyCurveType: 'standard', energyWeight: 0.35, tonalWeight: 0.25, diversityWeight: 1.0, randomness: 50, optimizationLevel: 'standard', setTemplate: 'freeform', songAffinities: [], songAntiAffinities: [] });
       const [setlists, setSetlists] = useState([]);
       const [locked, setLocked] = useState(new Set());
       // Cross-set drag-and-drop state
@@ -4509,7 +4560,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         // PHASE 3A: normalize status for older data
         const normalizedSongs = storedSongsRaw.map(s => ({ ...s, status: (s.status || 'active') }));
 
-        const storedSettings = LS.get(LS_KEYS.bandSettings(activeBandId)) || { numSets: 2, setDuration: 45, allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, lockedOpeners: [], lockedClosers: [], useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false, energyCurveType: 'standard', energyWeight: 0.35, tonalWeight: 0.25, diversityWeight: 1.0, randomness: 50, optimizationLevel: 'standard', setTemplate: 'freeform', songAffinities: [], songAntiAffinities: [] };
+        const storedSettings = LS.get(LS_KEYS.bandSettings(activeBandId)) || { numSets: 2, setDuration: 45, setDurations: [], allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, lockedOpeners: [], lockedClosers: [], useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false, energyCurveType: 'standard', energyWeight: 0.35, tonalWeight: 0.25, diversityWeight: 1.0, randomness: 50, optimizationLevel: 'standard', setTemplate: 'freeform', songAffinities: [], songAntiAffinities: [] };
         // Ensure backward compatibility for settings without newer fields
         if (!storedSettings.lockedOpeners) storedSettings.lockedOpeners = [];
         if (!storedSettings.lockedClosers) storedSettings.lockedClosers = [];
@@ -4589,9 +4640,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         // Compute quality scores if not already attached (non-tonal-gravity path)
         if (!out.qualityScores) {
           try {
-            out.qualityScores = out.map(set => calculateSetlistQualityScore(set, {
-              ...settings, _anchorKey
-            }));
+            out.qualityScores = out.map((set, si) => {
+              const dur = (settings.setDurations && settings.setDurations[si] > 0)
+                ? settings.setDurations[si]
+                : (settings.setDuration || 45);
+              return calculateSetlistQualityScore(set, { ...settings, setDuration: dur, _anchorKey });
+            });
           } catch (e) { console.warn('Quality score computation failed:', e); }
         }
         setSetlists(out);
@@ -4706,20 +4760,19 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const files = Array.from(e.target.files || []);
         if (files.length === 0) return;
 
-        // Normalize a song title or artist for fuzzy dedup comparison.
-        // Strips punctuation, smart quotes, and common articles so that
-        // "Don't Stop Believin'" and "Dont Stop Believin" resolve to the same key.
-        const normDedup = (s) => (s || '').toLowerCase()
-          .replace(/[''"`]/g, '')
-          .replace(/[^a-z0-9\s]/g, ' ')
-          .replace(/\b(the|a|an)\b/g, '')
+        // Normalize a song title for fuzzy dedup — title column only.
+        // Strips smart/straight quotes, punctuation, common articles, and collapses
+        // whitespace so variants like "Ramblin' Man", "Rambling Man", and
+        // "ramblin' man" all resolve to the same dedup key.
+        const normTitle = (s) => (s || '').toLowerCase()
+          .replace(/[''"`]/g, '')          // smart/straight quotes → nothing
+          .replace(/[^a-z0-9\s]/g, ' ')   // remaining punctuation → space
+          .replace(/\b(the|a|an)\b/g, '')  // strip leading articles
           .replace(/\s+/g, ' ')
           .trim();
-        const songDedupKey = (title, artist) => `${normDedup(title)}|${normDedup(artist)}`;
 
-        // Seed the dedup set from the existing library so imports never add songs
-        // already present regardless of minor spelling differences.
-        const existingKeys = new Set(songs.map(s => songDedupKey(s.title, s.artist)));
+        // Seed the dedup set from the existing library (title-only match).
+        const existingKeys = new Set(songs.map(s => normTitle(s.title)));
 
         // Collect all parsed songs across all files, scrubbing duplicates as we go.
         const allImported = [];
@@ -4798,11 +4851,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           // Scrub each song against the existing library AND songs already collected
           // from earlier files in this batch (cross-file dedup).
           for (const song of parsedSongs) {
-            const key = songDedupKey(song.title, song.artist);
+            const key = normTitle(song.title);
             if (existingKeys.has(key)) {
               crossLibraryDupes++;
             } else {
-              existingKeys.add(key); // block the same song appearing in a later file
+              existingKeys.add(key); // block the same title appearing in a later file
               allImported.push({ id: genId(), status: 'active', ...song });
             }
           }
@@ -4871,17 +4924,23 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       // Canonical import with dedup
       const importCanonicalRows = (rows, report) => {
-        const existingKeys = new Set(
-          songs.map(s => (s.title || "").toLowerCase().trim())
-        );
+        // Same fuzzy title normalization used in importCSVRobust.
+        const normTitleCanon = (s) => (s || '').toLowerCase()
+          .replace(/[''"`]/g, '')
+          .replace(/[^a-z0-9\s]/g, ' ')
+          .replace(/\b(the|a|an)\b/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        const existingKeys = new Set(songs.map(s => normTitleCanon(s.title)));
         const imported = [];
         let dupeCount = 0;
 
         for (const row of rows) {
-          const dedupKey = (row.title || "").toLowerCase().trim();
+          const dedupKey = normTitleCanon(row.title);
           if (existingKeys.has(dedupKey)) {
             // Merge missing fields into existing
-            const idx = songs.findIndex(s => (s.title || "").toLowerCase().trim() === dedupKey);
+            const idx = songs.findIndex(s => normTitleCanon(s.title) === dedupKey);
             if (idx >= 0) {
               const existing = songs[idx];
               let updated = false;
