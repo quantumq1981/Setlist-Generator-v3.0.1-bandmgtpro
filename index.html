@@ -4756,23 +4756,108 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         setTimeout(() => URL.revokeObjectURL(url), 3000);
       };
 
+      // ─── SHARED FUZZY TITLE DEDUP ENGINE ────────────────────────────────────
+      // Used by both importCSVRobust (Quick Import) and importCanonicalRows
+      // (Import + Normalize). Dedup is title-column only — artist and all other
+      // fields are ignored.
+      //
+      // Strategy (applied in order):
+      //   1. Exact match after normalization (fast path)
+      //   2. Word-set containment: every word in the SHORTER title fuzzy-matches
+      //      a unique word in the LONGER title (catches "Shot the Sheriff" inside
+      //      "I Shot the Sheriff", or "Dock of the Bay" inside
+      //      "Sitting on the Dock of the Bay")
+      //   3. Per-word fuzzy matching via Levenshtein edit distance catches
+      //      spelling variants: "Ramblin'" ≈ "Rambling", "goode" ≈ "good"
+
+      // Step 1 – normalize a raw title string.
+      const normTitle = (s) => (s || '').toLowerCase()
+        .replace(/['''\u2018\u2019"`]/g, '') // strip all quote variants
+        .replace(/[^a-z0-9\s]/g, ' ')        // remaining punctuation → space
+        .replace(/\b(the|a|an|of|on|in|at|to|for|and|or|but)\b/g, '') // stopwords
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      // Step 2 – character-level edit distance (two-row DP, O(m*n) time).
+      const levenshtein = (a, b) => {
+        if (a === b) return 0;
+        if (!a.length) return b.length;
+        if (!b.length) return a.length;
+        let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+        let curr = new Array(b.length + 1);
+        for (let i = 1; i <= a.length; i++) {
+          curr[0] = i;
+          for (let j = 1; j <= b.length; j++) {
+            curr[j] = a[i - 1] === b[j - 1]
+              ? prev[j - 1]
+              : 1 + Math.min(prev[j - 1], prev[j], curr[j - 1]);
+          }
+          [prev, curr] = [curr, prev];
+        }
+        return prev[b.length];
+      };
+
+      // Step 3 – do two words count as the same?
+      //   • exact match always passes
+      //   • very short words (< 4 chars): exact only — prevents "of"≈"on" false hits
+      //   • 4–5 char words: allow 1 edit ("goode"→"good", "dock"→"rock" wouldn't hit)
+      //   • 6+ char words: allow 2 edits ("ramblin"→"rambling", "sittin"→"sitting")
+      const wordsSame = (a, b) => {
+        if (a === b) return true;
+        const minLen = Math.min(a.length, b.length);
+        if (minLen < 4) return false;
+        return levenshtein(a, b) <= (minLen >= 6 ? 2 : 1);
+      };
+
+      // Step 4 – do two normalized title strings represent the same song?
+      const titlesSame = (na, nb) => {
+        if (!na && !nb) return true;
+        if (!na || !nb) return false;
+        if (na === nb) return true;
+
+        const wa = na.split(' ').filter(Boolean);
+        const wb = nb.split(' ').filter(Boolean);
+        const [shorter, longer] = wa.length <= wb.length ? [wa, wb] : [wb, wa];
+
+        // Single-word titles must match exactly (no containment — avoids
+        // "Thunder" swallowing "Thunder Road" or "Thunder Struck").
+        if (shorter.length < 2) return false;
+
+        // Coverage guard: shorter title must be ≥ 40% the length of longer title.
+        // Stops a 2-word title from falsely matching a 10-word title by coincidence.
+        if (shorter.length / longer.length < 0.40) return false;
+
+        // Every word in the shorter title must fuzzy-match a unique word in the longer.
+        const used = new Set();
+        for (const sw of shorter) {
+          let found = false;
+          for (let i = 0; i < longer.length; i++) {
+            if (!used.has(i) && wordsSame(sw, longer[i])) {
+              used.add(i);
+              found = true;
+              break;
+            }
+          }
+          if (!found) return false;
+        }
+        return true;
+      };
+
+      // Step 5 – check one incoming title against a pre-built list of existing
+      // normalized titles. Returns true when a match is found.
+      const isTitleDupe = (rawTitle, existingNorms) => {
+        const n = normTitle(rawTitle);
+        return existingNorms.some(en => titlesSame(n, en));
+      };
+      // ─── END FUZZY TITLE DEDUP ENGINE ───────────────────────────────────────
+
       const importCSVRobust = async (e) => {
         const files = Array.from(e.target.files || []);
         if (files.length === 0) return;
 
-        // Normalize a song title for fuzzy dedup — title column only.
-        // Strips smart/straight quotes, punctuation, common articles, and collapses
-        // whitespace so variants like "Ramblin' Man", "Rambling Man", and
-        // "ramblin' man" all resolve to the same dedup key.
-        const normTitle = (s) => (s || '').toLowerCase()
-          .replace(/[''"`]/g, '')          // smart/straight quotes → nothing
-          .replace(/[^a-z0-9\s]/g, ' ')   // remaining punctuation → space
-          .replace(/\b(the|a|an)\b/g, '')  // strip leading articles
-          .replace(/\s+/g, ' ')
-          .trim();
-
-        // Seed the dedup set from the existing library (title-only match).
-        const existingKeys = new Set(songs.map(s => normTitle(s.title)));
+        // Seed the dedup list from the existing library (title-only, fuzzy).
+        // Uses the shared titlesSame / isTitleDupe engine defined above.
+        const existingNorms = songs.map(s => normTitle(s.title));
 
         // Collect all parsed songs across all files, scrubbing duplicates as we go.
         const allImported = [];
@@ -4851,11 +4936,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           // Scrub each song against the existing library AND songs already collected
           // from earlier files in this batch (cross-file dedup).
           for (const song of parsedSongs) {
-            const key = normTitle(song.title);
-            if (existingKeys.has(key)) {
+            if (isTitleDupe(song.title, existingNorms)) {
               crossLibraryDupes++;
             } else {
-              existingKeys.add(key); // block the same title appearing in a later file
+              // Register normalized form so later files in this batch are compared against it.
+              existingNorms.push(normTitle(song.title));
               allImported.push({ id: genId(), status: 'active', ...song });
             }
           }
@@ -4924,23 +5009,16 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       // Canonical import with dedup
       const importCanonicalRows = (rows, report) => {
-        // Same fuzzy title normalization used in importCSVRobust.
-        const normTitleCanon = (s) => (s || '').toLowerCase()
-          .replace(/[''"`]/g, '')
-          .replace(/[^a-z0-9\s]/g, ' ')
-          .replace(/\b(the|a|an)\b/g, '')
-          .replace(/\s+/g, ' ')
-          .trim();
-
-        const existingKeys = new Set(songs.map(s => normTitleCanon(s.title)));
+        // Uses the shared fuzzy engine (normTitle / titlesSame / isTitleDupe).
+        const existingNormsCanon = songs.map(s => normTitle(s.title));
         const imported = [];
         let dupeCount = 0;
 
         for (const row of rows) {
-          const dedupKey = normTitleCanon(row.title);
-          if (existingKeys.has(dedupKey)) {
-            // Merge missing fields into existing
-            const idx = songs.findIndex(s => normTitleCanon(s.title) === dedupKey);
+          const dedupKey = normTitle(row.title);
+          if (isTitleDupe(row.title, existingNormsCanon)) {
+            // Merge missing fields into the existing matching song.
+            const idx = songs.findIndex(s => titlesSame(normTitle(s.title), dedupKey));
             if (idx >= 0) {
               const existing = songs[idx];
               let updated = false;
@@ -4960,7 +5038,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             continue;
           }
 
-          existingKeys.add(dedupKey);
+          existingNormsCanon.push(dedupKey);
           imported.push({
             id: genId(),
             status: 'active',
