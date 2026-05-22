@@ -5124,12 +5124,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           bpm:    { x: tableX + tableW * 0.70, w: tableW * 0.10 }, // BPM ~10%
           style:  { x: tableX + tableW * 0.80, w: tableW * 0.20 }, // Style ~20%
         };
-        const ROW_H = 28;
-        const HEADER_ROW_H = 32;
+        const ROW_H = 36;
+        const HEADER_ROW_H = 40;
         const CELL_PAD = 8;
         const TITLE_SIZE = 24;
-        const HEADER_FONT = 11;
-        const BODY_FONT = 10;
+        const HEADER_FONT = 13;
+        const BODY_FONT = 13;
 
         // Dark slate header colour (matches template)
         const HDR_R = 61, HDR_G = 79, HDR_B = 95;
@@ -5180,7 +5180,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           doc.setLineWidth(0.5);
           doc.line(tableX, y, tableX + tableW, y);
 
-          doc.setFont('helvetica', 'normal');
+          doc.setFont('helvetica', 'bold');
           doc.setFontSize(BODY_FONT);
           doc.setTextColor(30, 30, 30);
           const textY = y + ROW_H / 2 + 3.5;
