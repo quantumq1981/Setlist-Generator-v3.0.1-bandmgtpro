@@ -5152,23 +5152,26 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const tableX = margin;
         const tableW = pageW - margin * 2;                // 540pt
 
-        // Column layout (absolute X positions and widths)
+        // Column layout — title gets more room on stage tablets, artist trimmed
         const cols = {
-          title:  { x: tableX,       w: tableW * 0.30 },  // Song Title ~30%
-          artist: { x: tableX + tableW * 0.30, w: tableW * 0.30 }, // Artist ~30%
-          key:    { x: tableX + tableW * 0.60, w: tableW * 0.10 }, // Key ~10%
-          bpm:    { x: tableX + tableW * 0.70, w: tableW * 0.10 }, // BPM ~10%
-          style:  { x: tableX + tableW * 0.80, w: tableW * 0.20 }, // Style ~20%
+          title:  { x: tableX,                   w: tableW * 0.38 }, // Song Title ~38%
+          artist: { x: tableX + tableW * 0.38,   w: tableW * 0.22 }, // Artist ~22%
+          key:    { x: tableX + tableW * 0.60,   w: tableW * 0.12 }, // Key ~12%
+          bpm:    { x: tableX + tableW * 0.72,   w: tableW * 0.10 }, // BPM ~10%
+          style:  { x: tableX + tableW * 0.82,   w: tableW * 0.18 }, // Style ~18%
         };
-        const ROW_H = 36;
-        const HEADER_ROW_H = 40;
-        const CELL_PAD = 8;
-        const TITLE_SIZE = 24;
+        const ROW_H = 48;
+        const HEADER_ROW_H = 38;
+        const CELL_PAD = 10;
+        const TITLE_SIZE = 28;
         const HEADER_FONT = 13;
-        const BODY_FONT = 13;
+        const BODY_FONT = 16;
 
-        // Dark slate header colour (matches template)
+        // Palette (light background with faded watermark)
         const HDR_R = 61, HDR_G = 79, HDR_B = 95;
+        const ALT_ROW = [245, 245, 245];
+        const LINE_C = [220, 220, 220];
+        const TEXT_C = [30, 30, 30];
 
         const addWatermark = () => {
           if (!watermarkImg) return;
@@ -5182,79 +5185,73 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           doc.restoreGraphicsState();
         };
 
+        const truncate = (text, maxWidth) => {
+          if (doc.getTextWidth(text) <= maxWidth) return text;
+          while (doc.getTextWidth(text + '…') > maxWidth && text.length > 0) {
+            text = text.slice(0, -1);
+          }
+          return text + '…';
+        };
+
         // Draw the dark header row for the table
         const drawTableHeader = (y) => {
-          // Header background
           doc.setFillColor(HDR_R, HDR_G, HDR_B);
           doc.rect(tableX, y, tableW, HEADER_ROW_H, 'F');
 
-          // Header text
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(HEADER_FONT);
           doc.setTextColor(255, 255, 255);
           const textY = y + HEADER_ROW_H / 2 + 4;
-          doc.text('Song Title', cols.title.x + CELL_PAD, textY);
-          doc.text('Artist', cols.artist.x + CELL_PAD, textY);
-          doc.text('Key', cols.key.x + cols.key.w / 2, textY, { align: 'center' });
+          doc.text('SONG TITLE', cols.title.x + CELL_PAD, textY);
+          doc.text('ARTIST', cols.artist.x + CELL_PAD, textY);
+          doc.text('KEY', cols.key.x + cols.key.w / 2, textY, { align: 'center' });
           doc.text('BPM', cols.bpm.x + cols.bpm.w / 2, textY, { align: 'center' });
-          doc.text('Style', cols.style.x + CELL_PAD, textY);
-          doc.setTextColor(0, 0, 0);
+          doc.text('STYLE', cols.style.x + CELL_PAD, textY);
 
           return y + HEADER_ROW_H;
         };
 
-        // Draw one song row (with alternating background)
+        // Draw one song row (alternating dark background)
         const drawSongRow = (song, y, rowIdx) => {
-          // Alternating row fill
           if (rowIdx % 2 === 1) {
-            doc.setFillColor(245, 245, 245);
+            doc.setFillColor(...ALT_ROW);
             doc.rect(tableX, y, tableW, ROW_H, 'F');
           }
 
-          // Thin border lines (top of row)
-          doc.setDrawColor(220, 220, 220);
+          doc.setDrawColor(...LINE_C);
           doc.setLineWidth(0.5);
           doc.line(tableX, y, tableX + tableW, y);
 
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(BODY_FONT);
-          doc.setTextColor(30, 30, 30);
-          const textY = y + ROW_H / 2 + 3.5;
+          doc.setTextColor(...TEXT_C);
+          const textY = y + ROW_H / 2 + BODY_FONT * 0.35;
 
-          // Song Title (truncate if needed)
-          const titleMax = cols.title.w - CELL_PAD * 2;
-          let titleText = song.title || '';
-          while (doc.getTextWidth(titleText) > titleMax && titleText.length > 0) {
-            titleText = titleText.slice(0, -1);
-          }
-          doc.text(titleText, cols.title.x + CELL_PAD, textY);
+          // Song Title — all-caps with ellipsis on overflow
+          doc.text(
+            truncate((song.title || '').toUpperCase(), cols.title.w - CELL_PAD * 2),
+            cols.title.x + CELL_PAD, textY
+          );
 
-          // Artist (truncate if needed)
-          const artistMax = cols.artist.w - CELL_PAD * 2;
-          let artistText = song.artist || '';
-          while (doc.getTextWidth(artistText) > artistMax && artistText.length > 0) {
-            artistText = artistText.slice(0, -1);
-          }
-          doc.text(artistText, cols.artist.x + CELL_PAD, textY);
+          // Artist — mixed case, smaller feel via same font
+          doc.text(
+            truncate(song.artist || '', cols.artist.w - CELL_PAD * 2),
+            cols.artist.x + CELL_PAD, textY
+          );
 
-          // Key (center aligned)
           if (song.key) {
             doc.text(String(song.key), cols.key.x + cols.key.w / 2, textY, { align: 'center' });
           }
 
-          // BPM (center aligned)
           if (song.bpm) {
             doc.text(String(song.bpm), cols.bpm.x + cols.bpm.w / 2, textY, { align: 'center' });
           }
 
-          // Style
           if (song.style) {
-            const styleMax = cols.style.w - CELL_PAD * 2;
-            let styleText = song.style;
-            while (doc.getTextWidth(styleText) > styleMax && styleText.length > 0) {
-              styleText = styleText.slice(0, -1);
-            }
-            doc.text(styleText, cols.style.x + CELL_PAD, textY);
+            doc.text(
+              truncate(song.style, cols.style.w - CELL_PAD * 2),
+              cols.style.x + CELL_PAD, textY
+            );
           }
 
           return y + ROW_H;
@@ -5262,11 +5259,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
         // Draw vertical column dividers for the visible table area
         const drawColumnLines = (startY, endY) => {
-          doc.setDrawColor(220, 220, 220);
+          doc.setDrawColor(...LINE_C);
           doc.setLineWidth(0.5);
-          // Outer border
           doc.rect(tableX, startY, tableW, endY - startY);
-          // Vertical dividers
           [cols.artist.x, cols.key.x, cols.bpm.x, cols.style.x].forEach(x => {
             doc.line(x, startY, x, endY);
           });
@@ -5278,13 +5273,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           addWatermark();
 
           // Set title centred at top
-          let yPos = margin + 10;
+          let yPos = margin + TITLE_SIZE;
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(TITLE_SIZE);
           doc.setTextColor(0, 0, 0);
-          const setTitle = set.name || `Set ${setIdx + 1}`;
+          const setTitle = (set.name || `Set ${setIdx + 1}`).toUpperCase();
           doc.text(setTitle, pageW / 2, yPos, { align: 'center' });
-          yPos += TITLE_SIZE + 16;
+          yPos += TITLE_SIZE + 12;
 
           // Table header
           let pageTableTop = yPos;
@@ -5295,9 +5290,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           set.songs.forEach((song) => {
             // Page break check
             if (yPos + ROW_H > pageH - margin) {
-              // Close table borders on current page
               drawColumnLines(pageTableTop, yPos);
-
               doc.addPage();
               addWatermark();
               pageTableTop = margin + 10;
@@ -5310,7 +5303,6 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             rowCounter++;
           });
 
-          // Close bottom border and column dividers on last page of this set
           drawColumnLines(pageTableTop, yPos);
         });
 
