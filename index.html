@@ -4102,7 +4102,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     }
 
     /******************* GIG PROFILES *******************/
-    function GigProfileModal({ open, onClose, gigs, onCreateGig, onDeleteGig, onLoadGig, onSaveToGig, onExportGigCSV, setlists, bandName }) {
+    function GigProfileModal({ open, onClose, gigs, onCreateGig, onDeleteGig, onLoadGig, onSaveToGig, onExportGigCSV, onImportCSVToGig, setlists, bandName }) {
       const [form, setForm] = useState({
         name: '', venue: '', date: '', notes: '',
         // Venue info fields (common across GigSalad, Sonicbids, Bands in Town, Gigmit, etc.)
@@ -4371,6 +4371,20 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                             </button>
                           </>
                         )}
+                        <label className="btn btn-small" style={{ borderColor: '#60a5fa', color: '#60a5fa', cursor: 'pointer', margin: 0 }} title="Import a previously exported setlist CSV directly into this gig profile">
+                          Import
+                          <input
+                            type="file"
+                            accept=".csv"
+                            style={{ display: 'none' }}
+                            onChange={e => {
+                              if (e.target.files?.[0]) {
+                                onImportCSVToGig(gig.id, e.target.files[0]);
+                                e.target.value = '';
+                              }
+                            }}
+                          />
+                        </label>
                         <button className="btn btn-small" onClick={() => onDeleteGig(gig.id)}>Del</button>
                       </div>
                     </div>
@@ -5935,6 +5949,54 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         setGigModal(false);
       };
 
+      const importCSVToGig = (gigId, file) => {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const text = ev.target?.result || '';
+          const result = Papa.parse(String(text), {
+            header: true, skipEmptyLines: 'greedy', dynamicTyping: false
+          });
+          const rows = result.data || [];
+          const metaKeys = new Set(['gig info', 'gig name', 'venue', 'date', 'city', 'state', 'event type', 'contact', 'email', 'notes']);
+          const setMap = new Map();
+          for (const row of rows) {
+            const setName = (row['Set'] || '').trim();
+            if (!setName || metaKeys.has(setName.toLowerCase())) continue;
+            const title = (row['Title'] || '').trim();
+            const artist = (row['Artist'] || '').trim();
+            if (!title || !artist) continue;
+            const song = {
+              title: sanitizeInput(title),
+              artist: sanitizeInput(artist),
+              duration: parseDuration(row['Duration'] || ''),
+              style: ((row['Style'] || 'midtempo')).toLowerCase().trim(),
+              key: (row['Key'] || '').trim(),
+              bpm: (row['BPM'] || '').trim(),
+              vocalist: (row['Vocalist'] || '').trim(),
+            };
+            if (!setMap.has(setName)) setMap.set(setName, []);
+            setMap.get(setName).push(song);
+          }
+          if (setMap.size === 0) {
+            showToast('No setlist data found in CSV — make sure it was exported from this app', 'warning');
+            return;
+          }
+          const importedSetlists = Array.from(setMap.entries()).map(([name, songs]) => ({
+            name,
+            songs,
+            totalTime: songs.reduce((sum, s) => sum + (Number(s.duration) || 0), 0)
+          }));
+          const updated = gigs.map(g =>
+            g.id === gigId ? { ...g, setlists: importedSetlists, savedAt: Date.now() } : g
+          );
+          setGigs(updated);
+          LS.set(LS_KEYS.bandGigs(activeBandId), updated);
+          showToast(`Imported ${importedSetlists.length} set(s) into gig profile`, 'success');
+        };
+        reader.readAsText(file);
+      };
+
       return (
         <>
           <IDEBackground>
@@ -6170,6 +6232,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               onLoadGig={loadSetlistsFromGig}
               onSaveToGig={saveSetlistsToGig}
               onExportGigCSV={exportGigCSV}
+              onImportCSVToGig={importCSVToGig}
               setlists={setlists}
               bandName={activeBand?.name || 'Band'}
             />
