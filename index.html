@@ -69,6 +69,11 @@
       --punk: #fb7185;
       --metal: #94a3b8;
       --edm: #a3e635;
+      --southern-rock: #d4542a;
+      --blues-rock: #7c5cbf;
+      --swamp-rock: #4e8c45;
+      --jazz-rock: #c8893a;
+      --americana: #b07a38;
       --locked: #4ade80;
       --toast-bg: rgba(45,45,45,.95);
     }
@@ -168,6 +173,9 @@
     .style-pop{background:var(--pop); color:#111;} .style-rock{background:var(--rock); color:#fff;}
     .style-ska{background:var(--ska); color:#111;} .style-punk{background:var(--punk); color:#111;}
     .style-metal{background:var(--metal); color:#111;} .style-edm{background:var(--edm); color:#111;}
+    .style-southern-rock{background:var(--southern-rock); color:#fff;} .style-blues-rock{background:var(--blues-rock); color:#fff;}
+    .style-swamp-rock{background:var(--swamp-rock); color:#fff;} .style-jazz-rock{background:var(--jazz-rock); color:#111;}
+    .style-americana{background:var(--americana); color:#111;}
 
     .setlists-container { display:grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1rem; }
     .setlist { background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
@@ -570,8 +578,9 @@
     const ENERGY_MAP = {
       ballad: 2, acoustic: 2.5, waltz: 3, bossa: 3.5, blues: 3.5, jazz: 3.5,
       'slow blues': 2.5, latin: 4,
-      swing: 4, country: 4, reggae: 4, midtempo: 4.5, soul: 4.5, rnb: 4.5,
-      shuffle: 5, groove: 5.5, funk: 6, rock: 6.5, uptempo: 7, ska: 6.5,
+      swing: 4, country: 4, reggae: 4, americana: 4, midtempo: 4.5, soul: 4.5, rnb: 4.5,
+      shuffle: 5, groove: 5.5, 'swamp rock': 5.0, 'jazz rock': 5.0, 'blues rock': 5.5,
+      funk: 6, rock: 6.5, uptempo: 7, ska: 6.5, 'southern rock': 6.5,
       punk: 8, metal: 9, edm: 8.5, pop: 5
     };
 
@@ -790,7 +799,9 @@
         'hip hop': 'groove', 'hip-hop': 'groove', 'bossa nova': 'bossa',
         'folk': 'acoustic', 'singer-songwriter': 'acoustic', 'alternative': 'rock',
         'indie': 'midtempo', 'grunge': 'rock', 'heavy metal': 'metal',
-        'electronic': 'edm', 'dance': 'edm', 'disco': 'funk'
+        'electronic': 'edm', 'dance': 'edm', 'disco': 'funk',
+        'southern': 'southern rock', 'swamp': 'swamp rock',
+        'americana rock': 'americana', 'roots rock': 'americana'
       };
       let styleVal = String(rawStyle).trim().toLowerCase();
       if (STYLE_ALIASES[styleVal]) {
@@ -950,7 +961,8 @@
     // Known style values for BandHelper / Zemba-style PDFs
     const PDF_KNOWN_STYLES = new Set([
       'uptempo','ballad','midtempo','groove','shuffle','swing','funk',
-      'slow blues','rock','blues','country','jazz','reggae','latin','pop'
+      'slow blues','rock','blues','country','jazz','reggae','latin','pop',
+      'southern rock','blues rock','swamp rock','jazz rock','americana'
     ]);
 
     /**
@@ -2121,7 +2133,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
           // Fallback to style-based opener if no locked opener available
           if (!opener) {
-            const openerStyles = ['uptempo', 'rock', 'funk', 'swing', 'midtempo', 'groove', 'shuffle', 'ska'];
+            const openerStyles = ['uptempo', 'rock', 'funk', 'swing', 'midtempo', 'groove', 'shuffle', 'ska', 'southern rock', 'blues rock', 'jazz rock'];
             // Exclude songs already in this set via pins/lockPlan (setUsedIds guard).
             // Without this, allowSongReuse=true would allow a pinned song to also become
             // the opener, producing an intra-set duplicate.
@@ -2320,7 +2332,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         if (forceCloser && setSongs.length > 0) {
           const lastIdx = setSongs.length - 1;
           const lastSong = setSongs[lastIdx];
-          const closerStyles = ['ballad', 'acoustic', 'slow blues', 'blues', 'midtempo', 'swing', 'soul', 'waltz'];
+          const closerStyles = ['ballad', 'acoustic', 'slow blues', 'blues', 'midtempo', 'swing', 'soul', 'waltz', 'americana', 'blues rock'];
 
           // Check if a locked closer should be used.
           // FIX: designated closer songs bypass the global used-check (same as opener)
@@ -2606,6 +2618,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   <option value="swing">Swing</option>
                   <option value="country">Country</option>
                   <option value="reggae">Reggae</option>
+                  <option value="americana">Americana</option>
                 </optgroup>
                 <optgroup label="Mid-High (4.5-5.5)">
                   <option value="midtempo">Midtempo</option>
@@ -2614,12 +2627,16 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   <option value="pop">Pop</option>
                   <option value="shuffle">Shuffle</option>
                   <option value="groove">Groove</option>
+                  <option value="swamp rock">Swamp Rock</option>
+                  <option value="jazz rock">Jazz Rock</option>
+                  <option value="blues rock">Blues Rock</option>
                 </optgroup>
                 <optgroup label="High (6-7)">
                   <option value="funk">Funk</option>
                   <option value="rock">Rock</option>
                   <option value="ska">Ska</option>
                   <option value="uptempo">Uptempo</option>
+                  <option value="southern rock">Southern Rock</option>
                 </optgroup>
                 <optgroup label="Peak (8-10)">
                   <option value="punk">Punk</option>
@@ -2706,6 +2723,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                               <option value="swing">Swing</option>
                               <option value="country">Country</option>
                               <option value="reggae">Reggae</option>
+                              <option value="americana">Americana</option>
                             </optgroup>
                             <optgroup label="Mid-High (4.5-5.5)">
                               <option value="midtempo">Midtempo</option>
@@ -2714,12 +2732,16 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                               <option value="pop">Pop</option>
                               <option value="shuffle">Shuffle</option>
                               <option value="groove">Groove</option>
+                              <option value="swamp rock">Swamp Rock</option>
+                              <option value="jazz rock">Jazz Rock</option>
+                              <option value="blues rock">Blues Rock</option>
                             </optgroup>
                             <optgroup label="High (6-7)">
                               <option value="funk">Funk</option>
                               <option value="rock">Rock</option>
                               <option value="ska">Ska</option>
                               <option value="uptempo">Uptempo</option>
+                              <option value="southern rock">Southern Rock</option>
                             </optgroup>
                             <optgroup label="Peak (8-10)">
                               <option value="punk">Punk</option>
