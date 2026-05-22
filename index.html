@@ -5152,20 +5152,20 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const tableX = margin;
         const tableW = pageW - margin * 2;                // 540pt
 
-        // Column layout — title gets more room on stage tablets, artist trimmed
+        // Column layout — style column widened for compound genres (southern rock, jazz rock, etc.)
         const cols = {
-          title:  { x: tableX,                   w: tableW * 0.38 }, // Song Title ~38%
-          artist: { x: tableX + tableW * 0.38,   w: tableW * 0.22 }, // Artist ~22%
-          key:    { x: tableX + tableW * 0.60,   w: tableW * 0.12 }, // Key ~12%
-          bpm:    { x: tableX + tableW * 0.72,   w: tableW * 0.10 }, // BPM ~10%
-          style:  { x: tableX + tableW * 0.82,   w: tableW * 0.18 }, // Style ~18%
+          title:  { x: tableX,                   w: tableW * 0.36 }, // Song Title ~36%
+          artist: { x: tableX + tableW * 0.36,   w: tableW * 0.20 }, // Artist ~20%
+          key:    { x: tableX + tableW * 0.56,   w: tableW * 0.11 }, // Key ~11%
+          bpm:    { x: tableX + tableW * 0.67,   w: tableW * 0.10 }, // BPM ~10%
+          style:  { x: tableX + tableW * 0.77,   w: tableW * 0.23 }, // Style ~23%
         };
-        const ROW_H = 48;
+        const ROW_H = 44;
         const HEADER_ROW_H = 38;
         const CELL_PAD = 10;
         const TITLE_SIZE = 28;
         const HEADER_FONT = 13;
-        const BODY_FONT = 16;
+        const BODY_FONT = 14;
 
         // Palette (light background with faded watermark)
         const HDR_R = 61, HDR_G = 79, HDR_B = 95;
