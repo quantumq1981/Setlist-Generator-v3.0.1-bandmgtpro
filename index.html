@@ -774,6 +774,601 @@
       return style ? (GENRE_PARAMS[style.toLowerCase()] || null) : null;
     }
 
+    // ─── STYLE INFERENCE: artist lookup + BPM-range fallback ─────────────────
+    const ARTIST_STYLE_MAP = {
+      // Acoustic Folk
+      'simon & garfunkel':'acoustic folk','james taylor':'acoustic folk',
+      'joni mitchell':'acoustic folk','cat stevens':'acoustic folk',
+      'bob dylan':'acoustic folk','john denver':'acoustic folk',
+      'gordon lightfoot':'acoustic folk','carole king':'acoustic folk',
+      'paul simon':'acoustic folk','peter paul and mary':'acoustic folk',
+      'peter, paul and mary':'acoustic folk','joan baez':'acoustic folk',
+      'leonard cohen':'acoustic folk','nick drake':'acoustic folk',
+      'kris kristofferson':'acoustic folk','don mclean':'acoustic folk',
+      'harry chapin':'acoustic folk','john prine':'acoustic folk',
+      'townes van zandt':'acoustic folk','shawn colvin':'acoustic folk',
+      'nanci griffith':'acoustic folk','richard thompson':'acoustic folk',
+      'fairport convention':'acoustic folk','pentangle':'acoustic folk',
+      'judy collins':'acoustic folk','buffy sainte-marie':'acoustic folk',
+      'fred neil':'acoustic folk','tim hardin':'acoustic folk',
+      'tim buckley':'acoustic folk','iron & wine':'acoustic folk',
+      'the civil wars':'acoustic folk','civil wars':'acoustic folk',
+      'fleet foxes':'acoustic folk','mumford & sons':'acoustic folk',
+      'the lumineers':'acoustic folk','lumineers':'acoustic folk',
+      'the avett brothers':'acoustic folk','avett brothers':'acoustic folk',
+      // Traditional Blues
+      'b.b. king':'traditional blues','bb king':'traditional blues',
+      'muddy waters':'traditional blues','robert johnson':'traditional blues',
+      'john lee hooker':'traditional blues','howlin wolf':'traditional blues',
+      "howlin' wolf":'traditional blues','buddy guy':'traditional blues',
+      'freddie king':'traditional blues','albert king':'traditional blues',
+      'little walter':'traditional blues','sonny boy williamson':'traditional blues',
+      'jimmy reed':'traditional blues','elmore james':'traditional blues',
+      'slim harpo':'traditional blues','lead belly':'traditional blues',
+      'leadbelly':'traditional blues','tampa red':'traditional blues',
+      'big bill broonzy':'traditional blues','son house':'traditional blues',
+      'skip james':'traditional blues','charley patton':'traditional blues',
+      'blind lemon jefferson':'traditional blues',
+      'lightnin hopkins':'traditional blues',"lightnin' hopkins":'traditional blues',
+      'lowell fulson':'traditional blues','t-bone walker':'traditional blues',
+      // Blues-Rock
+      'eric clapton':'blues-rock','cream':'blues-rock',
+      'stevie ray vaughan':'blues-rock','allman brothers band':'blues-rock',
+      'the allman brothers band':'blues-rock','allman brothers':'blues-rock',
+      'zz top':'blues-rock','the blues brothers':'blues-rock',
+      'blues brothers':'blues-rock','gary moore':'blues-rock',
+      'joe bonamassa':'blues-rock','robin trower':'blues-rock',
+      'rory gallagher':'blues-rock','kenny wayne shepherd':'blues-rock',
+      "gov't mule":'blues-rock','derek trucks band':'blues-rock',
+      'derek and the dominos':'blues-rock','john mayall':'blues-rock',
+      'ten years after':'blues-rock','walter trout':'blues-rock',
+      'johnny winter':'blues-rock','edgar winter':'blues-rock',
+      'canned heat':'blues-rock','savoy brown':'blues-rock',
+      'foghat':'blues-rock','the black keys':'blues-rock','black keys':'blues-rock',
+      'jack white':'blues-rock','the white stripes':'blues-rock',
+      'white stripes':'blues-rock','widespread panic':'blues-rock',
+      // Classic Country
+      'johnny cash':'classic country','hank williams':'classic country',
+      'patsy cline':'classic country','dolly parton':'classic country',
+      'merle haggard':'classic country','willie nelson':'classic country',
+      'waylon jennings':'classic country','loretta lynn':'classic country',
+      'tammy wynette':'classic country','george jones':'classic country',
+      'buck owens':'classic country','glen campbell':'classic country',
+      'eddy arnold':'classic country','chet atkins':'classic country',
+      'roger miller':'classic country','charley pride':'classic country',
+      'jim reeves':'classic country','hank snow':'classic country',
+      'webb pierce':'classic country','ernest tubb':'classic country',
+      'faron young':'classic country','george strait':'classic country',
+      'randy travis':'classic country','alan jackson':'classic country',
+      'vince gill':'classic country','dwight yoakam':'classic country',
+      // Straight-Ahead Rock
+      'the rolling stones':'straight-ahead rock','rolling stones':'straight-ahead rock',
+      'led zeppelin':'straight-ahead rock','the who':'straight-ahead rock',
+      'creedence clearwater revival':'straight-ahead rock',
+      'the kinks':'straight-ahead rock','kinks':'straight-ahead rock',
+      'the animals':'straight-ahead rock','animals':'straight-ahead rock',
+      'bad company':'straight-ahead rock','thin lizzy':'straight-ahead rock',
+      'status quo':'straight-ahead rock','deep purple':'straight-ahead rock',
+      'uriah heep':'straight-ahead rock','humble pie':'straight-ahead rock',
+      'black crowes':'straight-ahead rock','the black crowes':'straight-ahead rock',
+      'faces':'straight-ahead rock','boston':'straight-ahead rock',
+      'foreigner':'straight-ahead rock','journey':'straight-ahead rock',
+      'heart':'straight-ahead rock','pat benatar':'straight-ahead rock',
+      'the steve miller band':'straight-ahead rock','steve miller band':'straight-ahead rock',
+      'blue oyster cult':'straight-ahead rock','38 special':'straight-ahead rock',
+      'kansas':'straight-ahead rock',
+      // Roots Americana
+      'tom petty':'roots americana',
+      'tom petty and the heartbreakers':'roots americana',
+      'the heartbreakers':'roots americana',
+      'bruce springsteen':'roots americana',
+      'john mellencamp':'roots americana',
+      'john cougar mellencamp':'roots americana',
+      'the band':'roots americana',
+      'steve earle':'roots americana','jason isbell':'roots americana',
+      'ryan adams':'roots americana','drive-by truckers':'roots americana',
+      'drive by truckers':'roots americana','lucinda williams':'roots americana',
+      'joe ely':'roots americana','lyle lovett':'roots americana',
+      'guy clark':'roots americana','j.j. cale':'roots americana',
+      'jj cale':'roots americana','john hiatt':'roots americana',
+      'the jayhawks':'roots americana','jayhawks':'roots americana',
+      'uncle tupelo':'roots americana','son volt':'roots americana',
+      'wilco':'roots americana','chris stapleton':'roots americana',
+      'sturgill simpson':'roots americana','tyler childers':'roots americana',
+      'old crow medicine show':'roots americana',
+      // Power Pop
+      'cheap trick':'power pop','the cars':'power pop','cars':'power pop',
+      'elvis costello':'power pop','badfinger':'power pop',
+      'the raspberries':'power pop','raspberries':'power pop',
+      'big star':'power pop','the posies':'power pop','posies':'power pop',
+      'teenage fanclub':'power pop','matthew sweet':'power pop',
+      'weezer':'power pop','fountains of wayne':'power pop',
+      'ok go':'power pop','the romantics':'power pop','romantics':'power pop',
+      'the knack':'power pop','knack':'power pop',
+      'tommy james and the shondells':'power pop','tommy james':'power pop',
+      'the byrds':'power pop','byrds':'power pop','squeeze':'power pop',
+      // Gospel Ballads
+      'mahalia jackson':'gospel ballads','sister rosetta tharpe':'gospel ballads',
+      'take 6':'gospel ballads','the staple singers':'gospel ballads',
+      'staple singers':'gospel ballads','mavis staples':'gospel ballads',
+      'andrae crouch':'gospel ballads','andraé crouch':'gospel ballads',
+      'the blind boys of alabama':'gospel ballads',
+      'blind boys of alabama':'gospel ballads',
+      'clara ward':'gospel ballads','the soul stirrers':'gospel ballads',
+      // Doo-Wop
+      'the drifters':'doo-wop','drifters':'doo-wop',
+      'the platters':'doo-wop','platters':'doo-wop',
+      'the coasters':'doo-wop','coasters':'doo-wop',
+      'the five satins':'doo-wop','five satins':'doo-wop',
+      'the moonglows':'doo-wop','moonglows':'doo-wop',
+      'dion and the belmonts':'doo-wop','dion':'doo-wop',
+      'frankie lymon':'doo-wop','the flamingos':'doo-wop','flamingos':'doo-wop',
+      'little anthony and the imperials':'doo-wop',
+      'the penguins':'doo-wop','penguins':'doo-wop',
+      // Soft Rock
+      'elton john':'soft rock','billy joel':'soft rock',
+      'the eagles':'soft rock','eagles':'soft rock',
+      'fleetwood mac':'soft rock','america':'soft rock',
+      'bread':'soft rock','dan fogelberg':'soft rock',
+      'jackson browne':'soft rock','linda ronstadt':'soft rock',
+      'anne murray':'soft rock','olivia newton-john':'soft rock',
+      'paul mccartney':'soft rock','wings':'soft rock',
+      'carpenters':'soft rock','the carpenters':'soft rock',
+      '10cc':'soft rock','seals & crofts':'soft rock',
+      'seals and crofts':'soft rock','jim croce':'soft rock',
+      'loggins and messina':'soft rock','air supply':'soft rock',
+      'little river band':'soft rock',
+      // Soul Ballad
+      'otis redding':'soul ballad','ray charles':'soul ballad',
+      'percy sledge':'soul ballad','ben e. king':'soul ballad',
+      'ben e king':'soul ballad','bill withers':'soul ballad',
+      'teddy pendergrass':'soul ballad','barry white':'soul ballad',
+      'luther vandross':'soul ballad','anita baker':'soul ballad',
+      'gladys knight':'soul ballad',
+      'gladys knight and the pips':'soul ballad',
+      'sam cooke':'soul ballad','al green':'soul ballad',
+      'jackie wilson':'soul ballad','bobby bland':'soul ballad',
+      'bobby blue bland':'soul ballad','bobby womack':'soul ballad',
+      // Pop Ballad
+      'whitney houston':'pop ballad','celine dion':'pop ballad',
+      'mariah carey':'pop ballad','barbra streisand':'pop ballad',
+      'toni braxton':'pop ballad','faith hill':'pop ballad',
+      'shania twain':'pop ballad','lionel richie':'pop ballad',
+      'kenny rogers':'pop ballad','diana ross':'pop ballad',
+      'adele':'pop ballad','alicia keys':'pop ballad',
+      'john legend':'pop ballad','michael buble':'pop ballad',
+      'michael bublé':'pop ballad','josh groban':'pop ballad',
+      'bonnie tyler':'pop ballad','cyndi lauper':'pop ballad',
+      // Bluegrass
+      'bill monroe':'bluegrass','earl scruggs':'bluegrass',
+      'flatt and scruggs':'bluegrass','alison krauss':'bluegrass',
+      'the stanley brothers':'bluegrass','stanley brothers':'bluegrass',
+      'ralph stanley':'bluegrass','doc watson':'bluegrass',
+      'tony rice':'bluegrass','newgrass revival':'bluegrass',
+      'ricky skaggs':'bluegrass','del mccoury band':'bluegrass',
+      'del mccoury':'bluegrass','nickel creek':'bluegrass',
+      'punch brothers':'bluegrass',
+      // Punk Rock
+      'the ramones':'punk rock','ramones':'punk rock',
+      'the clash':'punk rock','clash':'punk rock',
+      'sex pistols':'punk rock','green day':'punk rock',
+      'blink-182':'punk rock','the offspring':'punk rock','offspring':'punk rock',
+      'bad religion':'punk rock','nofx':'punk rock',
+      'the buzzcocks':'punk rock','buzzcocks':'punk rock',
+      'dead kennedys':'punk rock','black flag':'punk rock',
+      'social distortion':'punk rock','rancid':'punk rock',
+      'the descendents':'punk rock','descendents':'punk rock',
+      'husker du':'punk rock','wire':'punk rock',
+      'iggy pop':'punk rock','patti smith':'punk rock',
+      'television':'punk rock','richard hell':'punk rock',
+      // Mainstream Pop
+      'michael jackson':'mainstream pop','madonna':'mainstream pop',
+      'taylor swift':'mainstream pop','katy perry':'mainstream pop',
+      'lady gaga':'mainstream pop','justin timberlake':'mainstream pop',
+      'ariana grande':'mainstream pop','ed sheeran':'mainstream pop',
+      'justin bieber':'mainstream pop','britney spears':'mainstream pop',
+      'nsync':'mainstream pop','backstreet boys':'mainstream pop',
+      'spice girls':'mainstream pop','one direction':'mainstream pop',
+      'the beatles':'mainstream pop','beatles':'mainstream pop',
+      'abba':'mainstream pop','robbie williams':'mainstream pop',
+      'dua lipa':'mainstream pop','the weeknd':'mainstream pop',
+      'weeknd':'mainstream pop','billie eilish':'mainstream pop',
+      'harry styles':'mainstream pop','olivia rodrigo':'mainstream pop',
+      'post malone':'mainstream pop','sam smith':'mainstream pop',
+      'shawn mendes':'mainstream pop','bruno mars':'mainstream pop',
+      // Electronic Dance Music
+      'daft punk':'electronic dance music',
+      'the chemical brothers':'electronic dance music',
+      'chemical brothers':'electronic dance music',
+      'the prodigy':'electronic dance music','prodigy':'electronic dance music',
+      'deadmau5':'electronic dance music','avicii':'electronic dance music',
+      'tiesto':'electronic dance music','tiësto':'electronic dance music',
+      'david guetta':'electronic dance music','skrillex':'electronic dance music',
+      'calvin harris':'electronic dance music','marshmello':'electronic dance music',
+      'kygo':'electronic dance music','kraftwerk':'electronic dance music',
+      'aphex twin':'electronic dance music','moby':'electronic dance music',
+      'basement jaxx':'electronic dance music','fatboy slim':'electronic dance music',
+      'orbital':'electronic dance music','underworld':'electronic dance music',
+      'martin garrix':'electronic dance music',
+      // Surf Rock
+      'the beach boys':'surf rock','beach boys':'surf rock',
+      'dick dale':'surf rock','jan and dean':'surf rock','jan & dean':'surf rock',
+      'the ventures':'surf rock','ventures':'surf rock',
+      'the surfaris':'surf rock','surfaris':'surf rock',
+      'the chantays':'surf rock','chantays':'surf rock',
+      // Motown
+      'stevie wonder':'motown','the supremes':'motown','supremes':'motown',
+      'diana ross and the supremes':'motown',
+      'four tops':'motown','the four tops':'motown',
+      'the temptations':'motown','temptations':'motown',
+      'the jackson 5':'motown','jackson 5':'motown',
+      'the miracles':'motown','miracles':'motown',
+      'smokey robinson':'motown',
+      'smokey robinson and the miracles':'motown',
+      'martha and the vandellas':'motown','mary wells':'motown',
+      'the marvelettes':'motown','marvelettes':'motown',
+      'marvin gaye':'motown','the isley brothers':'motown','isley brothers':'motown',
+      // Classic Soul
+      'james brown':'classic soul','aretha franklin':'classic soul',
+      'wilson pickett':'classic soul','sam & dave':'classic soul',
+      'sam and dave':'classic soul','the impressions':'classic soul',
+      'impressions':'classic soul','joe tex':'classic soul',
+      'brook benton':'classic soul','carla thomas':'classic soul',
+      'solomon burke':'classic soul','don covay':'classic soul',
+      'arthur conley':'classic soul','lee dorsey':'classic soul',
+      // Pop Rock
+      'bryan adams':'pop rock','the pretenders':'pop rock','pretenders':'pop rock',
+      'sheryl crow':'pop rock','matchbox twenty':'pop rock',
+      '3 doors down':'pop rock','lifehouse':'pop rock',
+      'nickelback':'pop rock','hootie and the blowfish':'pop rock',
+      'counting crows':'pop rock','the wallflowers':'pop rock',
+      'third eye blind':'pop rock','gin blossoms':'pop rock',
+      'collective soul':'pop rock','live':'pop rock',
+      'coldplay':'pop rock','oasis':'pop rock','travis':'pop rock',
+      'the doobie brothers':'pop rock','doobie brothers':'pop rock',
+      'rod stewart':'pop rock',
+      // Modern Country
+      'blake shelton':'modern country','luke bryan':'modern country',
+      'jason aldean':'modern country','kenny chesney':'modern country',
+      'brad paisley':'modern country','carrie underwood':'modern country',
+      'miranda lambert':'modern country','tim mcgraw':'modern country',
+      'garth brooks':'modern country','toby keith':'modern country',
+      'dierks bentley':'modern country','eric church':'modern country',
+      'thomas rhett':'modern country','florida georgia line':'modern country',
+      'morgan wallen':'modern country','luke combs':'modern country',
+      // Rockabilly
+      'elvis presley':'rockabilly','carl perkins':'rockabilly',
+      'jerry lee lewis':'rockabilly','eddie cochran':'rockabilly',
+      'gene vincent':'rockabilly','wanda jackson':'rockabilly',
+      'bill haley':'rockabilly','bill haley and his comets':'rockabilly',
+      'buddy holly':'rockabilly','the crickets':'rockabilly','crickets':'rockabilly',
+      'bo diddley':'rockabilly','chuck berry':'rockabilly',
+      'little richard':'rockabilly','stray cats':'rockabilly',
+      'the stray cats':'rockabilly','reverend horton heat':'rockabilly',
+      // Up-Tempo Funk
+      'parliament':'up-tempo funk','funkadelic':'up-tempo funk',
+      'parliament-funkadelic':'up-tempo funk',
+      'sly and the family stone':'up-tempo funk',
+      'sly & the family stone':'up-tempo funk',
+      'prince':'up-tempo funk','the time':'up-tempo funk',
+      'cameo':'up-tempo funk','the gap band':'up-tempo funk','gap band':'up-tempo funk',
+      'earth wind & fire':'up-tempo funk','earth wind and fire':'up-tempo funk',
+      'average white band':'up-tempo funk','tower of power':'up-tempo funk',
+      'bootsy collins':'up-tempo funk',
+      'ohio players':'up-tempo funk','kool & the gang':'up-tempo funk',
+      'kool and the gang':'up-tempo funk','chic':'up-tempo funk',
+      'the bar-kays':'up-tempo funk','bar-kays':'up-tempo funk',
+      // Yacht Rock
+      'christopher cross':'yacht rock','hall & oates':'yacht rock',
+      'hall and oates':'yacht rock','michael mcdonald':'yacht rock',
+      'steely dan':'yacht rock','boz scaggs':'yacht rock',
+      'kenny loggins':'yacht rock','toto':'yacht rock',
+      'ambrosia':'yacht rock','pablo cruise':'yacht rock',
+      'england dan and john ford coley':'yacht rock',
+      'alan parsons project':'yacht rock',
+      // Indie Pop
+      'vampire weekend':'indie pop','the shins':'indie pop','shins':'indie pop',
+      'belle and sebastian':'indie pop',
+      'the postal service':'indie pop','postal service':'indie pop',
+      'death cab for cutie':'indie pop','ben folds':'indie pop',
+      'ben folds five':'indie pop','of montreal':'indie pop',
+      'the new pornographers':'indie pop','new pornographers':'indie pop',
+      'neko case':'indie pop','aimee mann':'indie pop',
+      'the decemberists':'indie pop','decemberists':'indie pop',
+      'the mountain goats':'indie pop','mountain goats':'indie pop',
+      'neutral milk hotel':'indie pop','pavement':'indie pop',
+      'the smiths':'indie pop','smiths':'indie pop','morrissey':'indie pop',
+      'the pixies':'indie pop','pixies':'indie pop',
+      // Latin Groove
+      'santana':'latin groove','gloria estefan':'latin groove',
+      'jennifer lopez':'latin groove','ricky martin':'latin groove',
+      'miami sound machine':'latin groove','shakira':'latin groove',
+      'los lobos':'latin groove','buena vista social club':'latin groove',
+      'ibrahim ferrer':'latin groove',
+      // New Wave
+      'talking heads':'new wave','devo':'new wave',
+      'the cure':'new wave','blondie':'new wave',
+      'the police':'new wave','police':'new wave',
+      'duran duran':'new wave','the human league':'new wave','human league':'new wave',
+      'depeche mode':'new wave','ultravox':'new wave','gary numan':'new wave',
+      'simple minds':'new wave','thompson twins':'new wave',
+      'culture club':'new wave','adam ant':'new wave',
+      'adam and the ants':'new wave','abc':'new wave',
+      'a flock of seagulls':'new wave','flock of seagulls':'new wave',
+      'spandau ballet':'new wave',
+      'frankie goes to hollywood':'new wave',
+      'the psychedelic furs':'new wave','psychedelic furs':'new wave',
+      'echo and the bunnymen':'new wave','the b-52s':'new wave','b-52s':'new wave',
+      // Disco
+      'donna summer':'disco','bee gees':'disco',
+      'gloria gaynor':'disco','the village people':'disco','village people':'disco',
+      'sister sledge':'disco','the o\'jays':'disco',
+      'kc and the sunshine band':'disco','the trammps':'disco','trammps':'disco',
+      'george mccrae':'disco','van mccoy':'disco',
+      // Gospel Up-Tempo
+      'kirk franklin':'gospel up-tempo',
+      'cece winans':'gospel up-tempo','bebe and cece winans':'gospel up-tempo',
+      'the winans':'gospel up-tempo','winans':'gospel up-tempo',
+      'donnie mcclurkin':'gospel up-tempo','yolanda adams':'gospel up-tempo',
+      'fred hammond':'gospel up-tempo','hezekiah walker':'gospel up-tempo',
+      // Hard Rock
+      'ac/dc':'hard rock','aerosmith':'hard rock',
+      "guns n' roses":'hard rock','guns n roses':'hard rock',
+      'van halen':'hard rock','bon jovi':'hard rock',
+      'def leppard':'hard rock','poison':'hard rock',
+      'motley crue':'hard rock','mötley crüe':'hard rock',
+      'whitesnake':'hard rock','ratt':'hard rock','dokken':'hard rock',
+      'quiet riot':'hard rock','night ranger':'hard rock',
+      'loverboy':'hard rock','the scorpions':'hard rock','scorpions':'hard rock',
+      'rainbow':'hard rock','dio':'hard rock',
+      // Grunge
+      'nirvana':'grunge','pearl jam':'grunge','soundgarden':'grunge',
+      'alice in chains':'grunge','stone temple pilots':'grunge',
+      'mudhoney':'grunge','screaming trees':'grunge',
+      'the melvins':'grunge','melvins':'grunge',
+      'hole':'grunge','smashing pumpkins':'grunge',
+      'the smashing pumpkins':'grunge',
+      // Alternative Rock
+      'radiohead':'alternative rock','r.e.m.':'alternative rock',
+      'rem':'alternative rock','u2':'alternative rock',
+      'the replacements':'alternative rock','replacements':'alternative rock',
+      'sonic youth':'alternative rock',
+      "jane's addiction":'alternative rock','janes addiction':'alternative rock',
+      'nine inch nails':'alternative rock','tool':'alternative rock',
+      'rage against the machine':'alternative rock','beck':'alternative rock',
+      'cake':'alternative rock','they might be giants':'alternative rock',
+      'primus':'alternative rock','the breeders':'alternative rock',
+      'breeders':'alternative rock','liz phair':'alternative rock',
+      'built to spill':'alternative rock','guided by voices':'alternative rock',
+      // Hip-Hop Groove
+      'jay-z':'hip-hop groove','jay z':'hip-hop groove',
+      'kanye west':'hip-hop groove','kendrick lamar':'hip-hop groove',
+      'notorious b.i.g.':'hip-hop groove','biggie smalls':'hip-hop groove',
+      'tupac shakur':'hip-hop groove','2pac':'hip-hop groove',
+      'dr. dre':'hip-hop groove','snoop dogg':'hip-hop groove',
+      'eminem':'hip-hop groove','nas':'hip-hop groove',
+      'wu-tang clan':'hip-hop groove','the roots':'hip-hop groove',
+      'roots':'hip-hop groove','a tribe called quest':'hip-hop groove',
+      'de la soul':'hip-hop groove','outkast':'hip-hop groove',
+      'missy elliott':'hip-hop groove','fugees':'hip-hop groove',
+      'run-dmc':'hip-hop groove','run dmc':'hip-hop groove',
+      'public enemy':'hip-hop groove','ice cube':'hip-hop groove',
+      'common':'hip-hop groove','mos def':'hip-hop groove',
+      'talib kweli':'hip-hop groove','chance the rapper':'hip-hop groove',
+      'childish gambino':'hip-hop groove',
+      // Salsa
+      'celia cruz':'salsa','tito puente':'salsa',
+      'willie colon':'salsa','ruben blades':'salsa',
+      'la india':'salsa','eddie palmieri':'salsa',
+      'the fania all stars':'salsa','fania all stars':'salsa',
+      'hector lavoe':'salsa','marc anthony':'salsa',
+      // Bebop
+      'charlie parker':'bebop','dizzy gillespie':'bebop',
+      'thelonious monk':'bebop','bud powell':'bebop',
+      'kenny clarke':'bebop','max roach':'bebop',
+      'fats navarro':'bebop','dexter gordon':'bebop',
+      'sonny stitt':'bebop','art tatum':'bebop',
+      // Hard Bop
+      'art blakey':'hard bop','art blakey and the jazz messengers':'hard bop',
+      'jazz messengers':'hard bop','horace silver':'hard bop',
+      'clifford brown':'hard bop','sonny rollins':'hard bop',
+      'lee morgan':'hard bop','hank mobley':'hard bop',
+      'freddie hubbard':'hard bop','kenny dorham':'hard bop',
+      'donald byrd':'hard bop','wes montgomery':'hard bop',
+      'grant green':'hard bop','joe pass':'hard bop',
+      // Jazz Fusion
+      'miles davis':'jazz fusion','weather report':'jazz fusion',
+      'mahavishnu orchestra':'jazz fusion','return to forever':'jazz fusion',
+      'the headhunters':'jazz fusion','herbie hancock':'jazz fusion',
+      'pat metheny':'jazz fusion','pat metheny group':'jazz fusion',
+      'chick corea':'jazz fusion','john mclaughlin':'jazz fusion',
+      'billy cobham':'jazz fusion','john scofield':'jazz fusion',
+      'yellowjackets':'jazz fusion','spyro gyra':'jazz fusion',
+      // Progressive Rock
+      'yes':'progressive rock','genesis':'progressive rock',
+      'emerson lake & palmer':'progressive rock',
+      'emerson lake and palmer':'progressive rock','elp':'progressive rock',
+      'pink floyd':'progressive rock','king crimson':'progressive rock',
+      'jethro tull':'progressive rock','rush':'progressive rock',
+      'gentle giant':'progressive rock','camel':'progressive rock',
+      'marillion':'progressive rock','dream theater':'progressive rock',
+      'porcupine tree':'progressive rock','steven wilson':'progressive rock',
+      'opeth':'progressive rock',
+      // Math Rock
+      'slint':'math rock','battles':'math rock',
+      'don caballero':'math rock','american football':'math rock',
+      'maps and atlases':'math rock','toe':'math rock',
+      'chon':'math rock','animals as leaders':'math rock',
+      // Afro-Cuban Jazz
+      'mongo santamaria':'afro-cuban jazz','machito':'afro-cuban jazz',
+      'mario bauza':'afro-cuban jazz','irakere':'afro-cuban jazz',
+      'chucho valdes':'afro-cuban jazz','arturo sandoval':'afro-cuban jazz',
+      'poncho sanchez':'afro-cuban jazz','gonzalo rubalcaba':'afro-cuban jazz',
+      // Gypsy Jazz
+      'django reinhardt':'gypsy jazz',
+      'stéphane grappelli':'gypsy jazz','stephane grappelli':'gypsy jazz',
+      'hot club of france':'gypsy jazz','the hot club of france':'gypsy jazz',
+      'bireli lagrene':'gypsy jazz','rosenberg trio':'gypsy jazz',
+      // Show Tunes
+      'judy garland':'show tunes','frank sinatra':'show tunes',
+      'sammy davis jr':'show tunes','liza minnelli':'show tunes',
+      'ethel merman':'show tunes','bernadette peters':'show tunes',
+      'audra mcdonald':'show tunes','patti lupone':'show tunes',
+      'mandy patinkin':'show tunes',
+      // Heavy Metal
+      'black sabbath':'heavy metal','metallica':'heavy metal',
+      'judas priest':'heavy metal','iron maiden':'heavy metal',
+      'megadeth':'heavy metal','anthrax':'heavy metal',
+      'slayer':'heavy metal','pantera':'heavy metal',
+      'ozzy osbourne':'heavy metal','accept':'heavy metal',
+      'testament':'heavy metal','exodus':'heavy metal',
+      'sepultura':'heavy metal','lamb of god':'heavy metal',
+      // Modal Jazz
+      'john coltrane':'modal jazz','wayne shorter':'modal jazz',
+      'bill evans':'modal jazz','mccoy tyner':'modal jazz',
+      'elvin jones':'modal jazz','ornette coleman':'modal jazz',
+      'eric dolphy':'modal jazz','charles mingus':'modal jazz',
+      // Cool Jazz
+      'dave brubeck':'cool jazz','dave brubeck quartet':'cool jazz',
+      'chet baker':'cool jazz','paul desmond':'cool jazz',
+      'gerry mulligan':'cool jazz','lee konitz':'cool jazz',
+      'stan getz':'cool jazz','art pepper':'cool jazz',
+      'zoot sims':'cool jazz','the modern jazz quartet':'cool jazz',
+      'modern jazz quartet':'cool jazz','gil evans':'cool jazz',
+      // Neo-Soul
+      "d'angelo":'neo-soul','erykah badu':'neo-soul',
+      'lauryn hill':'neo-soul','jill scott':'neo-soul',
+      'maxwell':'neo-soul','musiq soulchild':'neo-soul',
+      'bilal':'neo-soul','india.arie':'neo-soul',
+      'anthony hamilton':'neo-soul','frank ocean':'neo-soul',
+      'leon bridges':'neo-soul','anderson .paak':'neo-soul',
+      'anderson paak':'neo-soul','solange':'neo-soul','sade':'neo-soul',
+      // Bossa Nova
+      'joao gilberto':'bossa nova','joão gilberto':'bossa nova',
+      'astrud gilberto':'bossa nova',
+      'antonio carlos jobim':'bossa nova','jobim':'bossa nova',
+      'vinicius de moraes':'bossa nova','joao donato':'bossa nova',
+      'luiz bonfa':'bossa nova','sergio mendes':'bossa nova',
+      'brasil 66':'bossa nova',
+      // Ambient
+      'brian eno':'ambient','boards of canada':'ambient',
+      'harold budd':'ambient','stars of the lid':'ambient',
+      'sigur ros':'ambient','sigur rós':'ambient',
+      'the album leaf':'ambient','biosphere':'ambient','tim hecker':'ambient',
+      // Post-Rock
+      'explosions in the sky':'post-rock',
+      'godspeed you! black emperor':'post-rock',
+      'godspeed you black emperor':'post-rock',
+      'mogwai':'post-rock','tortoise':'post-rock',
+      'do make say think':'post-rock','mono':'post-rock',
+      'russian circles':'post-rock','pelican':'post-rock',
+      // Smooth Jazz
+      'kenny g':'smooth jazz','george benson':'smooth jazz',
+      'dave koz':'smooth jazz','david sanborn':'smooth jazz',
+      'grover washington jr':'smooth jazz','grover washington jr.':'smooth jazz',
+      'fourplay':'smooth jazz','larry carlton':'smooth jazz',
+      'lee ritenour':'smooth jazz','al jarreau':'smooth jazz',
+      'manhattan transfer':'smooth jazz',
+      // Chamber Pop
+      'sufjan stevens':'chamber pop','andrew bird':'chamber pop',
+      'the national':'chamber pop','national':'chamber pop',
+      'beirut':'chamber pop','joanna newsom':'chamber pop',
+      'feist':'chamber pop','camera obscura':'chamber pop',
+      'nick cave and the bad seeds':'chamber pop','nick cave':'chamber pop',
+      // Psychedelic Rock
+      'jefferson airplane':'psychedelic rock','grateful dead':'psychedelic rock',
+      'the doors':'psychedelic rock','doors':'psychedelic rock',
+      'the 13th floor elevators':'psychedelic rock',
+      'buffalo springfield':'psychedelic rock',
+      'the velvet underground':'psychedelic rock',
+      'velvet underground':'psychedelic rock',
+      'quicksilver messenger service':'psychedelic rock',
+      'moby grape':'psychedelic rock',
+      'the flaming lips':'psychedelic rock','flaming lips':'psychedelic rock',
+      'tame impala':'psychedelic rock','mgmt':'psychedelic rock',
+      'the black angels':'psychedelic rock','black angels':'psychedelic rock',
+      'the brian jonestown massacre':'psychedelic rock',
+      'syd barrett':'psychedelic rock',
+      // Southern Rock
+      'lynyrd skynyrd':'southern rock',
+      'charlie daniels band':'southern rock',
+      'marshall tucker band':'southern rock',
+      'molly hatchet':'southern rock','the outlaws':'southern rock',
+      'outlaws':'southern rock','atlanta rhythm section':'southern rock',
+      // Swamp Rock
+      'tony joe white':'swamp rock',
+      'the meters':'swamp rock','meters':'swamp rock',
+      'neville brothers':'swamp rock','the neville brothers':'swamp rock',
+      'professor longhair':'swamp rock','dr. john':'swamp rock','dr john':'swamp rock',
+      // Reggae
+      'bob marley':'reggae','bob marley and the wailers':'reggae',
+      'the wailers':'reggae','peter tosh':'reggae',
+      'jimmy cliff':'reggae','toots and the maytals':'reggae',
+      'burning spear':'reggae','steel pulse':'reggae',
+      'black uhuru':'reggae','bunny wailer':'reggae',
+      'gregory isaacs':'reggae','dennis brown':'reggae',
+      // Ska
+      'the specials':'ska','specials':'ska',
+      'madness':'ska','the selecter':'ska','selecter':'ska',
+      'the english beat':'ska','english beat':'ska',
+      'operation ivy':'ska','no doubt':'ska','sublime':'ska',
+      'reel big fish':'ska','less than jake':'ska',
+      'mighty mighty bosstones':'ska','desmond dekker':'ska',
+      // Swing
+      'benny goodman':'swing','glenn miller':'swing',
+      'count basie':'swing','duke ellington':'swing',
+      'artie shaw':'swing','tommy dorsey':'swing',
+      'jimmy dorsey':'swing','harry james':'swing',
+      'woody herman':'swing','lionel hampton':'swing',
+      'gene krupa':'swing','buddy rich':'swing',
+      'ella fitzgerald':'swing','sarah vaughan':'swing',
+      'dinah washington':'swing','nat king cole':'swing',
+      'tony bennett':'swing','mel torme':'swing','mel tormé':'swing',
+      // Jazz-Rock
+      'chicago':'jazz-rock','blood sweat and tears':'jazz-rock',
+      'blood sweat & tears':'jazz-rock',
+      // R&B
+      'usher':'rnb','beyonce':'rnb','beyoncé':'rnb',
+      'rihanna':'rnb','ne-yo':'rnb','chris brown':'rnb',
+      'mary j. blige':'rnb','mary j blige':'rnb',
+      'boyz ii men':'rnb',"destiny's child":'rnb','tlc':'rnb',
+      'janet jackson':'rnb','new edition':'rnb','brian mcknight':'rnb',
+    };
+
+    // BPM-range fallback: checked in order, first match wins
+    const BPM_STYLE_FALLBACK = [
+      { maxBpm:  62, style: 'soul ballad' },
+      { maxBpm:  72, style: 'acoustic folk' },
+      { maxBpm:  84, style: 'traditional blues' },
+      { maxBpm:  96, style: 'classic soul' },
+      { maxBpm: 108, style: 'soft rock' },
+      { maxBpm: 116, style: 'mainstream pop' },
+      { maxBpm: 126, style: 'pop rock' },
+      { maxBpm: 136, style: 'straight-ahead rock' },
+      { maxBpm: 148, style: 'hard rock' },
+      { maxBpm: 160, style: 'punk rock' },
+      { maxBpm: Infinity, style: 'electronic dance music' },
+    ];
+
+    function inferStyleFromArtistBpm(artist, bpm) {
+      if (artist) {
+        const key = String(artist).trim().toLowerCase();
+        if (ARTIST_STYLE_MAP[key]) return { style: ARTIST_STYLE_MAP[key], source: 'artist' };
+        // Try stripping common prefixes/suffixes ("the band" → "band")
+        const stripped = key.replace(/^the\s+/, '').replace(/\s+(band|group|orchestra|ensemble|quartet|trio|duo|experience|project)$/, '');
+        if (stripped !== key && ARTIST_STYLE_MAP[stripped]) return { style: ARTIST_STYLE_MAP[stripped], source: 'artist' };
+      }
+      if (bpm) {
+        const n = parseFloat(bpm);
+        if (n > 0) {
+          for (const row of BPM_STYLE_FALLBACK) {
+            if (n <= row.maxBpm) return { style: row.style, source: 'bpm' };
+          }
+        }
+      }
+      return null;
+    }
+
     /******************* CSV IMPORT: NORMALIZATION ENGINE *******************/
 
     const IMPORT_VALID_KEYS = new Set([
@@ -1011,10 +1606,20 @@
         changes.push({ field: "style", original: originalStyle, normalized: styleVal });
         warnings.push("style_aliased");
       }
-      // Validate against known styles
+      // Validate against known styles; attempt inference when missing or unknown
       const KNOWN_STYLES = new Set(Object.keys(ENERGY_MAP));
-      if (styleVal && !KNOWN_STYLES.has(styleVal)) {
-        warnings.push("style_unknown");
+      let styleInferred = false;
+      if (!styleVal || !KNOWN_STYLES.has(styleVal)) {
+        const inferred = inferStyleFromArtistBpm(artistVal.value, String(rawTempo).trim());
+        if (inferred) {
+          const prev = styleVal;
+          styleVal = inferred.style;
+          if (prev !== styleVal) changes.push({ field: "style", original: prev || "(blank)", normalized: styleVal + " (inferred)" });
+          warnings.push(inferred.source === 'artist' ? 'style_inferred_artist' : 'style_inferred_bpm');
+          styleInferred = true;
+        } else if (styleVal) {
+          warnings.push("style_unknown");
+        }
       }
 
       const k = opts.normalizeKeys ? importNormalizeKey(rawKey) : { value: String(rawKey).trim(), warnings: [], original: String(rawKey) };
@@ -1029,7 +1634,7 @@
       warnings.push(...v.warnings);
       if (v.original !== v.value) changes.push({ field: "vocalist", original: v.original, normalized: v.value });
 
-      const out = { title: t.value, artist: artistVal.value, duration: durationVal, style: styleVal, key: k.value, tempo: p.value, vocalist: v.value };
+      const out = { title: t.value, artist: artistVal.value, duration: durationVal, style: styleVal, key: k.value, tempo: p.value, vocalist: v.value, ...(styleInferred ? { styleInferred: true } : {}) };
       const rejectReason = !out.title ? "empty_title" : null;
       return { out, rejectReason, warnings, changes };
     }
@@ -3031,7 +3636,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                         <div className="song-title">{song.title}</div>
                         <div className="song-meta">
                           <span>{song.artist}</span>
-                          <span className={`song-badge style-${(song.style || '').replace(/\s+/g, '-')}`}>{song.style}</span>
+                          <span className={`song-badge style-${(song.style || '').replace(/\s+/g, '-')}`} title={song.styleInferred ? 'Style inferred — click Edit to confirm' : undefined}>{song.style}{song.styleInferred ? ' ⚡' : ''}</span>
                           <span>{parseDuration(song.duration)}min</span>
                           {song.key && <span>{song.key}</span>}
                           {song.bpm && <span>{song.bpm}bpm</span>}
@@ -3599,7 +4204,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       <div style={{ fontWeight: 600, fontSize: '.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{song.title}</div>
                       <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', display: 'flex', gap: '.4rem', flexWrap: 'wrap' }}>
                         <span>{song.artist}</span>
-                        {song.style && <span className={`song-badge style-${(song.style || '').replace(/\s+/g, '-')}`}>{song.style}</span>}
+                        {song.style && <span className={`song-badge style-${(song.style || '').replace(/\s+/g, '-')}`} title={song.styleInferred ? 'Style inferred — click Edit to confirm' : undefined}>{song.style}{song.styleInferred ? ' ⚡' : ''}</span>}
                         <span>{parseDuration(song.duration)}min</span>
                         {song.key && <span>{song.key}</span>}
                       </div>
@@ -3738,7 +4343,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   <div className="song-title">{song.title}</div>
                   <div className="song-meta">
                     <span>{song.artist}</span>
-                    <span className={`song-badge style-${(song.style || '').replace(/\s+/g, '-')}`}>{song.style}</span>
+                    <span className={`song-badge style-${(song.style || '').replace(/\s+/g, '-')}`} title={song.styleInferred ? 'Style inferred — click Edit to confirm' : undefined}>{song.style}{song.styleInferred ? ' ⚡' : ''}</span>
                     <span>{parseDuration(song.duration)}min</span>
                     {song.key && <span style={{ fontSize: '.7rem', color: 'var(--text-muted)' }}>{song.key}</span>}
                   </div>
@@ -3951,6 +4556,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         title_meta_paren_stripped: "Meta parenthetical stripped",
         style_aliased: "Style name mapped to standard vocabulary",
         style_unknown: "Style not in known styles list",
+        style_inferred_artist: "Style inferred from artist name lookup (⚡)",
+        style_inferred_bpm: "Style inferred from BPM range fallback (⚡)",
         artist_trimmed: "Artist whitespace trimmed"
       };
 
@@ -5200,15 +5807,27 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               const arrayBuffer = await file.arrayBuffer();
               const pageTexts = await pdfExtractText(arrayBuffer);
               const pdfSongs = pdfParseAllPages(pageTexts);
-              parsedSongs = pdfSongs.map(s => ({
-                title: sanitizeInput(s.title),
-                artist: sanitizeInput(s.artist),
-                duration: parseDuration(s.duration),
-                style: (s.style && PDF_KNOWN_STYLES.has(s.style.toLowerCase())) ? s.style.toLowerCase() : 'midtempo',
-                key: s.key || '',
-                bpm: s.bpm || '',
-                vocalist: s.vocalist || ''
-              }));
+              parsedSongs = pdfSongs.map(s => {
+                const rawStyle = s.style ? s.style.toLowerCase() : '';
+                const knownStyle = (rawStyle && PDF_KNOWN_STYLES.has(rawStyle)) ? rawStyle : '';
+                let inferredFlag = false;
+                let resolvedStyle = knownStyle;
+                if (!resolvedStyle) {
+                  const inf = inferStyleFromArtistBpm(s.artist, s.bpm);
+                  if (inf) { resolvedStyle = inf.style; inferredFlag = true; }
+                  else resolvedStyle = 'midtempo';
+                }
+                return {
+                  title: sanitizeInput(s.title),
+                  artist: sanitizeInput(s.artist),
+                  duration: parseDuration(s.duration),
+                  style: resolvedStyle,
+                  key: s.key || '',
+                  bpm: s.bpm || '',
+                  vocalist: s.vocalist || '',
+                  ...(inferredFlag ? { styleInferred: true } : {})
+                };
+              });
             } catch (err) {
               console.error('PDF parse error:', err);
               pdfErrors++;
