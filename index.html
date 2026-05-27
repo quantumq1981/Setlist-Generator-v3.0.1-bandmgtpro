@@ -1738,10 +1738,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const neighborScore = (arr) => {
           let sc = 0;
           for (let k = 1; k < arr.length; k++) {
+            // Pass full song objects so harmonicFriction and gravityBias bonuses are active
             sc += calculateTonalTransitionScore_TG(
-              { normalizedKey: arr[k-1].normalizedKey },
-              { normalizedKey: arr[k].normalizedKey },
-              k, len, smoothness, tonalOpts
+              arr[k-1], arr[k], k, len, smoothness, tonalOpts
             );
           }
           return sc;
@@ -1893,6 +1892,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           if (i > 0) {
             if (arr[i].style === arr[i - 1].style) c += 1.0;
             if (arr[i].artist === arr[i - 1].artist) c += 1.2;
+          }
+
+          // gravityGroup run penalty: 3+ consecutive songs from the same harmonic group
+          // creates monotonous harmonic journeys regardless of style variety
+          if (i > 1) {
+            const _gA = getGenreParams(arr[i - 2].style)?.gravityGroup;
+            const _gB = getGenreParams(arr[i - 1].style)?.gravityGroup;
+            const _gC = getGenreParams(arr[i].style)?.gravityGroup;
+            if (_gA && _gA === _gB && _gB === _gC) c += 0.7;
           }
 
           // PERF: Check affinities inline using O(1) Set lookups
@@ -2107,13 +2115,25 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       }
     };
 
-    // Returns a style bonus/penalty for a candidate at a given position in a template
+    // Returns a style bonus/penalty for a candidate at a given position in a template.
+    // First checks the explicit preferStyles list, then falls back to gravityGroup/energy
+    // compatibility so songs tagged with full canonical names still benefit from zone logic.
     function templateStylePenalty(style, position, templateName) {
       const template = SET_STRUCTURE_TEMPLATES[templateName];
       if (!template || !template.zones.length) return 0;
       const zone = template.zones.find(z => position >= z.start && position < z.end);
       if (!zone) return 0;
-      return zone.preferStyles.includes(style) ? -0.8 : 0.4; // bonus for match, penalty for mismatch
+      if (zone.preferStyles.includes(style)) return -0.8; // explicit style match: bonus
+      // gravityGroup fallback: avoid mismatch-penalizing songs that are harmonically appropriate
+      const gp = getGenreParams(style);
+      if (gp) {
+        const lbl = zone.label || '';
+        const isHighZone = /opener|peak|throttle|finish/i.test(lbl);
+        const isRestZone = /closer|valley|mellow|breather|cool/i.test(lbl);
+        if (isHighZone && (gp.gravityGroup <= 2) && gp.baseEnergy >= 7) return 0;  // high-energy anchor/modal: neutral
+        if (isRestZone && (gp.gravityGroup === 4 || gp.gravityGroup === 1) && gp.baseEnergy <= 5) return 0; // floaters/anchors: neutral
+      }
+      return 0.4; // default mismatch penalty
     }
 
     /******************* CORE GENERATOR (PHASE 2 OPTIMIZED) *******************/
@@ -2394,6 +2414,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             if (last) {
               if (s.style === last.style) diversityPenalty += 1.25;
               if (s.artist === last.artist) diversityPenalty += 1.0;
+              // gravityGroup run: penalize becoming a 3rd consecutive same-group song
+              const _sgp = getGenreParams(s.style);
+              const _lgp = getGenreParams(last.style);
+              if (_sgp && _lgp && _sgp.gravityGroup === _lgp.gravityGroup) {
+                const _prev2 = setArr.filter(Boolean).slice(-2, -1)[0];
+                if (_prev2 && getGenreParams(_prev2.style)?.gravityGroup === _sgp.gravityGroup) {
+                  diversityPenalty += 0.8;
+                }
+              }
             }
             diversityPenalty *= diversityWeight;
 
