@@ -74,6 +74,29 @@
       --swamp-rock: #4e8c45;
       --jazz-rock: #c8893a;
       --americana: #b07a38;
+      /* Group 1 — Diatonic Anchors */
+      --acoustic-folk:#93c5fd; --traditional-blues:#818cf8; --classic-country:#d97706;
+      --straight-ahead-rock:#ef4444; --roots-americana:#b07a38; --power-pop:#f97316;
+      --gospel-ballads:#fde68a; --doo-wop:#d8b4fe; --soft-rock:#a5b4fc;
+      --soul-ballad:#f9a8d4; --pop-ballad:#7dd3fc; --bluegrass:#86efac;
+      --punk-rock:#fb7185; --mainstream-pop:#38bdf8; --electronic-dance-music:#a3e635;
+      --surf-rock:#34d399;
+      /* Group 2 — Modal/Funk Middle Ground */
+      --motown:#c026d3; --classic-soul:#f472b6; --pop-rock:#fb923c;
+      --modern-country:#b45309; --rockabilly:#f87171; --up-tempo-funk:#a78bfa;
+      --yacht-rock:#67e8f9; --indie-pop:#f9a8d4; --latin-groove:#f0abfc;
+      --new-wave:#818cf8; --disco:#e879f9; --gospel-up-tempo:#fbbf24;
+      --hard-rock:#dc2626; --grunge:#78716c; --alternative-rock:#6b7280;
+      --hip-hop-groove:#ec4899; --salsa:#f97316;
+      /* Group 3 — Chromatic Navigators */
+      --bebop:#9333ea; --hard-bop:#7c3aed; --jazz-fusion:#6d28d9;
+      --progressive-rock:#4f46e5; --math-rock:#2563eb; --afro-cuban-jazz:#b45309;
+      --gypsy-jazz:#ca8a04; --show-tunes:#e11d48; --heavy-metal:#64748b;
+      /* Group 4 — Harmonic Floaters */
+      --modal-jazz:#c4b5fd; --cool-jazz:#c084fc; --neo-soul:#f472b6;
+      --bossa-nova:#c4b5fd; --ambient:#bfdbfe; --post-rock:#93c5fd;
+      --impressionist:#ddd6fe; --smooth-jazz:#7dd3fc; --chamber-pop:#e9d5ff;
+      --psychedelic-rock:#a78bfa;
       --locked: #4ade80;
       --toast-bg: rgba(45,45,45,.95);
     }
@@ -176,6 +199,38 @@
     .style-southern-rock{background:var(--southern-rock); color:#fff;} .style-blues-rock{background:var(--blues-rock); color:#fff;}
     .style-swamp-rock{background:var(--swamp-rock); color:#fff;} .style-jazz-rock{background:var(--jazz-rock); color:#111;}
     .style-americana{background:var(--americana); color:#111;}
+    /* ── Genre Database canonical style badges ─────────────────────────────── */
+    /* Group 1 */
+    .style-acoustic-folk{background:var(--acoustic-folk);color:#111;} .style-traditional-blues{background:var(--traditional-blues);color:#fff;}
+    .style-classic-country{background:var(--classic-country);color:#111;} .style-straight-ahead-rock{background:var(--straight-ahead-rock);color:#fff;}
+    .style-roots-americana{background:var(--roots-americana);color:#111;} .style-power-pop{background:var(--power-pop);color:#111;}
+    .style-gospel-ballads{background:var(--gospel-ballads);color:#111;} .style-doo-wop{background:var(--doo-wop);color:#111;}
+    .style-soft-rock{background:var(--soft-rock);color:#111;} .style-soul-ballad{background:var(--soul-ballad);color:#111;}
+    .style-pop-ballad{background:var(--pop-ballad);color:#111;} .style-bluegrass{background:var(--bluegrass);color:#111;}
+    .style-punk-rock{background:var(--punk-rock);color:#111;} .style-mainstream-pop{background:var(--mainstream-pop);color:#111;}
+    .style-electronic-dance-music{background:var(--electronic-dance-music);color:#111;} .style-surf-rock{background:var(--surf-rock);color:#111;}
+    /* Group 2 */
+    .style-motown{background:var(--motown);color:#fff;} .style-classic-soul{background:var(--classic-soul);color:#111;}
+    .style-pop-rock{background:var(--pop-rock);color:#111;} .style-modern-country{background:var(--modern-country);color:#111;}
+    .style-rockabilly{background:var(--rockabilly);color:#111;} .style-up-tempo-funk{background:var(--up-tempo-funk);color:#111;}
+    .style-yacht-rock{background:var(--yacht-rock);color:#111;} .style-indie-pop{background:var(--indie-pop);color:#111;}
+    .style-latin-groove{background:var(--latin-groove);color:#111;} .style-new-wave{background:var(--new-wave);color:#fff;}
+    .style-disco{background:var(--disco);color:#111;} .style-gospel-up-tempo{background:var(--gospel-up-tempo);color:#111;}
+    .style-hard-rock{background:var(--hard-rock);color:#fff;} .style-grunge{background:var(--grunge);color:#fff;}
+    .style-alternative-rock{background:var(--alternative-rock);color:#fff;} .style-hip-hop-groove{background:var(--hip-hop-groove);color:#111;}
+    .style-salsa{background:var(--salsa);color:#111;}
+    /* Group 3 */
+    .style-bebop{background:var(--bebop);color:#fff;} .style-hard-bop{background:var(--hard-bop);color:#fff;}
+    .style-jazz-fusion{background:var(--jazz-fusion);color:#fff;} .style-progressive-rock{background:var(--progressive-rock);color:#fff;}
+    .style-math-rock{background:var(--math-rock);color:#fff;} .style-afro-cuban-jazz{background:var(--afro-cuban-jazz);color:#111;}
+    .style-gypsy-jazz{background:var(--gypsy-jazz);color:#111;} .style-show-tunes{background:var(--show-tunes);color:#fff;}
+    .style-heavy-metal{background:var(--heavy-metal);color:#fff;}
+    /* Group 4 */
+    .style-modal-jazz{background:var(--modal-jazz);color:#111;} .style-cool-jazz{background:var(--cool-jazz);color:#111;}
+    .style-neo-soul{background:var(--neo-soul);color:#111;} .style-bossa-nova{background:var(--bossa-nova);color:#111;}
+    .style-ambient{background:var(--ambient);color:#111;} .style-post-rock{background:var(--post-rock);color:#111;}
+    .style-impressionist{background:var(--impressionist);color:#111;} .style-smooth-jazz{background:var(--smooth-jazz);color:#111;}
+    .style-chamber-pop{background:var(--chamber-pop);color:#111;} .style-psychedelic-rock{background:var(--psychedelic-rock);color:#111;}
 
     .setlists-container { display:grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1rem; }
     .setlist { background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
@@ -655,6 +710,25 @@
       GENRE_PARAMS[_g.style.toLowerCase()] = _g;
     }
 
+    // Legacy key mappings: old ENERGY_MAP simple keys → nearest GENRE_DATABASE params.
+    // Allows songs already stored with short style names to benefit from tonal parameters.
+    const _LEGACY = {
+      'rock': 'straight-ahead rock', 'blues': 'traditional blues', 'jazz': 'cool jazz',
+      'funk': 'up-tempo funk',       'soul': 'classic soul',        'rnb': 'r&b',
+      'midtempo': 'mainstream pop',  'uptempo': 'surf rock',        'ballad': 'soul ballad',
+      'acoustic': 'acoustic folk',   'bossa': 'bossa nova',         'latin': 'latin groove',
+      'country': 'classic country',  'americana': 'roots americana','groove': 'hip-hop groove',
+      'shuffle': 'blues-rock',       'metal': 'heavy metal',        'edm': 'electronic dance music',
+      'pop': 'mainstream pop',       'punk': 'punk rock',           'ska': 'ska',
+      'reggae': 'reggae',            'swing': 'swing',              'waltz': 'waltz',
+      'slow blues': 'traditional blues', 'blues rock': 'blues-rock',
+      'swamp rock': 'swamp rock',    'southern rock': 'southern rock',
+      'jazz-rock': 'jazz fusion',    'blues-rock': 'blues-rock',
+    };
+    for (const [legKey, canKey] of Object.entries(_LEGACY)) {
+      if (!GENRE_PARAMS[legKey] && GENRE_PARAMS[canKey]) GENRE_PARAMS[legKey] = GENRE_PARAMS[canKey];
+    }
+
     const ENERGY_MAP = {
       ballad: 2, acoustic: 2.5, waltz: 3, bossa: 3.5, blues: 3.5, jazz: 3.5,
       'slow blues': 2.5, latin: 4,
@@ -880,75 +954,55 @@
         durationVal = (num > 0) ? String(num) : "";
       }
 
-      // Style: normalize to lowercase, map known aliases
+      // Style: normalize to lowercase, map known aliases.
+      // OLD simple ENERGY_MAP keys (rock, blues, jazz, funk, midtempo, soul, etc.) are NOT
+      // remapped here — they already have CSS badges and ENERGY_MAP entries. Only genuine
+      // user-input variants and new full canonical name shorthands are aliased.
       const STYLE_ALIASES = {
-        // ── Group 1 aliases ────────────────────────────────────────────────────
-        'folk': 'acoustic folk', 'acoustic': 'acoustic folk', 'singer-songwriter': 'acoustic folk',
-        'blues': 'traditional blues', 'slow blues': 'traditional blues', 'delta blues': 'traditional blues',
-        'country': 'classic country', 'classic country': 'classic country',
-        'classic rock': 'straight-ahead rock', 'rock': 'straight-ahead rock',
-        'americana': 'roots americana', 'americana rock': 'roots americana', 'roots rock': 'roots americana',
-        'power pop': 'power pop',
-        'gospel': 'gospel ballads', 'gospel ballads': 'gospel ballads',
-        'doo wop': 'doo-wop', 'doo-wop': 'doo-wop',
-        'soft rock': 'soft rock',
-        'ballad': 'soul ballad', 'slow ballad': 'soul ballad',
-        'waltz': 'waltz',
-        'pop ballad': 'pop ballad',
-        'bluegrass': 'bluegrass',
-        'punk': 'punk rock', 'punk rock': 'punk rock',
-        'pop': 'mainstream pop', 'midtempo': 'mainstream pop',
-        'edm': 'electronic dance music', 'electronic': 'electronic dance music', 'dance': 'electronic dance music',
-        'surf': 'surf rock', 'surf rock': 'surf rock',
-        // ── Group 2 aliases ────────────────────────────────────────────────────
-        'blues rock': 'blues-rock', 'fast blues': 'blues-rock',
-        'motown': 'motown',
-        'soul': 'classic soul',
-        'r&b': 'r&b', 'r and b': 'r&b', 'rnb': 'r&b',
-        'pop rock': 'pop-rock', 'pop-rock': 'pop-rock',
-        'modern country': 'modern country', 'country pop': 'modern country',
-        'ska': 'ska',
-        'rockabilly': 'rockabilly',
-        'funk': 'up-tempo funk', 'uptempo funk': 'up-tempo funk',
-        'yacht rock': 'yacht rock',
-        'reggae': 'reggae',
-        'indie': 'indie pop', 'indie pop': 'indie pop',
-        'swing': 'swing',
-        'latin': 'latin groove', 'latin groove': 'latin groove',
-        'new wave': 'new wave',
-        'disco': 'disco',
-        'swamp rock': 'swamp rock', 'swamp': 'swamp rock',
-        'southern rock': 'southern rock', 'southern': 'southern rock',
+        // ── Original aliases: variant inputs → existing simple style keys ─────────
+        'classic rock': 'rock',
+        'slow blues': 'blues',
+        'fast blues': 'blues-rock', 'blues rock': 'blues-rock',
+        'r&b': 'rnb', 'r and b': 'rnb',
+        'hip hop': 'groove', 'hip-hop': 'groove', 'hiphop': 'groove',
+        'bossa nova': 'bossa',
+        'folk': 'acoustic', 'singer-songwriter': 'acoustic', 'singer songwriter': 'acoustic',
+        'alternative': 'rock', 'grunge': 'rock',
+        'heavy metal': 'metal',
+        'electronic': 'edm', 'dance': 'edm',
+        'disco': 'funk',
+        'southern': 'southern rock',
+        'swamp': 'swamp rock', 'swamp-rock': 'swamp rock',
+        'americana rock': 'americana', 'roots rock': 'americana',
+        'jazz rock': 'jazz-rock',
+        'indie': 'midtempo',
+        'soft rock': 'midtempo',
+        'hard rock': 'rock',
+        // ── Shorthand inputs → new canonical names (all have CSS badges now) ──────
+        'alt rock': 'alternative rock',
+        'surf': 'surf rock',
+        'punk rock': 'punk rock',
+        'gospel': 'gospel ballads',
         'gospel rock': 'gospel up-tempo', 'gospel uptempo': 'gospel up-tempo',
-        'hard rock': 'hard rock',
-        'grunge': 'grunge',
-        'alternative': 'alternative rock', 'alt rock': 'alternative rock',
-        'hip hop': 'hip-hop groove', 'hip-hop': 'hip-hop groove', 'hiphop': 'hip-hop groove',
-        'salsa': 'salsa',
-        // ── Group 3 aliases ────────────────────────────────────────────────────
-        'bebop': 'bebop',
-        'hard bop': 'hard bop',
-        'jazz fusion': 'jazz fusion', 'fusion': 'jazz fusion', 'jazz rock': 'jazz fusion',
-        'prog rock': 'progressive rock', 'prog': 'progressive rock', 'progressive rock': 'progressive rock',
-        'math rock': 'math rock',
+        'doo wop': 'doo-wop',
+        'ballad': 'soul ballad', 'slow ballad': 'soul ballad',
+        'bluegrass': 'bluegrass',
+        'neo soul': 'neo-soul',
+        'post rock': 'post-rock',
+        'smooth': 'smooth jazz',
+        'prog': 'progressive rock', 'prog rock': 'progressive rock',
+        'fusion': 'jazz fusion',
         'afro cuban': 'afro-cuban jazz', 'afro-cuban': 'afro-cuban jazz',
-        'gypsy jazz': 'gypsy jazz',
-        'show tunes': 'show tunes', 'broadway': 'show tunes', 'musical theatre': 'show tunes',
-        'metal': 'heavy metal', 'heavy metal': 'heavy metal',
-        // ── Group 4 aliases ────────────────────────────────────────────────────
-        'modal jazz': 'modal jazz',
-        'jazz': 'cool jazz', 'cool jazz': 'cool jazz',
-        'neo soul': 'neo-soul', 'neo-soul': 'neo-soul',
-        'bossa': 'bossa nova', 'bossa nova': 'bossa nova',
-        'ambient': 'ambient',
-        'post rock': 'post-rock', 'post-rock': 'post-rock',
-        'impressionist': 'impressionist',
-        'smooth jazz': 'smooth jazz', 'smooth': 'smooth jazz',
-        'chamber pop': 'chamber pop', 'chamber': 'chamber pop',
-        'psychedelic': 'psychedelic rock', 'psych': 'psychedelic rock', 'psych rock': 'psychedelic rock',
-        // ── Legacy catch-alls (kept for backward compatibility) ────────────────
-        'groove': 'hip-hop groove', 'uptempo': 'straight-ahead rock',
-        'shuffle': 'blues-rock', 'blues-rock': 'blues-rock',
+        'broadway': 'show tunes', 'musical theatre': 'show tunes',
+        'psych': 'psychedelic rock', 'psych rock': 'psychedelic rock', 'psychedelic': 'psychedelic rock',
+        'chamber': 'chamber pop',
+        'doo-wop': 'doo-wop',
+        'motown': 'motown', 'rockabilly': 'rockabilly', 'salsa': 'salsa',
+        'bluegrass': 'bluegrass', 'new wave': 'new wave',
+        'yacht rock': 'yacht rock', 'bebop': 'bebop', 'hard bop': 'hard bop',
+        'gypsy jazz': 'gypsy jazz', 'math rock': 'math rock',
+        'country pop': 'modern country',
+        'uptempo funk': 'up-tempo funk',
       };
       let styleVal = String(rawStyle).trim().toLowerCase();
       if (STYLE_ALIASES[styleVal]) {
