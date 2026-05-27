@@ -575,6 +575,86 @@
       }
     };
 
+    // ─── GENRE DATABASE ───────────────────────────────────────────────────────────
+    // Canonical style definitions mapping each genre to Circle-of-Fifths parameters.
+    // baseEnergy (1–10), gravityGroup (1=diatonic anchor→4=harmonic floater),
+    // harmonicFriction (Low/Mid/High/Fluid), gravityBias (Static/Clockwise/Counterclockwise/Fluid)
+    const GENRE_DATABASE = [
+      // Group 1 — Diatonic Anchors: strongly tonal, low internal friction
+      { style: "Acoustic Folk",           baseEnergy:  3, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Static",           description: "Highly diatonic, low-energy breather for pacing between summits." },
+      { style: "Traditional Blues",       baseEnergy:  4, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Counterclockwise", description: "Standard I-IV-V progression moving toward subdominant, providing grounded release." },
+      { style: "Classic Country",         baseEnergy:  4, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Static",           description: "Strong tonal center, low friction anchor." },
+      { style: "Straight-Ahead Rock",     baseEnergy:  9, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Clockwise",        description: "High momentum, highly diatonic but pushes sharp for energy lifts." },
+      { style: "Roots Americana",         baseEnergy:  5, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Counterclockwise", description: "Plagal cadences (IV-I) provide a grounded, descending resolution." },
+      { style: "Power Pop",               baseEnergy:  8, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Clockwise",        description: "Diatonic but bright and aggressive; immediate high-energy lift." },
+      { style: "Gospel Ballads",          baseEnergy:  3, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Clockwise",        description: "Low tempo but utilizes secondary dominants to create powerful harmonic lift." },
+      { style: "Doo-Wop",                 baseEnergy:  4, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Static",           description: "Cyclical I-vi-IV-V movement, heavily anchored and completely static on the circle." },
+      { style: "Soft Rock",               baseEnergy:  4, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Counterclockwise", description: "Acoustic-driven, heavily diatonic, providing a gentle off-ramp after high energy." },
+      { style: "Soul Ballad",             baseEnergy:  2, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Counterclockwise", description: "Simple I-IV-V-I with dramatic pauses; perfect opener or closer." },
+      { style: "Waltz",                   baseEnergy:  3, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Static",           description: "Three-quarter time, diatonic and circular; natural set-anchor at any energy level." },
+      { style: "Pop Ballad",              baseEnergy:  3, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Clockwise",        description: "Formulaic diatonic structure with a predictable key change into the final chorus." },
+      { style: "Bluegrass",               baseEnergy:  5, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Clockwise",        description: "Rapid I-IV-V runs with frequent forward modulations to dominant keys." },
+      { style: "Punk Rock",               baseEnergy:  9, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Static",           description: "Pure diatonic power chord aggression; maximum energy with minimal harmonic movement." },
+      { style: "Mainstream Pop",          baseEnergy:  5, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Clockwise",        description: "Four-chord loop (I-V-vi-IV) with predictable modulations for accessible lifts." },
+      { style: "Electronic Dance Music",  baseEnergy:  9, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Clockwise",        description: "Loop-based with strong tonic anchoring and predictable half-step builds at drops." },
+      { style: "Surf Rock",               baseEnergy:  7, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Clockwise",        description: "Diatonic, driving dominant-7th runs with bright forward momentum." },
+
+      // Group 2 — Modal/Funk Middle Ground: modal borrowing, moderate friction
+      { style: "Blues-Rock",              baseEnergy:  8, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Counterclockwise", description: "Swampy, relies heavily on subdominant (IV) and flat-VII for high-energy release." },
+      { style: "Motown",                  baseEnergy:  7, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Counterclockwise", description: "Smooth voice-leading, often resolving into flat keys for a warm, driving landing." },
+      { style: "Classic Soul",            baseEnergy:  6, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Counterclockwise", description: "Deep groove, patient low-friction build perfect for a 'Slow Burn' preset." },
+      { style: "R&B",                     baseEnergy:  6, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Counterclockwise", description: "Moderate energy, utilizes secondary dominants but consistently resolves downward." },
+      { style: "Pop-Rock",                baseEnergy:  7, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Clockwise",        description: "Frequent upward/truck-driver modulations to reinforce a 'Classic Arc' peak." },
+      { style: "Modern Country",          baseEnergy:  6, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Clockwise",        description: "Borrows from pop-rock structure, pushing sharp for choruses." },
+      { style: "Ska",                     baseEnergy:  8, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Static",           description: "High kinetic rhythm with grounded, repetitive I-IV-V horn lines." },
+      { style: "Rockabilly",              baseEnergy:  8, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Static",           description: "Driving dominant 7th chords that create tension without leaving the immediate key neighborhood." },
+      { style: "Up-Tempo Funk",           baseEnergy:  9, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Static",           description: "High kinetic energy, heavily vamped. High momentum but static gravity." },
+      { style: "Yacht Rock",              baseEnergy:  5, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Counterclockwise", description: "Polished chord extensions that slide smoothly downward; excellent mid-set stabilizer." },
+      { style: "Reggae",                  baseEnergy:  5, gravityGroup: 2, harmonicFriction: "Low",   gravityBias: "Static",           description: "Anchored, repetitive harmonic loops creating a hypnotic, mid-energy plateau." },
+      { style: "Indie Pop",               baseEnergy:  6, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Clockwise",        description: "Bright, upward-pushing melodies anchored over slightly ambiguous synth/guitar beds." },
+      { style: "Swing",                   baseEnergy:  5, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Clockwise",        description: "Dominant-driven momentum providing steady clockwise movement." },
+      { style: "Latin Groove",            baseEnergy:  6, gravityGroup: 2, harmonicFriction: "Low",   gravityBias: "Static",           description: "Clave-driven vamp with static harmonic loops creating high kinetic energy." },
+      { style: "New Wave",                baseEnergy:  7, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Clockwise",        description: "Synth-driven with strong dominant push into the chorus." },
+      { style: "Disco",                   baseEnergy:  8, gravityGroup: 2, harmonicFriction: "Low",   gravityBias: "Static",           description: "Mechanical rhythmic groove on dominant 7th vamps; kinetically high but tonally static." },
+      { style: "Swamp Rock",              baseEnergy:  5, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Counterclockwise", description: "Dark, muddy V-IV-I resolutions drifting consistently flatward." },
+      { style: "Southern Rock",           baseEnergy:  7, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Counterclockwise", description: "Blues-influenced flat-VII and IV chords providing earthy, downward resolution." },
+      { style: "Gospel Up-Tempo",         baseEnergy:  8, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Clockwise",        description: "Call-and-response with strong dominant push; powerful lift mechanism." },
+      { style: "Hard Rock",               baseEnergy:  9, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Clockwise",        description: "Pentatonic riffs with strong dominant-to-tonic resolutions creating forward momentum." },
+      { style: "Grunge",                  baseEnergy:  8, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Counterclockwise", description: "Detuned, dirge-like progressions favoring flat-VII and subdominant resolutions." },
+      { style: "Alternative Rock",        baseEnergy:  7, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Counterclockwise", description: "Post-grunge modal borrowing with a tendency toward flatward movement." },
+      { style: "Hip-Hop Groove",          baseEnergy:  6, gravityGroup: 2, harmonicFriction: "Low",   gravityBias: "Static",           description: "Sample-based, cyclical minor-key vamps with rhythmic dominance over harmony." },
+      { style: "Salsa",                   baseEnergy:  9, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Static",           description: "Clave-locked harmonic vamping with sophisticated rhythmic counterpoint; kinetically explosive." },
+
+      // Group 3 — Chromatic Navigators: complex modulations, high internal friction
+      { style: "Bebop",                   baseEnergy:  8, gravityGroup: 3, harmonicFriction: "High",  gravityBias: "Clockwise",        description: "Rapid ii-V-I chains pushing through dominants; creates continuous forward lift." },
+      { style: "Hard Bop",                baseEnergy:  8, gravityGroup: 3, harmonicFriction: "High",  gravityBias: "Static",           description: "Complex modulations but mathematically balanced directionally. High friction, high energy." },
+      { style: "Jazz Fusion",             baseEnergy:  9, gravityGroup: 3, harmonicFriction: "High",  gravityBias: "Fluid",            description: "Aggressive, unmoored harmonic leaps combined with intense rhythmic peaks." },
+      { style: "Progressive Rock",        baseEnergy:  8, gravityGroup: 3, harmonicFriction: "High",  gravityBias: "Clockwise",        description: "Constant key and time shifts demanding active listening and generating tension." },
+      { style: "Math Rock",               baseEnergy:  9, gravityGroup: 3, harmonicFriction: "High",  gravityBias: "Fluid",            description: "Angular, dissonant, and harmonically unpredictable. Pure tension generator." },
+      { style: "Afro-Cuban Jazz",         baseEnergy:  9, gravityGroup: 3, harmonicFriction: "High",  gravityBias: "Static",           description: "Complex harmonic substitution locked over heavily grounded, high-energy claves." },
+      { style: "Gypsy Jazz",              baseEnergy:  8, gravityGroup: 3, harmonicFriction: "High",  gravityBias: "Clockwise",        description: "Relentless dominant drive and chromatic enclosures generating high forward momentum." },
+      { style: "Show Tunes",              baseEnergy:  7, gravityGroup: 3, harmonicFriction: "High",  gravityBias: "Clockwise",        description: "Direct, non-diatonic modulations engineered specifically to force artificial lifts." },
+      { style: "Heavy Metal",             baseEnergy: 10, gravityGroup: 3, harmonicFriction: "High",  gravityBias: "Counterclockwise", description: "Descending chromatic riffs and tritone substitutions driving aggressively flatward." },
+
+      // Group 4 — Harmonic Floaters: modal/suspended harmony, detached from tonal gravity
+      { style: "Modal Jazz",              baseEnergy:  4, gravityGroup: 4, harmonicFriction: "Fluid", gravityBias: "Fluid",            description: "Suspended harmony, acts as the ultimate low-friction bridge between contrasting keys." },
+      { style: "Cool Jazz",               baseEnergy:  4, gravityGroup: 4, harmonicFriction: "Fluid", gravityBias: "Fluid",            description: "Restrained, polyphonic textures that obscure the tonal center." },
+      { style: "Neo-Soul",                baseEnergy:  5, gravityGroup: 4, harmonicFriction: "Fluid", gravityBias: "Counterclockwise", description: "Fluid, rootless transitions moving flatward for a sophisticated release." },
+      { style: "Bossa Nova",              baseEnergy:  4, gravityGroup: 4, harmonicFriction: "Fluid", gravityBias: "Counterclockwise", description: "Cyclical progressions that resolve downward; excellent for a controlled landing." },
+      { style: "Ambient",                 baseEnergy:  2, gravityGroup: 4, harmonicFriction: "Fluid", gravityBias: "Fluid",            description: "Atmospheric and completely detached from traditional harmonic gravity." },
+      { style: "Post-Rock",               baseEnergy:  5, gravityGroup: 4, harmonicFriction: "Fluid", gravityBias: "Clockwise",        description: "Harmonically suspended but utilizes massive textural/dynamic builds for lift." },
+      { style: "Impressionist",           baseEnergy:  2, gravityGroup: 4, harmonicFriction: "Fluid", gravityBias: "Fluid",            description: "Parallel chord movement masking any true tonal center; excellent reset mechanism." },
+      { style: "Smooth Jazz",             baseEnergy:  4, gravityGroup: 4, harmonicFriction: "Fluid", gravityBias: "Counterclockwise", description: "Highly polished, floating harmony that gently descends for easy landings." },
+      { style: "Chamber Pop",             baseEnergy:  3, gravityGroup: 4, harmonicFriction: "Fluid", gravityBias: "Fluid",            description: "Orchestral textures providing a lush, ambiguous harmonic bed." },
+      { style: "Psychedelic Rock",        baseEnergy:  6, gravityGroup: 4, harmonicFriction: "Fluid", gravityBias: "Fluid",            description: "Modal, droning, and deliberately disorienting; versatile bridge between any two styles." },
+    ];
+
+    // O(1) lookup: normalized lowercase style name → full genre parameter object
+    const GENRE_PARAMS = Object.create(null);
+    for (const _g of GENRE_DATABASE) {
+      GENRE_PARAMS[_g.style.toLowerCase()] = _g;
+    }
+
     const ENERGY_MAP = {
       ballad: 2, acoustic: 2.5, waltz: 3, bossa: 3.5, blues: 3.5, jazz: 3.5,
       'slow blues': 2.5, latin: 4,
@@ -583,6 +663,11 @@
       funk: 6, rock: 6.5, uptempo: 7, ska: 6.5, 'southern rock': 6.5,
       punk: 8, metal: 9, edm: 8.5, pop: 5
     };
+    // Extend ENERGY_MAP with all GENRE_DATABASE entries (full-name lowercase keys)
+    for (const _gd of GENRE_DATABASE) {
+      const _ek = _gd.style.toLowerCase();
+      if (!(_ek in ENERGY_MAP)) ENERGY_MAP[_ek] = _gd.baseEnergy;
+    }
 
     // Continuous energy curve: smooth sinusoidal arc replacing the old 4-zone step function.
     // curveType selects a preset shape; each preset has amplitude, frequency, phase, and baseline.
@@ -611,6 +696,9 @@
       return 4; // neutral default for songs with no data
     }
 
+    function getGenreParams(style) {
+      return style ? (GENRE_PARAMS[style.toLowerCase()] || null) : null;
+    }
 
     /******************* CSV IMPORT: NORMALIZATION ENGINE *******************/
 
@@ -794,14 +882,73 @@
 
       // Style: normalize to lowercase, map known aliases
       const STYLE_ALIASES = {
-        'classic rock': 'rock', 'hard rock': 'rock', 'soft rock': 'midtempo',
-        'slow blues': 'blues', 'fast blues': 'shuffle', 'r&b': 'rnb', 'r and b': 'rnb',
-        'hip hop': 'groove', 'hip-hop': 'groove', 'bossa nova': 'bossa',
-        'folk': 'acoustic', 'singer-songwriter': 'acoustic', 'alternative': 'rock',
-        'indie': 'midtempo', 'grunge': 'rock', 'heavy metal': 'metal',
-        'electronic': 'edm', 'dance': 'edm', 'disco': 'funk',
-        'southern': 'southern rock', 'swamp': 'swamp rock',
-        'americana rock': 'americana', 'roots rock': 'americana'
+        // ── Group 1 aliases ────────────────────────────────────────────────────
+        'folk': 'acoustic folk', 'acoustic': 'acoustic folk', 'singer-songwriter': 'acoustic folk',
+        'blues': 'traditional blues', 'slow blues': 'traditional blues', 'delta blues': 'traditional blues',
+        'country': 'classic country', 'classic country': 'classic country',
+        'classic rock': 'straight-ahead rock', 'rock': 'straight-ahead rock',
+        'americana': 'roots americana', 'americana rock': 'roots americana', 'roots rock': 'roots americana',
+        'power pop': 'power pop',
+        'gospel': 'gospel ballads', 'gospel ballads': 'gospel ballads',
+        'doo wop': 'doo-wop', 'doo-wop': 'doo-wop',
+        'soft rock': 'soft rock',
+        'ballad': 'soul ballad', 'slow ballad': 'soul ballad',
+        'waltz': 'waltz',
+        'pop ballad': 'pop ballad',
+        'bluegrass': 'bluegrass',
+        'punk': 'punk rock', 'punk rock': 'punk rock',
+        'pop': 'mainstream pop', 'midtempo': 'mainstream pop',
+        'edm': 'electronic dance music', 'electronic': 'electronic dance music', 'dance': 'electronic dance music',
+        'surf': 'surf rock', 'surf rock': 'surf rock',
+        // ── Group 2 aliases ────────────────────────────────────────────────────
+        'blues rock': 'blues-rock', 'fast blues': 'blues-rock',
+        'motown': 'motown',
+        'soul': 'classic soul',
+        'r&b': 'r&b', 'r and b': 'r&b', 'rnb': 'r&b',
+        'pop rock': 'pop-rock', 'pop-rock': 'pop-rock',
+        'modern country': 'modern country', 'country pop': 'modern country',
+        'ska': 'ska',
+        'rockabilly': 'rockabilly',
+        'funk': 'up-tempo funk', 'uptempo funk': 'up-tempo funk',
+        'yacht rock': 'yacht rock',
+        'reggae': 'reggae',
+        'indie': 'indie pop', 'indie pop': 'indie pop',
+        'swing': 'swing',
+        'latin': 'latin groove', 'latin groove': 'latin groove',
+        'new wave': 'new wave',
+        'disco': 'disco',
+        'swamp rock': 'swamp rock', 'swamp': 'swamp rock',
+        'southern rock': 'southern rock', 'southern': 'southern rock',
+        'gospel rock': 'gospel up-tempo', 'gospel uptempo': 'gospel up-tempo',
+        'hard rock': 'hard rock',
+        'grunge': 'grunge',
+        'alternative': 'alternative rock', 'alt rock': 'alternative rock',
+        'hip hop': 'hip-hop groove', 'hip-hop': 'hip-hop groove', 'hiphop': 'hip-hop groove',
+        'salsa': 'salsa',
+        // ── Group 3 aliases ────────────────────────────────────────────────────
+        'bebop': 'bebop',
+        'hard bop': 'hard bop',
+        'jazz fusion': 'jazz fusion', 'fusion': 'jazz fusion', 'jazz rock': 'jazz fusion',
+        'prog rock': 'progressive rock', 'prog': 'progressive rock', 'progressive rock': 'progressive rock',
+        'math rock': 'math rock',
+        'afro cuban': 'afro-cuban jazz', 'afro-cuban': 'afro-cuban jazz',
+        'gypsy jazz': 'gypsy jazz',
+        'show tunes': 'show tunes', 'broadway': 'show tunes', 'musical theatre': 'show tunes',
+        'metal': 'heavy metal', 'heavy metal': 'heavy metal',
+        // ── Group 4 aliases ────────────────────────────────────────────────────
+        'modal jazz': 'modal jazz',
+        'jazz': 'cool jazz', 'cool jazz': 'cool jazz',
+        'neo soul': 'neo-soul', 'neo-soul': 'neo-soul',
+        'bossa': 'bossa nova', 'bossa nova': 'bossa nova',
+        'ambient': 'ambient',
+        'post rock': 'post-rock', 'post-rock': 'post-rock',
+        'impressionist': 'impressionist',
+        'smooth jazz': 'smooth jazz', 'smooth': 'smooth jazz',
+        'chamber pop': 'chamber pop', 'chamber': 'chamber pop',
+        'psychedelic': 'psychedelic rock', 'psych': 'psychedelic rock', 'psych rock': 'psychedelic rock',
+        // ── Legacy catch-alls (kept for backward compatibility) ────────────────
+        'groove': 'hip-hop groove', 'uptempo': 'straight-ahead rock',
+        'shuffle': 'blues-rock', 'blues-rock': 'blues-rock',
       };
       let styleVal = String(rawStyle).trim().toLowerCase();
       if (STYLE_ALIASES[styleVal]) {
@@ -1402,7 +1549,32 @@ function calculateTonalTransitionScore_TG(prevSong, nextSong, pos, setLen, tonal
     anchorBonus = anchorKeyBonus_TG(b, opts.anchorKey, pos, setLen);
   }
 
-  return base + modeBonus + repetitionPenalty + directionBonus + anchorBonus;
+  // harmonicFriction: Low-friction genres allow smooth transitions (+1),
+  // High-friction genres resist harmonic movement (−1), Fluid genres are detached (+2)
+  let frictionBonus = 0;
+  const _pParams = getGenreParams(prevSong.style);
+  if (_pParams) {
+    const _fm = { Low: 1, Mid: 0, High: -1, Fluid: 2 };
+    frictionBonus = _fm[_pParams.harmonicFriction] ?? 0;
+  }
+
+  // gravityBias: reward transitions that flow with each genre's natural harmonic direction
+  let biasBonus = 0;
+  if (dist >= 1) {
+    const _bDir = circleDirection_TG(a.tonic, b.tonic);
+    const _nParams = getGenreParams(nextSong.style);
+    const _pb = _pParams ? _pParams.gravityBias : null;
+    const _nb = _nParams ? _nParams.gravityBias : null;
+    if (_bDir !== 'same') {
+      if (_pb === _bDir) biasBonus += 1;   // outgoing genre pushes this direction
+      if (_nb === _bDir) biasBonus += 1;   // incoming genre pulls this direction
+    }
+    if (_pb === 'Fluid' || _nb === 'Fluid') biasBonus += 1;  // fluid genres welcome any movement
+    if (_pb === 'Static' && dist >= 3) biasBonus -= 1;        // static genres resist large leaps
+    if (_nb === 'Static' && dist >= 3) biasBonus -= 1;
+  }
+
+  return base + modeBonus + repetitionPenalty + directionBonus + anchorBonus + frictionBonus + biasBonus;
 }
 
 // generateTonalDiagnostics_TG analyses tonal transitions across the provided setlists.
@@ -1891,41 +2063,41 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         label: 'Classic Arc',
         description: 'Opener → Build → Peak → Cool → Closer',
         zones: [
-          { start: 0, end: 0.1, preferStyles: ['uptempo', 'rock', 'funk'], label: 'Opener' },
-          { start: 0.1, end: 0.35, preferStyles: ['midtempo', 'groove', 'shuffle'], label: 'Build' },
-          { start: 0.35, end: 0.7, preferStyles: ['uptempo', 'funk', 'rock', 'groove'], label: 'Peak' },
-          { start: 0.7, end: 0.9, preferStyles: ['midtempo', 'swing', 'soul'], label: 'Cool Down' },
-          { start: 0.9, end: 1.0, preferStyles: ['ballad', 'midtempo', 'swing'], label: 'Closer' }
+          { start: 0,   end: 0.1,  preferStyles: ['straight-ahead rock', 'power pop', 'up-tempo funk', 'surf rock', 'uptempo', 'rock', 'funk'],                                   label: 'Opener' },
+          { start: 0.1, end: 0.35, preferStyles: ['pop-rock', 'indie pop', 'blues-rock', 'motown', 'swing', 'midtempo', 'groove', 'shuffle'],                                      label: 'Build' },
+          { start: 0.35,end: 0.7,  preferStyles: ['straight-ahead rock', 'hard rock', 'up-tempo funk', 'blues-rock', 'ska', 'uptempo', 'funk', 'rock', 'groove'],                  label: 'Peak' },
+          { start: 0.7, end: 0.9,  preferStyles: ['classic soul', 'r&b', 'yacht rock', 'neo-soul', 'smooth jazz', 'midtempo', 'swing', 'soul'],                                    label: 'Cool Down' },
+          { start: 0.9, end: 1.0,  preferStyles: ['soul ballad', 'pop ballad', 'bossa nova', 'acoustic folk', 'ballad', 'midtempo', 'swing'],                                      label: 'Closer' }
         ]
       },
       doublePeak: {
         label: 'Double Peak',
         description: 'Opener → Peak1 → Valley → Peak2 → Closer',
         zones: [
-          { start: 0, end: 0.1, preferStyles: ['uptempo', 'groove', 'funk'], label: 'Opener' },
-          { start: 0.1, end: 0.35, preferStyles: ['uptempo', 'funk', 'rock'], label: 'Peak 1' },
-          { start: 0.35, end: 0.5, preferStyles: ['ballad', 'midtempo', 'swing'], label: 'Valley' },
-          { start: 0.5, end: 0.8, preferStyles: ['uptempo', 'funk', 'groove', 'rock'], label: 'Peak 2' },
-          { start: 0.8, end: 1.0, preferStyles: ['ballad', 'midtempo'], label: 'Closer' }
+          { start: 0,   end: 0.1,  preferStyles: ['straight-ahead rock', 'power pop', 'gospel up-tempo', 'uptempo', 'groove', 'funk'],                                             label: 'Opener' },
+          { start: 0.1, end: 0.35, preferStyles: ['hard rock', 'blues-rock', 'up-tempo funk', 'ska', 'uptempo', 'funk', 'rock'],                                                   label: 'Peak 1' },
+          { start: 0.35,end: 0.5,  preferStyles: ['soul ballad', 'bossa nova', 'smooth jazz', 'acoustic folk', 'ballad', 'midtempo', 'swing'],                                     label: 'Valley' },
+          { start: 0.5, end: 0.8,  preferStyles: ['straight-ahead rock', 'up-tempo funk', 'electronic dance music', 'disco', 'salsa', 'uptempo', 'funk', 'groove', 'rock'],        label: 'Peak 2' },
+          { start: 0.8, end: 1.0,  preferStyles: ['soul ballad', 'pop ballad', 'classic soul', 'ballad', 'midtempo'],                                                              label: 'Closer' }
         ]
       },
       slowBurn: {
         label: 'Slow Burn',
         description: 'Mellow start → Gradual build → Big finish',
         zones: [
-          { start: 0, end: 0.3, preferStyles: ['ballad', 'midtempo', 'swing', 'bossa'], label: 'Mellow' },
-          { start: 0.3, end: 0.6, preferStyles: ['midtempo', 'groove', 'shuffle'], label: 'Warming Up' },
-          { start: 0.6, end: 0.9, preferStyles: ['uptempo', 'funk', 'rock', 'groove'], label: 'Peak' },
-          { start: 0.9, end: 1.0, preferStyles: ['uptempo', 'rock'], label: 'Big Finish' }
+          { start: 0,   end: 0.3,  preferStyles: ['soul ballad', 'bossa nova', 'acoustic folk', 'smooth jazz', 'neo-soul', 'ballad', 'midtempo', 'swing', 'bossa'],                label: 'Mellow' },
+          { start: 0.3, end: 0.6,  preferStyles: ['classic soul', 'r&b', 'motown', 'swing', 'blues-rock', 'midtempo', 'groove', 'shuffle'],                                        label: 'Warming Up' },
+          { start: 0.6, end: 0.9,  preferStyles: ['straight-ahead rock', 'up-tempo funk', 'blues-rock', 'gospel up-tempo', 'uptempo', 'funk', 'rock', 'groove'],                   label: 'Peak' },
+          { start: 0.9, end: 1.0,  preferStyles: ['hard rock', 'straight-ahead rock', 'electronic dance music', 'uptempo', 'rock'],                                                label: 'Big Finish' }
         ]
       },
       highEnergy: {
         label: 'High Energy',
         description: 'Constant high energy with one mid-set breather',
         zones: [
-          { start: 0, end: 0.45, preferStyles: ['uptempo', 'funk', 'rock', 'groove', 'ska'], label: 'Full Throttle' },
-          { start: 0.45, end: 0.55, preferStyles: ['midtempo', 'swing', 'shuffle'], label: 'Breather' },
-          { start: 0.55, end: 1.0, preferStyles: ['uptempo', 'funk', 'rock', 'groove'], label: 'Full Throttle' }
+          { start: 0,    end: 0.45, preferStyles: ['straight-ahead rock', 'hard rock', 'up-tempo funk', 'electronic dance music', 'ska', 'salsa', 'uptempo', 'funk', 'rock', 'groove'], label: 'Full Throttle' },
+          { start: 0.45, end: 0.55, preferStyles: ['classic soul', 'r&b', 'swing', 'latin groove', 'midtempo', 'swing', 'shuffle'],                                                label: 'Breather' },
+          { start: 0.55, end: 1.0,  preferStyles: ['straight-ahead rock', 'up-tempo funk', 'blues-rock', 'gospel up-tempo', 'disco', 'uptempo', 'funk', 'rock', 'groove'],          label: 'Full Throttle' }
         ]
       },
       freeform: {
