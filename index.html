@@ -344,6 +344,47 @@
       .set-page:last-child { page-break-after: auto; break-after: auto; }
       .set-page img { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
+    /* Arrangement Layer — Stage / Advance View Toggle */
+    .view-toggle-bar { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+    .view-toggle-btn {
+      font-size: .78rem; padding: .3rem .75rem; border-radius: 6px;
+      border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .view-toggle-btn.active-stage {
+      background: rgba(255,107,53,.15); border-color: var(--accent); color: var(--accent); font-weight: 600;
+    }
+    .view-toggle-btn.active-advance {
+      background: rgba(74,222,128,.12); border-color: var(--success); color: var(--success); font-weight: 600;
+    }
+    .arrangement-cue {
+      font-size: .72rem; color: var(--text-muted); font-family: 'Space Mono', monospace;
+      margin-top: .2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px;
+    }
+    .arrangement-notes-row {
+      grid-column: 1 / -1; padding: .4rem .6rem .5rem 2.8rem;
+    }
+    .arrangement-notes-content {
+      background: rgba(74,222,128,.06); border: 1px solid rgba(74,222,128,.18);
+      border-radius: 6px; padding: .5rem .7rem; font-size: .78rem;
+      color: var(--text-muted); white-space: pre-wrap; word-break: break-word; line-height: 1.45;
+    }
+    .arrangement-label {
+      font-size: .65rem; font-weight: 700; letter-spacing: .05em;
+      color: var(--success); margin-bottom: .25rem; text-transform: uppercase;
+    }
+    .setlist-song.advance-mode {
+      grid-template-columns: 20px 32px 1fr 54px 60px;
+      grid-auto-rows: auto;
+    }
+    /* Arrangement textarea in song form */
+    .arrangement-textarea {
+      width: 100%; font-size: .82rem; padding: .4rem .5rem;
+      background: var(--primary); border: 1px solid var(--border); border-radius: 6px;
+      color: var(--text); resize: vertical; min-height: 54px; font-family: inherit;
+    }
+    .arrangement-textarea:focus { outline: 1px solid var(--accent); }
+
     /* Import Modal Styles */
     .import-modal { width: min(720px, 95vw); max-height: 90vh; overflow-y: auto; background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
     .import-steps { display: flex; gap: .5rem; margin-bottom: 1rem; }
@@ -1389,7 +1430,8 @@
       style: ["style","genre","type","feel","category"],
       key: ["key","tonality","pitch","root"],
       tempo: ["tempo","bpm","speed"],
-      vocalist: ["vocalist","singer","lead","vox","vocal"]
+      vocalist: ["vocalist","singer","lead","vox","vocal"],
+      arrangement: ["arrangement","arr","notes","cues","chart notes","advance notes"]
     };
 
     function importNormalizeWhitespace(s) {
@@ -1529,6 +1571,7 @@
       const rawKey = mapping.keyCol != null ? (rowObj[mapping.keyCol] ?? "") : "";
       const rawTempo = mapping.tempoCol != null ? (rowObj[mapping.tempoCol] ?? "") : "";
       const rawVox = mapping.vocalistCol != null ? (rowObj[mapping.vocalistCol] ?? "") : "";
+      const rawArrangement = mapping.arrangementCol != null ? String(rowObj[mapping.arrangementCol] ?? "").trim() : "";
 
       const t = importNormalizeTitle(rawTitle, opts);
       warnings.push(...t.warnings);
@@ -1634,7 +1677,7 @@
       warnings.push(...v.warnings);
       if (v.original !== v.value) changes.push({ field: "vocalist", original: v.original, normalized: v.value });
 
-      const out = { title: t.value, artist: artistVal.value, duration: durationVal, style: styleVal, key: k.value, tempo: p.value, vocalist: v.value, ...(styleInferred ? { styleInferred: true } : {}) };
+      const out = { title: t.value, artist: artistVal.value, duration: durationVal, style: styleVal, key: k.value, tempo: p.value, vocalist: v.value, arrangement: rawArrangement, ...(styleInferred ? { styleInferred: true } : {}) };
       const rejectReason = !out.title ? "empty_title" : null;
       return { out, rejectReason, warnings, changes };
     }
@@ -1663,13 +1706,13 @@
     }
 
     function importToCanonicalCSV(rows) {
-      const header = ["Title","Artist","Duration","Style","Key","BPM","Vocalist"];
+      const header = ["Title","Artist","Duration","Style","Key","BPM","Vocalist","Arrangement"];
       const esc = (s) => `"${String(s ?? "").replace(/"/g,'""')}"`;
       const lines = [header.join(",")];
       for (const r of rows) {
         lines.push([
           esc(r.title), esc(r.artist || ""), r.duration || "", esc(r.style || ""),
-          esc(r.key), r.tempo ? String(parseInt(r.tempo, 10)) : "", esc(r.vocalist)
+          esc(r.key), r.tempo ? String(parseInt(r.tempo, 10)) : "", esc(r.vocalist), esc(r.arrangement || "")
         ].join(","));
       }
       return lines.join("\n");
@@ -1693,7 +1736,7 @@
     }
 
     function importAutoMapColumns(headers) {
-      const mapping = { titleCol: null, artistCol: null, durationCol: null, styleCol: null, keyCol: null, tempoCol: null, vocalistCol: null };
+      const mapping = { titleCol: null, artistCol: null, durationCol: null, styleCol: null, keyCol: null, tempoCol: null, vocalistCol: null, arrangementCol: null };
       const confidences = {};
       const used = new Set();
 
@@ -3384,14 +3427,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       onClearAll,
       latestImport
     }) {
-      const [form, setForm] = useState({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '' });
+      const [form, setForm] = useState({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '', arrangement: '' });
       const [editingId, setEditingId] = useState(null);
       const [editForm, setEditForm] = useState({});
 
       const handleAdd = () => {
         if (!form.title || !form.artist || !form.duration) return;
         onAddSong(form);
-        setForm({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '' });
+        setForm({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '', arrangement: '' });
       };
 
       const startEdit = (song) => {
@@ -3403,7 +3446,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           style: song.style || 'midtempo',
           key: song.key || '',
           bpm: song.bpm || '',
-          vocalist: song.vocalist || ''
+          vocalist: song.vocalist || '',
+          arrangement: song.arrangement || ''
         });
       };
 
@@ -3518,6 +3562,17 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             </div>
           </div>
 
+          <div className="input-group">
+            <label>Arrangement Notes <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Advance View)</span></label>
+            <textarea
+              className="arrangement-textarea"
+              value={form.arrangement}
+              onChange={e => setForm({ ...form, arrangement: e.target.value })}
+              placeholder="Drum intro 4 bars, key change at bridge, end on cue…"
+              rows="2"
+            />
+          </div>
+
           <button className="btn btn-primary" onClick={handleAdd} style={{ width: '100%', marginBottom: '1rem' }}>
             Add Song (to Active)
           </button>
@@ -3624,6 +3679,17 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                           <label style={{ fontSize: '.65rem' }}>Vocalist</label>
                           <input value={editForm.vocalist} onChange={e => setEditForm({ ...editForm, vocalist: e.target.value })} style={{ fontSize: '.82rem', padding: '.3rem .5rem' }} />
                         </div>
+                      </div>
+                      <div className="input-group" style={{ marginBottom: '.4rem' }}>
+                        <label style={{ fontSize: '.65rem' }}>Arrangement Notes <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Advance View)</span></label>
+                        <textarea
+                          className="arrangement-textarea"
+                          value={editForm.arrangement || ''}
+                          onChange={e => setEditForm({ ...editForm, arrangement: e.target.value })}
+                          placeholder="Drum intro 4 bars, key change at bridge, end on cue…"
+                          rows="2"
+                          style={{ fontSize: '.78rem' }}
+                        />
                       </div>
                       <div className="toolbar" style={{ justifyContent: 'flex-end', gap: '.3rem' }}>
                         <button className="btn btn-small" onClick={saveEdit} style={{ borderColor: 'var(--success)', color: 'var(--success)' }}>Save</button>
@@ -4250,7 +4316,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onMoveSong, onRemoveSong, onLockEntireSet, onDragStart, onDragEnd, onDragOverSong, onDragOverSet, onDropOnSong, onDropOnSet, onMoveToSet, dragState, totalSets, isReorderMode, touchFallbackEnabled, touchDrag, setTouchDrag }) {
+    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onMoveSong, onRemoveSong, onLockEntireSet, onDragStart, onDragEnd, onDragOverSong, onDragOverSet, onDropOnSong, onDropOnSet, onMoveToSet, dragState, totalSets, isReorderMode, touchFallbackEnabled, touchDrag, setTouchDrag, viewMode }) {
       let runningTime = 0;
       const allLocked = setlist.songs.length > 0 && setlist.songs.every(s => locked.has(`${setIdx}:${s.id}`));
       const isSetDragTarget = dragState && dragState.active && dragState.overSetIdx === setIdx && dragState.fromSetIdx !== setIdx;
@@ -4347,6 +4413,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     <span>{parseDuration(song.duration)}min</span>
                     {song.key && <span style={{ fontSize: '.7rem', color: 'var(--text-muted)' }}>{song.key}</span>}
                   </div>
+                  {viewMode === 'stage' && song.arrangement && (
+                    <div className="arrangement-cue" title={song.arrangement}>
+                      ▸ {song.arrangement.slice(0, 40)}{song.arrangement.length > 40 ? '…' : ''}
+                    </div>
+                  )}
                 </div>
                 <div className="song-time">+{Math.round(startTime)}m</div>
                 <div className="song-actions">
@@ -4370,6 +4441,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     ✕
                   </button>
                 </div>
+                {viewMode === 'advance' && song.arrangement && (
+                  <div className="arrangement-notes-row">
+                    <div className="arrangement-label">Arrangement</div>
+                    <div className="arrangement-notes-content">{song.arrangement}</div>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -4405,7 +4482,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [parsedRows, setParsedRows] = useState([]);
 
       // Mapping
-      const [mapping, setMapping] = useState({ titleCol: null, artistCol: null, durationCol: null, styleCol: null, keyCol: null, tempoCol: null, vocalistCol: null });
+      const [mapping, setMapping] = useState({ titleCol: null, artistCol: null, durationCol: null, styleCol: null, keyCol: null, tempoCol: null, vocalistCol: null, arrangementCol: null });
       const [confidences, setConfidences] = useState({});
 
       // Options
@@ -4424,7 +4501,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         setStep("input"); setInputTab("upload"); setRawText(""); setFileName("");
         setHasHeaders(true); setDelimiter("auto");
         setParsedColumns([]); setParsedRows([]);
-        setMapping({ titleCol: null, artistCol: null, durationCol: null, styleCol: null, keyCol: null, tempoCol: null, vocalistCol: null });
+        setMapping({ titleCol: null, artistCol: null, durationCol: null, styleCol: null, keyCol: null, tempoCol: null, vocalistCol: null, arrangementCol: null });
         setConfidences({});
         setNormalizedResult(null);
       };
@@ -4515,7 +4592,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           styleCol: mapping.styleCol != null ? parsedColumns[mapping.styleCol] : null,
           keyCol: mapping.keyCol != null ? parsedColumns[mapping.keyCol] : null,
           tempoCol: mapping.tempoCol != null ? parsedColumns[mapping.tempoCol] : null,
-          vocalistCol: mapping.vocalistCol != null ? parsedColumns[mapping.vocalistCol] : null
+          vocalistCol: mapping.vocalistCol != null ? parsedColumns[mapping.vocalistCol] : null,
+          arrangementCol: mapping.arrangementCol != null ? parsedColumns[mapping.arrangementCol] : null
         };
         const result = importNormalizeAll(parsedRows, colMapping, opts);
         setNormalizedResult(result);
@@ -4669,7 +4747,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     { key: "styleCol", label: "Style / Genre" },
                     { key: "keyCol", label: "Key" },
                     { key: "tempoCol", label: "Tempo / BPM" },
-                    { key: "vocalistCol", label: "Vocalist" }
+                    { key: "vocalistCol", label: "Vocalist" },
+                    { key: "arrangementCol", label: "Arrangement Notes" }
                   ].map(({ key, label, required }) => (
                     <div key={key} className="import-mapping-item">
                       <label>
@@ -5339,6 +5418,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       // PHASE 3A: active/cold library tab
       const [libraryTab, setLibraryTab] = useState('active');
 
+      // Arrangement layer view mode: 'stage' (minimal) or 'advance' (full notes)
+      const [viewMode, setViewMode] = useState('stage');
+
       const showToast = (message, type = 'success') => setToast({ message, type });
 
       const promptBackupBeforeRiskyAction = (contextLabel, action) => {
@@ -5546,6 +5628,29 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             });
           } catch (e) { console.warn('Quality score computation failed:', e); }
         }
+
+        // Smart arrangement notes injection — tag opener/closer songs per set
+        if (settings.forceOpener || settings.forceCloser) {
+          out.forEach(set => {
+            if (!set.songs || set.songs.length === 0) return;
+            if (settings.forceOpener) {
+              const first = set.songs[0];
+              const existing = first.arrangement || '';
+              if (!existing.includes('[OPENER]')) {
+                set.songs[0] = { ...first, arrangement: `[OPENER] Establish groove before vocal. ${existing}`.trim() };
+              }
+            }
+            if (settings.forceCloser) {
+              const lastIdx = set.songs.length - 1;
+              const last = set.songs[lastIdx];
+              const existing = last.arrangement || '';
+              if (!existing.includes('[CLOSER]')) {
+                set.songs[lastIdx] = { ...last, arrangement: `${existing}\n[CLOSER] Extended vamp – end on visual cue.`.trim() };
+              }
+            }
+          });
+        }
+
         setSetlists(out);
         setLastGenerationStats(out.stats);
 
@@ -5625,7 +5730,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       // PHASE 2: CSV Export with proper quoting + enhanced energy/tonal data
       const exportSongs = () => {
-        const headers = ['Title', 'Artist', 'Duration', 'Style', 'Key', 'BPM', 'Vocalist', 'Energy', 'Status'];
+        const headers = ['Title', 'Artist', 'Duration', 'Style', 'Key', 'BPM', 'Vocalist', 'Energy', 'Status', 'Arrangement'];
         const rows = songs.map(s => {
           const energy = getCompositeEnergy(s);
           return [
@@ -5637,7 +5742,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             csvSafeCell(s.bpm ?? ''),
             csvSafeCell(s.vocalist ?? ''),
             csvSafeCell(Math.round(energy * 10) / 10),
-            csvSafeCell(s.status || 'active')
+            csvSafeCell(s.status || 'active'),
+            csvSafeCell(s.arrangement ?? '')
           ];
         });
         if (!validateCSVRows(rows)) {
@@ -5791,7 +5897,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               style: (get(['style', 'genre', 'type', 'feel']) || 'midtempo').toLowerCase(),
               key: get(['key', 'tonality', 'pitch']) || '',
               bpm: get(['bpm', 'tempo', 'speed']) || '',
-              vocalist: get(['vocalist', 'singer', 'lead', 'vox', 'vocal']) || ''
+              vocalist: get(['vocalist', 'singer', 'lead', 'vox', 'vocal']) || '',
+              arrangement: get(['arrangement', 'arr', 'notes', 'cues']) || ''
             });
           }
           return out;
@@ -5896,18 +6003,18 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       const downloadSampleCSV = () => {
         const sample =
-`Title,Artist,Duration,Style,Key,BPM,Vocalist
-"25 or 6 to 4","Chicago",4.82,uptempo,Am,147,Beau
-"Call Me the Breeze","Lynyrd Skynyrd",5.15,midtempo,A,192,Kelly
-"Hard To Handle","The Black Crowes",3.13,uptempo,B,103,Kelly
-"Hold On Loosely","38 Special",4.68,midtempo,E,128,Beau
-"La Grange","ZZ Top",3.83,uptempo,A,162,Chris
-"Come Together","The Beatles",4.5,groove,Dm,82,ALL
-"Sweet Home Alabama","Lynyrd Skynyrd",4.75,midtempo,D,100,Chris
-"Billie Jean","Michael Jackson",4.25,uptempo,F#m,117,ALL
-"Stormy Monday","Allman Brothers",7.25,blues,G,80,ALL
-"Pride and Joy","Stevie Ray Vaughan",3.62,shuffle,E,127,ALL
-"Fly Away","Lenny Kravitz",3.62,rock,A,138,ALL`;
+`Title,Artist,Duration,Style,Key,BPM,Vocalist,Arrangement
+"25 or 6 to 4","Chicago",4.82,uptempo,Am,147,Beau,"Keys intro 8 bars – no click. Stop-time figure at verse. Extended outro vamp – end on visual cue."
+"Call Me the Breeze","Lynyrd Skynyrd",5.15,midtempo,A,192,Kelly,"[OPENER] Guitar intro counts band in. Tag the ending x3."
+"Hard To Handle","The Black Crowes",3.13,uptempo,B,103,Kelly,""
+"Hold On Loosely","38 Special",4.68,midtempo,E,128,Beau,"Key change up a step at final chorus."
+"La Grange","ZZ Top",3.83,uptempo,A,162,Chris,"Slow intro build before full band drops. No bass until bar 5."
+"Come Together","The Beatles",4.5,groove,Dm,82,ALL,""
+"Sweet Home Alabama","Lynyrd Skynyrd",4.75,midtempo,D,100,Chris,""
+"Billie Jean","Michael Jackson",4.25,uptempo,F#m,117,ALL,"Drum machine pattern on intro – live kit joins at verse 2."
+"Stormy Monday","Allman Brothers",7.25,blues,G,80,ALL,"Extended solo section – follow the vocalist for the outro cue."
+"Pride and Joy","Stevie Ray Vaughan",3.62,shuffle,E,127,ALL,""
+"Fly Away","Lenny Kravitz",3.62,rock,A,138,ALL,"[CLOSER] Extended outro – end on visual cue from drummer.""`;
         const blob = new Blob([sample], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -5938,6 +6045,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               if (!merged.artist && row.artist) { merged.artist = sanitizeInput(row.artist); updated = true; }
               if ((!merged.duration || merged.duration === DEFAULT_DURATION_MINUTES) && row.duration) { merged.duration = parseDuration(row.duration); updated = true; }
               if (merged.style === 'midtempo' && row.style && row.style !== 'midtempo') { merged.style = row.style; updated = true; }
+              if (!merged.arrangement && row.arrangement) { merged.arrangement = row.arrangement; updated = true; }
               if (updated) {
                 const newSongs = [...songs];
                 newSongs[idx] = merged;
@@ -5958,7 +6066,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             style: row.style || 'midtempo',
             key: row.key || '',
             bpm: row.tempo || '',
-            vocalist: row.vocalist || ''
+            vocalist: row.vocalist || '',
+            arrangement: row.arrangement || ''
           });
         }
 
@@ -5990,7 +6099,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             if (s.key) meta.push(s.key);
             if (s.bpm) meta.push(`${s.bpm} BPM`);
             const metaStr = meta.length > 0 ? ` (${meta.join(' | ')})` : '';
-            return `${idx + 1}. ${s.title}${s.artist ? ` - ${s.artist}` : ''}${metaStr}`;
+            let line = `${idx + 1}. ${s.title}${s.artist ? ` - ${s.artist}` : ''}${metaStr}`;
+            if (viewMode === 'advance' && s.arrangement) {
+              line += `\n   [ARR] ${s.arrangement}`;
+            }
+            return line;
           }).join('\n');
           return `${header}\n${songList}`;
         }).join('\n\n');
@@ -6018,6 +6131,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       };
 
       const exportPDF = () => {
+        const isAdvance = viewMode === 'advance';
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
         const pageW = doc.internal.pageSize.getWidth();   // 612pt
@@ -6161,9 +6275,20 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
           // Song rows
           let rowCounter = 0;
+          const ARR_FONT = 9;
+          const ARR_VPAD = 6;
           set.songs.forEach((song) => {
+            // Estimate arrangement block height for advance view
+            let arrLines = [];
+            let arrBlockH = 0;
+            if (isAdvance && song.arrangement) {
+              doc.setFontSize(ARR_FONT);
+              arrLines = doc.splitTextToSize(song.arrangement, tableW - CELL_PAD * 2);
+              arrBlockH = arrLines.length * (ARR_FONT + 3) + ARR_VPAD * 2 + 4;
+            }
+
             // Page break check
-            if (yPos + ROW_H > pageH - margin) {
+            if (yPos + ROW_H + arrBlockH > pageH - margin) {
               drawColumnLines(pageTableTop, yPos);
               doc.addPage();
               addWatermark();
@@ -6174,6 +6299,30 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             }
 
             yPos = drawSongRow(song, yPos, rowCounter);
+
+            // Advance view: render arrangement notes beneath the song row
+            if (isAdvance && arrLines.length > 0) {
+              const blockY = yPos;
+              doc.setFillColor(245, 250, 245);
+              doc.rect(tableX, blockY, tableW, arrBlockH, 'F');
+              doc.setDrawColor(180, 210, 180);
+              doc.setLineWidth(0.5);
+              doc.rect(tableX, blockY, tableW, arrBlockH);
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(7);
+              doc.setTextColor(60, 140, 60);
+              doc.text('ARRANGEMENT', tableX + CELL_PAD, blockY + ARR_VPAD + 7);
+              doc.setFont('helvetica', 'normal');
+              doc.setFontSize(ARR_FONT);
+              doc.setTextColor(50, 50, 50);
+              let lineY = blockY + ARR_VPAD + 7 + (ARR_FONT + 1);
+              arrLines.forEach(line => {
+                doc.text(line, tableX + CELL_PAD, lineY);
+                lineY += ARR_FONT + 3;
+              });
+              yPos += arrBlockH;
+            }
+
             rowCounter++;
           });
 
@@ -6203,6 +6352,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           const totalSongs = setlists.reduce((s, set) => s + set.songs.length, 0);
           const totalTime = setlists.reduce((s, set) => s + set.totalTime, 0);
           doc.text(`Total Songs: ${totalSongs}  |  Total Time: ${Math.round(totalTime)} minutes`, margin, yPos);
+          yPos += 20;
+          doc.text(`View: ${isAdvance ? 'Advance / Hired Gun (arrangement notes included)' : 'Stage View (minimal)'}`, margin, yPos);
           yPos += 34;
 
           // Per-set quality breakdown
@@ -6267,7 +6418,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         }
 
         const safeBandName = (activeBand?.name || 'band').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
-        doc.save(`setlist-${safeBandName}-${new Date().toISOString().slice(0, 10)}.pdf`);
+        const viewSuffix = isAdvance ? '-advance' : '-stage';
+        doc.save(`setlist-${safeBandName}${viewSuffix}-${new Date().toISOString().slice(0, 10)}.pdf`);
       };
 
       const toggleLock = (setIdx, songId) => {
@@ -6981,8 +7133,26 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               </div>
             ) : (
               <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem' }}>
-                  <h3 className="panel-title">Generated Setlists</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', flexWrap: 'wrap', gap: '.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem', flexWrap: 'wrap' }}>
+                    <h3 className="panel-title" style={{ margin: 0 }}>Generated Setlists</h3>
+                    <div className="view-toggle-bar">
+                      <button
+                        className={`view-toggle-btn ${viewMode === 'stage' ? 'active-stage' : ''}`}
+                        onClick={() => setViewMode('stage')}
+                        title="Stage View — minimal, high-contrast for live performance"
+                      >
+                        🎤 Stage View
+                      </button>
+                      <button
+                        className={`view-toggle-btn ${viewMode === 'advance' ? 'active-advance' : ''}`}
+                        onClick={() => setViewMode('advance')}
+                        title="Advance View — full arrangement notes for hired musicians"
+                      >
+                        📋 Advance View
+                      </button>
+                    </div>
+                  </div>
                   <div className="toolbar">
                     <div className="reset-balance-bar">
                       {originalSetlists && (
@@ -7080,6 +7250,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       touchFallbackEnabled={touchFallbackEnabled}
                       touchDrag={touchDrag}
                       setTouchDrag={setTouchDrag}
+                      viewMode={viewMode}
                     />
                   ))}
                 </div>
