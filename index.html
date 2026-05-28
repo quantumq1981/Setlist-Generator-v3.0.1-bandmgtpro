@@ -686,6 +686,15 @@
       { cat: 'cues',   label: 'Rhythm Only',            role: 'guitar2',   text: '[Rhythm Only]' },
     ];
     const MACRO_CATS = ['intro', 'ending', 'feel', 'cues'];
+    // CSV column header synonyms for per-role arrangement import (case-insensitive match on trimmed header)
+    const ARR_ROLE_IMPORT_HEADERS = {
+      global:    ['arr general','arrangement general','arr_general','general notes','arr global','arrangement_global','arrnotes general'],
+      drums:     ['arr drums','arrangement drums','arr_drums','arrangement_drums'],
+      keys:      ['arr keys','arrangement keys','arr_keys','arrangement_keys'],
+      bass:      ['arr bass','arrangement bass','arr_bass','arrangement_bass'],
+      guitar2:   ['arr guitar2','arrangement guitar2','arr_guitar2','guitar 2','arr guitar 2','arrangement_guitar2','arr guitar','arrangement guitar2'],
+      endingCue: ['arr ending cue','arrangement ending cue','arr_ending_cue','ending cue','arr ending','arrangement_ending_cue','ending','arr ending cue'],
+    };
 
     /******************* VENUE CRM CONSTANTS *******************/
     const VENUE_TYPES = ['Bar','Restaurant','Club','Event Space','Casino','Festival','Corporate','Hotel','Theater','Other'];
@@ -1773,7 +1782,17 @@
       const rawKey = mapping.keyCol != null ? (rowObj[mapping.keyCol] ?? "") : "";
       const rawTempo = mapping.tempoCol != null ? (rowObj[mapping.tempoCol] ?? "") : "";
       const rawVox = mapping.vocalistCol != null ? (rowObj[mapping.vocalistCol] ?? "") : "";
-      const rawArrangement = mapping.arrangementCol != null ? String(rowObj[mapping.arrangementCol] ?? "").trim() : "";
+      // Per-role arrangement columns take priority over single Arrangement column
+      const rowKeyMap = Object.fromEntries(Object.keys(rowObj).map(k => [k.toLowerCase().trim(), k]));
+      const roleObj = { global: '', drums: '', keys: '', bass: '', guitar2: '', endingCue: '' };
+      let anyRoleCol = false;
+      for (const [role, syns] of Object.entries(ARR_ROLE_IMPORT_HEADERS)) {
+        const origKey = syns.reduce((found, syn) => found || rowKeyMap[syn] || null, null);
+        if (origKey != null) { roleObj[role] = String(rowObj[origKey] ?? '').trim(); anyRoleCol = true; }
+      }
+      const rawArrangement = anyRoleCol
+        ? (Object.values(roleObj).some(v => v) ? serializeArrangement(roleObj) : '')
+        : (mapping.arrangementCol != null ? String(rowObj[mapping.arrangementCol] ?? "").trim() : "");
 
       const t = importNormalizeTitle(rawTitle, opts);
       warnings.push(...t.warnings);
@@ -1908,13 +1927,15 @@
     }
 
     function importToCanonicalCSV(rows) {
-      const header = ["Title","Artist","Duration","Style","Key","BPM","Vocalist","Arrangement"];
+      const header = ["Title","Artist","Duration","Style","Key","BPM","Vocalist","Arr General","Arr Drums","Arr Keys","Arr Bass","Arr Guitar2","Arr Ending Cue"];
       const esc = (s) => `"${String(s ?? "").replace(/"/g,'""')}"`;
       const lines = [header.join(",")];
       for (const r of rows) {
+        const arr = parseArrangement(r.arrangement || '');
         lines.push([
           esc(r.title), esc(r.artist || ""), r.duration || "", esc(r.style || ""),
-          esc(r.key), r.tempo ? String(parseInt(r.tempo, 10)) : "", esc(r.vocalist), esc(r.arrangement || "")
+          esc(r.key), r.tempo ? String(parseInt(r.tempo, 10)) : "", esc(r.vocalist),
+          esc(arr.global), esc(arr.drums), esc(arr.keys), esc(arr.bass), esc(arr.guitar2), esc(arr.endingCue)
         ].join(","));
       }
       return lines.join("\n");
@@ -6535,9 +6556,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       // PHASE 2: CSV Export with proper quoting + enhanced energy/tonal data
       const exportSongs = () => {
-        const headers = ['Title', 'Artist', 'Duration', 'Style', 'Key', 'BPM', 'Vocalist', 'Energy', 'Status', 'Arrangement'];
+        const headers = ['Title', 'Artist', 'Duration', 'Style', 'Key', 'BPM', 'Vocalist', 'Energy', 'Status', 'Arr General', 'Arr Drums', 'Arr Keys', 'Arr Bass', 'Arr Guitar2', 'Arr Ending Cue'];
         const rows = songs.map(s => {
           const energy = getCompositeEnergy(s);
+          const arr = parseArrangement(s.arrangement || '');
           return [
             csvSafeCell(s.title),
             csvSafeCell(s.artist),
@@ -6548,7 +6570,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             csvSafeCell(s.vocalist ?? ''),
             csvSafeCell(Math.round(energy * 10) / 10),
             csvSafeCell(s.status || 'active'),
-            csvSafeCell(s.arrangement ?? '')
+            csvSafeCell(arr.global),
+            csvSafeCell(arr.drums),
+            csvSafeCell(arr.keys),
+            csvSafeCell(arr.bass),
+            csvSafeCell(arr.guitar2),
+            csvSafeCell(arr.endingCue)
           ];
         });
         if (!validateCSVRows(rows)) {
@@ -6808,18 +6835,18 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       const downloadSampleCSV = () => {
         const sample =
-`Title,Artist,Duration,Style,Key,BPM,Vocalist,Arrangement
-"25 or 6 to 4","Chicago",4.82,uptempo,Am,147,Beau,"Keys intro 8 bars – no click. Stop-time figure at verse. Extended outro vamp – end on visual cue."
-"Call Me the Breeze","Lynyrd Skynyrd",5.15,midtempo,A,192,Kelly,"[OPENER] Guitar intro counts band in. Tag the ending x3."
-"Hard To Handle","The Black Crowes",3.13,uptempo,B,103,Kelly,""
-"Hold On Loosely","38 Special",4.68,midtempo,E,128,Beau,"Key change up a step at final chorus."
-"La Grange","ZZ Top",3.83,uptempo,A,162,Chris,"Slow intro build before full band drops. No bass until bar 5."
-"Come Together","The Beatles",4.5,groove,Dm,82,ALL,""
-"Sweet Home Alabama","Lynyrd Skynyrd",4.75,midtempo,D,100,Chris,""
-"Billie Jean","Michael Jackson",4.25,uptempo,F#m,117,ALL,"Drum machine pattern on intro – live kit joins at verse 2."
-"Stormy Monday","Allman Brothers",7.25,blues,G,80,ALL,"Extended solo section – follow the vocalist for the outro cue."
-"Pride and Joy","Stevie Ray Vaughan",3.62,shuffle,E,127,ALL,""
-"Fly Away","Lenny Kravitz",3.62,rock,A,138,ALL,"[CLOSER] Extended outro – end on visual cue from drummer.""`;
+`Title,Artist,Duration,Style,Key,BPM,Vocalist,Arr General,Arr Drums,Arr Keys,Arr Bass,Arr Guitar2,Arr Ending Cue
+"25 or 6 to 4","Chicago",4.82,uptempo,Am,147,Beau,"Keys intro 8 bars – no click. Stop-time figure at verse.","","[Keys Lead-In]","","","[Vamp Out]"
+"Call Me the Breeze","Lynyrd Skynyrd",5.15,midtempo,A,192,Kelly,"[OPENER] Guitar intro counts band in.","[Drum Intro]","","","","[Tag × 3]"
+"Hard To Handle","The Black Crowes",3.13,uptempo,B,103,Kelly,"","","","","","[Hard Stop on 1]"
+"Hold On Loosely","38 Special",4.68,midtempo,E,128,Beau,"Key change up a step at final chorus.","","","","","[Big Ending]"
+"La Grange","ZZ Top",3.83,uptempo,A,162,Chris,"Slow intro build before full band drops.","","","[Root Notes Only]","","[Trash-Can / Visual Cue]"
+"Come Together","The Beatles",4.5,groove,Dm,82,ALL,"","","","","","[Fade on Groove]"
+"Sweet Home Alabama","Lynyrd Skynyrd",4.75,midtempo,D,100,Chris,"","","","","","[Hard Stop on 1]"
+"Billie Jean","Michael Jackson",4.25,uptempo,F#m,117,ALL,"Drum machine pattern on intro – live kit joins at verse 2.","","","","","[Hard Stop on 1]"
+"Stormy Monday","Allman Brothers",7.25,blues,G,80,ALL,"Extended solo section – follow vocalist for outro cue.","","[Organ Tone]","","","[Vamp Out]"
+"Pride and Joy","Stevie Ray Vaughan",3.62,shuffle,E,127,ALL,"","[Fill on Bar 8]","","","","[Hard Stop on 1]"
+"Fly Away","Lenny Kravitz",3.62,rock,A,138,ALL,"[CLOSER] Extended outro – end on visual cue from drummer.","","","","","[Trash-Can / Visual Cue]"`;
         const blob = new Blob([sample], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
