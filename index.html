@@ -361,6 +361,62 @@
     .view-toggle-btn.active-advance {
       background: rgba(74,222,128,.12); border-color: var(--success); color: var(--success); font-weight: 600;
     }
+    .stage-mode-btn {
+      font-size: .78rem; padding: .3rem .75rem; border-radius: 6px; margin-left: .4rem;
+      border: 1px solid rgba(167,139,250,.4); background: transparent; color: #a78bfa; cursor: pointer;
+      transition: background .15s, border-color .15s;
+    }
+    .stage-mode-btn:hover { background: rgba(167,139,250,.12); border-color: #a78bfa; }
+    /* Stage Mode full-screen overlay */
+    .stage-overlay {
+      position: fixed; inset: 0; background: #0d0d0f; z-index: 9999;
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+    }
+    .stage-overlay-inner { max-width: 680px; margin: 0 auto; padding: 1rem 1rem 5rem; }
+    .stage-overlay-close {
+      display: block; width: 100%; padding: .6rem; margin-bottom: 1.75rem;
+      background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+      border-radius: 8px; color: rgba(255,255,255,.45); font-size: .82rem; cursor: pointer;
+      text-align: center; letter-spacing: .06em;
+    }
+    .stage-overlay-close:hover { background: rgba(255,255,255,.11); color: rgba(255,255,255,.7); }
+    .stage-overlay-set { margin-bottom: 2.75rem; }
+    .stage-overlay-set-header {
+      font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .12em;
+      color: rgba(255,255,255,.28); padding-bottom: .55rem;
+      border-bottom: 1px solid rgba(255,255,255,.08); margin-bottom: .6rem;
+    }
+    .stage-overlay-song {
+      display: flex; align-items: flex-start; gap: .9rem;
+      padding: .7rem 0; border-bottom: 1px solid rgba(255,255,255,.05);
+    }
+    .stage-song-num {
+      font-size: 2rem; font-weight: 900; color: rgba(255,255,255,.15);
+      min-width: 2.4rem; text-align: right; line-height: 1.1;
+      font-variant-numeric: tabular-nums; flex-shrink: 0;
+    }
+    .stage-song-body { flex: 1; min-width: 0; }
+    .stage-song-title {
+      font-size: 1.6rem; font-weight: 700; color: #fff;
+      line-height: 1.1; margin-bottom: .22rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .stage-song-meta {
+      display: flex; gap: .55rem; align-items: center; flex-wrap: wrap;
+      font-size: .82rem; color: rgba(255,255,255,.38);
+    }
+    .stage-song-key {
+      background: rgba(96,165,250,.18); color: #93c5fd;
+      padding: .04rem .32rem; border-radius: 4px;
+      font-weight: 700; font-size: .75rem; flex-shrink: 0;
+    }
+    .stage-song-bpm { color: rgba(255,255,255,.25); font-size: .72rem; }
+    .stage-song-time { color: rgba(255,107,53,.4); font-size: .7rem; margin-left: auto; flex-shrink: 0; }
+    .stage-song-cue {
+      font-size: .76rem; color: rgba(74,222,128,.55);
+      margin-top: .18rem; font-style: italic;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
     .arrangement-cue {
       font-size: .72rem; color: var(--text-muted); font-family: 'Space Mono', monospace;
       margin-top: .2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px;
@@ -5754,6 +5810,54 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
+    /******************* STAGE MODE OVERLAY *******************/
+    function StageModeOverlay({ open, onClose, setlists }) {
+      useEffect(() => {
+        if (!open) return;
+        const handler = (e) => { if (e.key === 'Escape') onClose(); };
+        document.addEventListener('keydown', handler);
+        return () => document.removeEventListener('keydown', handler);
+      }, [open]);
+      if (!open || !setlists || setlists.length === 0) return null;
+      return (
+        <div className="stage-overlay">
+          <div className="stage-overlay-inner">
+            <button className="stage-overlay-close" onClick={onClose}>✕  EXIT STAGE MODE  (Esc)</button>
+            {setlists.map((setlist, si) => {
+              let runningTime = 0;
+              return (
+                <div key={si} className="stage-overlay-set">
+                  <div className="stage-overlay-set-header">
+                    {setlist.name} · {setlist.songs.length} songs · {Math.round(setlist.totalTime)} min
+                  </div>
+                  {setlist.songs.map((song, songIdx) => {
+                    const t = runningTime;
+                    runningTime += Number(song.duration) || 0;
+                    const cue = song.arrangement ? getArrangementCue(song.arrangement) : '';
+                    return (
+                      <div key={song.id + '-' + songIdx} className="stage-overlay-song">
+                        <span className="stage-song-num">{songIdx + 1}</span>
+                        <div className="stage-song-body">
+                          <div className="stage-song-title">{song.title}</div>
+                          <div className="stage-song-meta">
+                            <span>{song.artist}</span>
+                            {song.key && <span className="stage-song-key">{song.key}</span>}
+                            {song.bpm && <span className="stage-song-bpm">{song.bpm} bpm</span>}
+                            <span className="stage-song-time">+{Math.round(t)}m</span>
+                          </div>
+                          {cue && <div className="stage-song-cue">▸ {cue}</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
     /******************* VENUE MODAL *******************/
     function VenueModal({ open, onClose, venues, bookings, epkSettings,
       onSaveEpkSettings, onAddVenue, onUpdateVenue, onDeleteVenue,
@@ -6194,6 +6298,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       // Venue CRM & Bookings
       const [venueModal, setVenueModal] = useState(false);
+      const [stageMode, setStageMode] = useState(false);
       const [venues, setVenues] = useState([]);
       const [bookings, setBookings] = useState([]);
       const [epkSettings, setEpkSettingsState] = useState(EPK_SETTINGS_DEFAULT);
@@ -8042,6 +8147,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                         >
                           📋 Advance View
                         </button>
+                        <button
+                          className="stage-mode-btn"
+                          onClick={() => setStageMode(true)}
+                          title="Stage Mode — full-screen, large-font view for reading on stage"
+                        >
+                          📱 Stage Mode
+                        </button>
                       </div>
                       {viewMode === 'advance' && (
                         <div className="role-filter-bar">
@@ -8212,6 +8324,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               onImportCSVToGig={importCSVToGig}
               setlists={setlists}
               bandName={activeBand?.name || 'Band'}
+            />
+
+            <StageModeOverlay
+              open={stageMode}
+              onClose={() => setStageMode(false)}
+              setlists={setlists}
             />
 
             <VenueModal
