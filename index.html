@@ -5706,7 +5706,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     /******************* VENUE MODAL *******************/
     function VenueModal({ open, onClose, venues, bookings, epkSettings,
       onSaveEpkSettings, onAddVenue, onUpdateVenue, onDeleteVenue,
-      onAddBooking, onUpdateBooking, onDeleteBooking, bandName, showToast }) {
+      onAddBooking, onUpdateBooking, onDeleteBooking, bandName, showToast, onBulkAddVenues }) {
       const [vTab, setVTab] = useState('venues');
       const [venueForm, setVenueForm] = useState(null);
       const [editVenueId, setEditVenueId] = useState(null);
@@ -5718,6 +5718,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [localEpk, setLocalEpk] = useState(epkSettings);
       const [tplKey, setTplKey] = useState('outreach');
       const [epkDirty, setEpkDirty] = useState(false);
+      const venueCsvRef = React.useRef(null);
 
       useEffect(() => { setLocalEpk(epkSettings); setEpkDirty(false); }, [open]);
       if (!open) return null;
@@ -5789,12 +5790,63 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             </div>
           );
         }
+        const handleVenueCSV = (file) => {
+          if (!file) return;
+          Papa.parse(file, {
+            header: true, skipEmptyLines: true,
+            complete: ({ data }) => {
+              if (!data.length) { showToast('No rows found in CSV', 'warning'); return; }
+              const synMap = {
+                name: ['name','venue','venue name','venuename'],
+                email: ['email','e-mail','email address','emailaddress'],
+                phone: ['phone','telephone','tel','mobile','cell'],
+                contactName: ['contact','contact name','booker','booker name','contactname'],
+                city: ['city','town'],
+                state: ['state','province','region','st'],
+                type: ['type','venue type','venuetype','category'],
+                website: ['website','url','web','site'],
+                notes: ['notes','note','comments','comment','description'],
+                status: ['status','pipeline','stage'],
+              };
+              const headers = Object.keys(data[0]);
+              const colMap = {};
+              Object.entries(synMap).forEach(([field, syns]) => {
+                const orig = headers.find(h => syns.includes(h.trim().toLowerCase()));
+                if (orig) colMap[field] = orig;
+              });
+              if (!colMap.name) { showToast('CSV must have a Name or Venue column', 'warning'); return; }
+              const parsed = data.map(row => {
+                const v = {};
+                Object.entries(colMap).forEach(([field, col]) => { v[field] = (row[col] || '').trim(); });
+                return v;
+              }).filter(v => v.name);
+              if (!parsed.length) { showToast('No valid venue rows found', 'warning'); return; }
+              onBulkAddVenues(parsed);
+            },
+            error: () => showToast('Error parsing CSV', 'error'),
+          });
+        };
+        const downloadSampleVenueCSV = () => {
+          const csv = 'Name,Email,Phone,Contact Name,City,State,Venue Type,Website,Status,Notes\n' +
+            'The Blue Room,booking@blueroom.com,(555) 000-0000,Jane Smith,Nashville,TN,Bar,https://blueroom.com,prospect,Great capacity\n' +
+            'The Jazz Lounge,info@jazzlounge.com,(555) 111-2222,Mark Davis,Austin,TX,Club,https://jazzlounge.com,prospect,Great acoustics';
+          const blob = new Blob([csv], { type: 'text/csv' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a'); a.href = url; a.download = 'venue-import-sample.csv'; a.click();
+          URL.revokeObjectURL(url);
+        };
         const sortedVenues = [...venues].sort((a, b) => (VENUE_STATUS_ORDER[a.status] ?? 4) - (VENUE_STATUS_ORDER[b.status] ?? 4));
         return (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.65rem' }}>
+            <input ref={venueCsvRef} type="file" accept=".csv" style={{ display: 'none' }}
+              onChange={e => { handleVenueCSV(e.target.files[0]); e.target.value = ''; }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.65rem', flexWrap: 'wrap', gap: '.35rem' }}>
               <div style={{ fontSize: '.8rem', color: 'var(--text-muted)' }}>{venues.length} venue{venues.length !== 1 ? 's' : ''}</div>
-              <button className="btn btn-small btn-primary" onClick={() => setVenueForm({...BLANK_VENUE})}>+ Add Venue</button>
+              <div style={{ display: 'flex', gap: '.35rem', flexWrap: 'wrap' }}>
+                <button className="btn btn-small" onClick={downloadSampleVenueCSV} title="Download sample CSV template" style={{ fontSize: '.68rem', color: 'var(--text-muted)' }}>⬇ Sample CSV</button>
+                <button className="btn btn-small" onClick={() => venueCsvRef.current?.click()} title="Bulk-import venues from a CSV file" style={{ fontSize: '.68rem' }}>⬆ Import CSV</button>
+                <button className="btn btn-small btn-primary" onClick={() => setVenueForm({...BLANK_VENUE})}>+ Add Venue</button>
+              </div>
             </div>
             {venues.length === 0 && (
               <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2.5rem 1rem' }}>
@@ -6280,6 +6332,21 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const addVenue = (form) => { setVenues(prev => [...prev, { ...form, id: genId(), createdAt: Date.now() }]); showToast('Venue added', 'success'); };
       const updateVenue = (v) => { setVenues(prev => prev.map(x => x.id === v.id ? v : x)); };
       const deleteVenue = (id) => { setVenues(prev => prev.filter(x => x.id !== id)); showToast('Venue removed', 'success'); };
+      const bulkAddVenues = (newVenues) => {
+        const currentNames = new Set(venues.map(v => v.name.trim().toLowerCase()));
+        const toAdd = []; let skipped = 0;
+        newVenues.forEach(v => {
+          const key = (v.name || '').trim().toLowerCase();
+          if (!key || currentNames.has(key)) { skipped++; return; }
+          currentNames.add(key);
+          toAdd.push({ ...BLANK_VENUE, ...v, id: genId(), createdAt: Date.now() });
+        });
+        if (toAdd.length) setVenues(prev => [...prev, ...toAdd]);
+        const msg = toAdd.length
+          ? `Added ${toAdd.length} venue${toAdd.length !== 1 ? 's' : ''}${skipped ? `, skipped ${skipped} duplicate${skipped !== 1 ? 's' : ''}` : ''}`
+          : `No new venues — ${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped`;
+        showToast(msg, toAdd.length ? 'success' : 'warning');
+      };
       const addBooking = (form) => { setBookings(prev => [...prev, { ...form, id: genId(), createdAt: Date.now() }]); showToast('Booking added', 'success'); };
       const updateBooking = (b) => { setBookings(prev => prev.map(x => x.id === b.id ? b : x)); showToast('Booking updated', 'success'); };
       const deleteBooking = (id) => { setBookings(prev => prev.filter(x => x.id !== id)); showToast('Booking removed', 'success'); };
@@ -8103,6 +8170,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               onAddBooking={addBooking}
               onUpdateBooking={updateBooking}
               onDeleteBooking={deleteBooking}
+              onBulkAddVenues={bulkAddVenues}
               bandName={activeBand?.name || 'Band'}
               showToast={showToast}
             />
