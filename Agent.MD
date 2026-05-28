@@ -1,6 +1,6 @@
 
 AGENT.MD — Setlist Generator Pro v3.8+ Handoff Document
-Last updated: 2026-05-28 (PR #64)
+Last updated: 2026-05-28 (PR #68)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PROJECT OVERVIEW
@@ -175,6 +175,48 @@ RECENT WORK — MERGED PRs
   • Constants: VENUE_TYPES, VENUE_STATUSES, VENUE_STATUS_ORDER,
     EMAIL_TEMPLATES_DEFAULT, EPK_SETTINGS_DEFAULT, BLANK_VENUE, BLANK_BOOKING
 
+── PR #67 (arrangement-macros) ──────────────────────────
+  Merged: 2026-05-28
+  Branch: claude/arrangement-macros
+
+  What shipped:
+  • 22 clickable quick-tag buttons above the arrangement role grid in
+    both Add Song and Edit Song forms — eliminates typing common cues
+    across large song libraries
+  • ARRANGEMENT_MACROS constant array { cat, label, role, text }
+  • MACRO_CATS ordering: ['intro', 'ending', 'feel', 'cues']
+  • 4 colour-coded categories:
+    - intro  (blue)   — 4-Bar Count-In, Acoustic Start, Direct Segue,
+                        Cold Open, Drum Intro, Keys Lead-In
+    - ending (orange) — Hard Stop on 1, Trash-Can / Visual Cue, Fade on Groove,
+                        Big Ending, Tag × 3, Vamp Out
+    - feel   (purple) — Half-Time Feel, Double-Time Feel, Build to Chorus, Breakdown
+    - cues   (green)  — Root Notes Only, Fill on Bar 8, Organ Tone,
+                        Rootless Voicings, Rhythm Only
+  • Each macro targets its natural role (endings → endingCue, fills → drums, etc.)
+  • Click appends with space separator — existing content never overwritten
+  • Tooltip on hover shows target role name
+  • appendMacro(role, text) helper inside each form IIFE
+  • CSS: .macro-strip, .macro-btn, .macro-cat-label, .macro-btn.cat-{intro|ending|feel|cues}
+
+── PR #68 (advance-role-filter) ─────────────────────────
+  Merged: 2026-05-28
+  Branch: claude/advance-role-filter
+
+  What shipped:
+  • "Show roles:" checkbox bar — appears below Advance View toggle,
+    one checkbox per ARR_ROLE, hidden in Stage View
+  • advanceRoleFilter state (Set<role>) in App — default: all 6 roles checked
+  • Unchecking a role hides it consistently across:
+    - SetlistView Advance render (role rows filtered)
+    - exportPDF (role text lines filtered)
+    - openEmailShare (role label block filtered)
+    - copyToClipboard (per-role [LABEL] lines filtered)
+  • Enables bassist-only or drummer-only targeted document generation
+  • Session-only preference (resets to all-checked on reload — correct default)
+  • SetlistView accepts advanceRoleFilter prop; falls back to all roles if undefined
+  • CSS: .role-filter-bar, .role-filter-label, .role-filter-check
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KEY FUNCTIONS & LINE NUMBERS (approximate — verify on read)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -196,6 +238,8 @@ downloadSampleCSV()           ~6070  — Downloads sample CSV with Arrangement c
 VenueModal()                  ~5630  — Venue CRM + Booking Calendar + EPK templates
 fillAndSend()                 inside VenueModal — builds mailto: from template + placeholders
 addVenue/updateVenue/...      ~6201  — CRUD for venues, bookings, EPK settings in App
+ARRANGEMENT_MACROS            ~661   — 22 quick-tag constants { cat, label, role, text }
+advanceRoleFilter             App state (Set<role>) — controls which roles appear in exports
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EARLIER FIXES (pre-PR #56, documented in previous Agent.MD)
@@ -220,17 +264,7 @@ EARLIER FIXES (pre-PR #56, documented in previous Agent.MD)
 SUGGESTED NEXT STEPS (in priority order)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. Arrangement Macros / Quick-Tags
-   Clickable buttons above role textareas to inject common directives:
-   [Hard Stop on 1] [Trash-Can / Visual Cue] [Fade on Groove] [4-bar Drum Intro]
-   Eliminates typing the same cues across 100+ songs. Macros stored as a constant
-   array, no new state needed.
-
-2. Role Filtering for Advance View export
-   Checkbox row (Drums / Bass / Keys / Guitar 2) filters which ARR_ROLES are
-   rendered in PDF, email, and print — gives each hired player a targeted document.
-
-3. Venue CSV import
+1. Venue CSV import
    Bulk-load venue prospect lists from spreadsheet using the same PapaParse
    pipeline as song imports. Column synonyms: NAME/VENUE, EMAIL, PHONE, CITY, TYPE.
 
