@@ -1,6 +1,6 @@
 
 AGENT.MD — Setlist Generator Pro v3.8+ Handoff Document
-Last updated: 2026-05-28 (PR #68)
+Last updated: 2026-05-28 (PR #74)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PROJECT OVERVIEW
@@ -32,7 +32,8 @@ SONG OBJECT SCHEMA (current)
   key:         string    — musical key (e.g. 'Am', 'F#')
   bpm:         string    — tempo as string (e.g. '120')
   vocalist:    string    — vocalist name or 'ALL'
-  arrangement: string    — optional arrangement/cue notes (ADDED v3.9)
+  arrangement: string    — JSON-encoded { global, drums, keys, bass, guitar2, endingCue }
+                           or plain text (legacy) — parseArrangement() handles both
   styleInferred: bool   — optional, set when style was auto-inferred from artist
 }
 
@@ -40,20 +41,24 @@ SONG OBJECT SCHEMA (current)
 COMPONENT HIERARCHY
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-App (line ~5443)
-├── SongLibrary (line ~3384)         — Add/Edit/Import song library
-├── SetConfiguration (line ~3741)   — Settings panel + Generate/Export buttons
+App (line ~6110)
+├── SongLibrary (line ~3520)         — Add/Edit/Import song library
+├── SetConfiguration (line ~4080)   — Settings panel + pool meter + Generate/Export buttons
+│     Pool meter: green/orange bar showing "X available · ~Y needed"
 │     Toolbar buttons: Copy Text | 📧 Email / Share | Export PDF
-├── SetlistView (line ~4373) × N    — One per generated set
-│     Props include: viewMode ('stage'|'advance')
-├── UnusedSongsPanel (line ~4233)
-├── EmailShareModal (line ~4331)    — email-ready text modal
-├── VenueModal (line ~5630)         — NEW PR #64: Venues CRM + Booking Calendar + EPK
-│     Tab 1 — Venues: pipeline list, add/edit/delete, per-venue mailto: send buttons
+├── SetlistView (line ~4720) × N    — One per generated set
+│     Props include: viewMode ('stage'|'advance'), advanceRoleFilter
+├── StageModeOverlay (line ~5795)   — Full-screen dark overlay for on-stage reading
+│     Triggered by "📱 Stage Mode" button in view toggle bar
+│     ESC key or exit button closes; read-only, scrollable
+├── UnusedSongsPanel (line ~4600)
+├── EmailShareModal (line ~4680)    — email-ready text modal
+├── VenueModal (line ~5840)         — Venues CRM + Booking Calendar + EPK
+│     Tab 1 — Venues: pipeline list, add/edit/delete, CSV import, per-venue mailto: send
 │     Tab 2 — Bookings: month-view calendar + booking CRUD
 │     Tab 3 — EPK & Templates: links + 4 editable email templates
 ├── BandModal
-├── ImportSongsModal (line ~4529)
+├── ImportSongsModal (line ~4600)
 ├── GigProfileModal
 └── PrintView (hidden, print-only)
 
@@ -110,7 +115,6 @@ RECENT WORK — MERGED PRs
   • CSS: .email-share-modal, .email-share-textarea, .email-share-copied
 
 ── PR #61 (structured-arrangement-roles) ────────────────
-
   Merged: 2026-05-28
   Branch: claude/structured-arrangement-roles
 
@@ -217,29 +221,112 @@ RECENT WORK — MERGED PRs
   • SetlistView accepts advanceRoleFilter prop; falls back to all roles if undefined
   • CSS: .role-filter-bar, .role-filter-label, .role-filter-check
 
+── PR #70 (venue-csv-import) ────────────────────────────
+  Merged: 2026-05-28
+  Branch: claude/venue-csv-import
+
+  What shipped:
+  • "⬆ Import CSV" button in Venues tab — triggers hidden file input (PapaParse)
+  • "⬇ Sample CSV" button — downloads a two-row template (venue-import-sample.csv)
+    Columns: Name, Email, Phone, Contact Name, City, State, Venue Type,
+             Website, Status, Notes
+  • Column synonym map — flexible header matching:
+    name/venue, email/e-mail, phone/telephone/tel/mobile/cell,
+    contact/booker/contact name, city/town, state/province/region,
+    type/venue type/category, website/url/web/site,
+    status/pipeline/stage, notes/note/comments/description
+  • Deduplication by name (case-insensitive) — safe to re-import
+  • Toast: "Added X venues, skipped Y duplicates" / warning if no name col found
+  • bulkAddVenues(newVenues[]) in App — deduplicates against current venues state,
+    assigns genId() + createdAt, merges with BLANK_VENUE defaults
+  • onBulkAddVenues prop added to VenueModal signature and wired in App render
+  • venueCsvRef = React.useRef(null) added to VenueModal for the hidden input
+
+── PR #71 (pool-meter-songcount) ─────────────────────────
+  Merged: 2026-05-28
+  Branch: claude/pool-meter-songcount
+
+  What shipped:
+  • Pool meter bar above the Generate button in SetConfiguration
+    - Estimates songs needed: Σ ceil(setDuration_i / avgSongDuration) across all sets
+    - Green "X available · ~Y needed" when pool is sufficient
+    - Orange "X available · ~Y needed  ⚠ may exhaust" when pool would run out
+    - Hidden when allowSongReuse is true (no exhaustion possible) or library empty
+  • poolAvailable / poolRequired / poolOk derived values in SetConfiguration
+    — computed from activeSongs prop + settings, zero runtime cost
+
+── PR #73 (mobile-stage-view) ───────────────────────────
+  Merged: 2026-05-28
+  Branch: claude/mobile-stage-view
+
+  What shipped:
+  • StageModeOverlay component — full-screen dark overlay for on-stage reading
+  • "📱 Stage Mode" button added to the view toggle bar (purple, distinct from
+    Stage View / Advance View toggles)
+  • Overlay layout:
+    - Background: #0d0d0f (near-black)
+    - Song number: 2rem bold, muted (positional reference only)
+    - Song title: 1.6rem bold white
+    - Meta row: artist · key badge (blue) · BPM · elapsed time
+    - Arrangement cue: green italic (from getArrangementCue(), if present)
+    - Sets separated by header rows (name · song count · duration)
+  • ESC key or "✕ EXIT STAGE MODE" button closes the overlay
+  • Read-only, no edit controls — pure display mode
+  • stageMode state (boolean) in App
+  • CSS: .stage-overlay, .stage-overlay-inner, .stage-overlay-close,
+    .stage-overlay-set, .stage-overlay-set-header, .stage-overlay-song,
+    .stage-song-num, .stage-song-body, .stage-song-title, .stage-song-meta,
+    .stage-song-key, .stage-song-bpm, .stage-song-time, .stage-song-cue,
+    .stage-mode-btn
+
+── PR #74 (perRole-csv-columns) ─────────────────────────
+  Merged: 2026-05-28
+  Branch: claude/perRole-csv-columns
+
+  What shipped:
+  • Phase 3: single ARRANGEMENT column replaced with 6 per-role columns
+    in all CSV paths:
+    Arr General | Arr Drums | Arr Keys | Arr Bass | Arr Guitar2 | Arr Ending Cue
+  • exportSongs() — calls parseArrangement() on each song, emits 6 cells
+    (handles both JSON and legacy plain-text arrangement fields)
+  • downloadSampleCSV() — updated header + sample data using macro-style tags
+  • importNormalizeRow() — detects per-role headers via ARR_ROLE_IMPORT_HEADERS
+    synonym table, calls serializeArrangement() to reconstruct; falls back to
+    legacy single ARRANGEMENT column if no per-role headers found
+    (fully backward compatible with old exports)
+  • importToCanonicalCSV() — Import+Normalize canonical download now emits 6 cols
+  • ARR_ROLE_IMPORT_HEADERS constant (~line 690) — synonym map for each role:
+    e.g. 'arr drums', 'arrangement drums', 'arr_drums' all map to drums role
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KEY FUNCTIONS & LINE NUMBERS (approximate — verify on read)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-parseArrangement()            ~562   — str → { global, drums, keys, bass, guitar2, endingCue }
-serializeArrangement()        ~572   — obj → JSON string (plain string if only global)
-getArrangementCue()           ~585   — 40-char Stage View cue from arrangement
-hasArrangementData()          ~593   — bool: any role field populated
-generateSetlistsCore()        ~2860  — main setlist algorithm
-generateSetlistsCore_WithTonalGravity()  ~2350
-generate()                    ~5590  — App-level trigger, calls core + injects arrangement notes
-exportSongs()                 ~5700  — CSV export (includes Arrangement column)
-importCSVRobust()             ~5830  — Quick Import (CSV/PDF, fuzzy dedup)
-importCanonicalRows()         ~6090  — Import+Normalize modal finalizer
-exportPDF()                   ~6190  — jsPDF export (view-mode aware)
-copyToClipboard()             ~6220  — Plain text copy (view-mode aware)
-openEmailShare()              ~6230  — Formats email-ready text, opens EmailShareModal
-downloadSampleCSV()           ~6070  — Downloads sample CSV with Arrangement column
-VenueModal()                  ~5630  — Venue CRM + Booking Calendar + EPK templates
+parseArrangement()            ~695   — str → { global, drums, keys, bass, guitar2, endingCue }
+serializeArrangement()        ~705   — obj → JSON string (plain string if only global)
+getArrangementCue()           ~718   — 40-char Stage View cue from arrangement
+hasArrangementData()          ~726   — bool: any role field populated
+ARR_ROLE_IMPORT_HEADERS       ~690   — synonym map for per-role CSV column detection
+generateSetlistsCore()        ~3050  — main setlist algorithm
+generateSetlistsCore_WithTonalGravity()  ~2550
+generate()                    ~6490  — App-level trigger, calls core + injects arrangement notes
+exportSongs()                 ~6559  — CSV export (6 per-role arrangement columns)
+importCSVRobust()             ~6770  — Quick Import (CSV/PDF, fuzzy dedup)
+importCanonicalRows()         ~6938  — Import+Normalize modal finalizer
+importToCanonicalCSV()        ~1930  — generates canonical CSV with 6 per-role columns
+exportPDF()                   ~7100  — jsPDF export (view-mode aware)
+copyToClipboard()             ~7030  — Plain text copy (view-mode aware)
+openEmailShare()              ~7040  — Formats email-ready text, opens EmailShareModal
+downloadSampleCSV()           ~6838  — Downloads sample CSV with 6 per-role arr columns
+StageModeOverlay()            ~5795  — full-screen dark overlay component
+VenueModal()                  ~5840  — Venue CRM + Booking Calendar + EPK templates
 fillAndSend()                 inside VenueModal — builds mailto: from template + placeholders
-addVenue/updateVenue/...      ~6201  — CRUD for venues, bookings, EPK settings in App
-ARRANGEMENT_MACROS            ~661   — 22 quick-tag constants { cat, label, role, text }
+bulkAddVenues()               ~6430  — deduplicates + batch-adds venues from CSV import
+addVenue/updateVenue/...      ~6420  — CRUD for venues, bookings, EPK settings in App
+ARRANGEMENT_MACROS            ~665   — 22 quick-tag constants { cat, label, role, text }
 advanceRoleFilter             App state (Set<role>) — controls which roles appear in exports
+stageMode                     App state (bool) — controls StageModeOverlay visibility
+poolRequired / poolOk         SetConfiguration derived values — pool meter calculation
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EARLIER FIXES (pre-PR #56, documented in previous Agent.MD)
@@ -261,21 +348,23 @@ EARLIER FIXES (pre-PR #56, documented in previous Agent.MD)
 ✅ CSV hardening solid (quoting, delimiter detection, fuzzy dedup)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SUGGESTED NEXT STEPS (in priority order)
+SUGGESTED NEXT STEPS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. Venue CSV import
-   Bulk-load venue prospect lists from spreadsheet using the same PapaParse
-   pipeline as song imports. Column synonyms: NAME/VENUE, EMAIL, PHONE, CITY, TYPE.
+1. Gig history / past setlists view
+   Browse previously saved gig profiles with their setlists, dates, and venues.
+   Useful for avoiding setlist repeats at the same venue.
 
-4. "Remaining songs" meter in SetConfiguration
-   Show songs available vs. required before generation to prevent
-   pool-exhaustion warnings.
+2. Tap-to-highlight in Stage Mode
+   Tap a song row in StageModeOverlay to enlarge it for a beat (current-song
+   indicator), then auto-advance or manually tap to move to the next song.
 
-5. Mobile Stage View optimisation
-   Large-font, high-contrast mode for reading from 3 feet on stage.
+3. Venue CSV import — column-type normalisation
+   Validate and normalise the 'status' column on import against VENUE_STATUSES
+   key list (currently imported verbatim; invalid values silently default to
+   BLANK_VENUE.status = 'prospect').
 
-6. Phase 3 arrangement: per-role CSV columns
-   Expand ARRANGEMENT CSV column into ARRANGEMENT_GLOBAL / ARRANGEMENT_DRUMS /
-   ARRANGEMENT_KEYS etc. with IMPORT_COLUMN_SYNONYMS mapping, for spreadsheet
-   editing outside the app.
+4. Per-role CSV columns — Import+Normalize column mapping UI
+   Expose the 6 per-role arr columns in the manual column-mapping dropdowns of
+   the Import+Normalize modal so users can hand-assign them when header names
+   don't match the synonym table.
