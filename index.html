@@ -377,13 +377,26 @@
       grid-template-columns: 20px 32px 1fr 54px 60px;
       grid-auto-rows: auto;
     }
-    /* Arrangement textarea in song form */
-    .arrangement-textarea {
-      width: 100%; font-size: .82rem; padding: .4rem .5rem;
-      background: var(--primary); border: 1px solid var(--border); border-radius: 6px;
-      color: var(--text); resize: vertical; min-height: 54px; font-family: inherit;
+    /* Arrangement role grid — Add/Edit form */
+    .arr-roles-section { margin-bottom: .4rem; }
+    .arr-roles-header { display: flex; align-items: center; gap: .4rem; margin-bottom: .35rem; cursor: pointer; user-select: none; }
+    .arr-roles-header-label { font-size: .72rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+    .arr-roles-header-badge { font-size: .62rem; padding: .1rem .4rem; border-radius: 10px; background: rgba(74,222,128,.15); color: var(--success); border: 1px solid rgba(74,222,128,.3); }
+    .arr-roles-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .35rem; }
+    .arr-role-full { grid-column: 1 / -1; }
+    .arr-role-item { display: flex; flex-direction: column; gap: .15rem; }
+    .arr-role-item-label { font-size: .6rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+    .arr-role-input {
+      width: 100%; font-size: .76rem; padding: .28rem .42rem; box-sizing: border-box;
+      background: var(--primary); border: 1px solid var(--border); border-radius: 5px;
+      color: var(--text); font-family: inherit; resize: none;
     }
-    .arrangement-textarea:focus { outline: 1px solid var(--accent); }
+    .arr-role-input:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+    /* Per-role display rows in Advance View */
+    .arr-role-display { display: flex; flex-direction: column; gap: .2rem; }
+    .arr-role-display-row { display: flex; gap: .5rem; align-items: baseline; }
+    .arr-role-display-label { font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--success); min-width: 62px; flex-shrink: 0; }
+    .arr-role-display-text { font-size: .78rem; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; line-height: 1.4; }
 
     /* Email-Share Modal */
     .email-share-modal { width: min(640px, 95vw); max-height: 85vh; display: flex; flex-direction: column; background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
@@ -541,6 +554,48 @@
       phase1ReliabilityDataSafety: false,
       phase2MobileCompatibility: false
     };
+
+    /******************* ARRANGEMENT LAYER HELPERS *******************/
+    const ARR_ROLES = ['global', 'drums', 'keys', 'bass', 'guitar2', 'endingCue'];
+    const ARR_ROLE_LABELS = { global: 'General', drums: 'Drums', keys: 'Keys', bass: 'Bass', guitar2: 'Guitar 2', endingCue: 'Ending Cue' };
+
+    function parseArrangement(arrangement) {
+      const empty = { global: '', drums: '', keys: '', bass: '', guitar2: '', endingCue: '' };
+      if (!arrangement) return empty;
+      if (typeof arrangement === 'string' && arrangement.trim().startsWith('{')) {
+        try { return { ...empty, ...JSON.parse(arrangement) }; }
+        catch (e) { return { ...empty, global: arrangement }; }
+      }
+      return { ...empty, global: arrangement };
+    }
+
+    function serializeArrangement(obj) {
+      if (!obj) return '';
+      const { global: g = '', drums = '', keys = '', bass = '', guitar2 = '', endingCue = '' } = obj;
+      const hasStructured = drums || keys || bass || guitar2 || endingCue;
+      if (!hasStructured) return g;
+      const out = {};
+      if (g) out.global = g;
+      if (drums) out.drums = drums;
+      if (keys) out.keys = keys;
+      if (bass) out.bass = bass;
+      if (guitar2) out.guitar2 = guitar2;
+      if (endingCue) out.endingCue = endingCue;
+      return JSON.stringify(out);
+    }
+
+    function getArrangementCue(arrangement) {
+      if (!arrangement) return '';
+      const { endingCue, global: g } = parseArrangement(arrangement);
+      const cue = (endingCue || g || '').replace(/^\[OPENER\]\s*/,'').replace(/\n\[CLOSER\][^\n]*$/,'').trim();
+      return cue.slice(0, 40) + (cue.length > 40 ? '…' : '');
+    }
+
+    function hasArrangementData(arrangement) {
+      if (!arrangement) return false;
+      const p = parseArrangement(arrangement);
+      return ARR_ROLES.some(r => p[r]);
+    }
 
     /******************* UTILITIES & GUARDS *******************/
     const genId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() :
@@ -3572,15 +3627,42 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             </div>
           </div>
 
-          <div className="input-group">
-            <label>Arrangement Notes <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Advance View)</span></label>
-            <textarea
-              className="arrangement-textarea"
-              value={form.arrangement}
-              onChange={e => setForm({ ...form, arrangement: e.target.value })}
-              placeholder="Drum intro 4 bars, key change at bridge, end on cue…"
-              rows="2"
-            />
+          <div className="arr-roles-section">
+            <div className="arr-roles-header">
+              <span className="arr-roles-header-label">Arrangement <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Advance View)</span></span>
+            </div>
+            {(() => {
+              const arrObj = parseArrangement(form.arrangement);
+              const upd = (role, val) => setForm({ ...form, arrangement: serializeArrangement({ ...arrObj, [role]: val }) });
+              return (
+                <div className="arr-roles-grid">
+                  <div className="arr-role-item arr-role-full">
+                    <div className="arr-role-item-label">General Notes</div>
+                    <textarea className="arr-role-input" rows="2" value={arrObj.global} onChange={e => upd('global', e.target.value)} placeholder="General cues, form notes, count-in…" />
+                  </div>
+                  <div className="arr-role-item">
+                    <div className="arr-role-item-label">Drums</div>
+                    <textarea className="arr-role-input" rows="1" value={arrObj.drums} onChange={e => upd('drums', e.target.value)} placeholder="Fill on bar 8…" />
+                  </div>
+                  <div className="arr-role-item">
+                    <div className="arr-role-item-label">Keys</div>
+                    <textarea className="arr-role-input" rows="1" value={arrObj.keys} onChange={e => upd('keys', e.target.value)} placeholder="Organ intro…" />
+                  </div>
+                  <div className="arr-role-item">
+                    <div className="arr-role-item-label">Bass</div>
+                    <textarea className="arr-role-input" rows="1" value={arrObj.bass} onChange={e => upd('bass', e.target.value)} placeholder="Root notes only…" />
+                  </div>
+                  <div className="arr-role-item">
+                    <div className="arr-role-item-label">Guitar 2</div>
+                    <textarea className="arr-role-input" rows="1" value={arrObj.guitar2} onChange={e => upd('guitar2', e.target.value)} placeholder="Rhythm only…" />
+                  </div>
+                  <div className="arr-role-item arr-role-full">
+                    <div className="arr-role-item-label">Ending Cue</div>
+                    <textarea className="arr-role-input" rows="1" value={arrObj.endingCue} onChange={e => upd('endingCue', e.target.value)} placeholder="End on visual cue from drummer…" />
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           <button className="btn btn-primary" onClick={handleAdd} style={{ width: '100%', marginBottom: '1rem' }}>
@@ -3690,16 +3772,43 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                           <input value={editForm.vocalist} onChange={e => setEditForm({ ...editForm, vocalist: e.target.value })} style={{ fontSize: '.82rem', padding: '.3rem .5rem' }} />
                         </div>
                       </div>
-                      <div className="input-group" style={{ marginBottom: '.4rem' }}>
-                        <label style={{ fontSize: '.65rem' }}>Arrangement Notes <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Advance View)</span></label>
-                        <textarea
-                          className="arrangement-textarea"
-                          value={editForm.arrangement || ''}
-                          onChange={e => setEditForm({ ...editForm, arrangement: e.target.value })}
-                          placeholder="Drum intro 4 bars, key change at bridge, end on cue…"
-                          rows="2"
-                          style={{ fontSize: '.78rem' }}
-                        />
+                      <div className="arr-roles-section" style={{ marginBottom: '.4rem' }}>
+                        <div className="arr-roles-header">
+                          <span className="arr-roles-header-label" style={{ fontSize: '.6rem' }}>Arrangement <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Advance View)</span></span>
+                          {hasArrangementData(editForm.arrangement) && <span className="arr-roles-header-badge">has notes</span>}
+                        </div>
+                        {(() => {
+                          const arrObj = parseArrangement(editForm.arrangement);
+                          const upd = (role, val) => setEditForm({ ...editForm, arrangement: serializeArrangement({ ...arrObj, [role]: val }) });
+                          return (
+                            <div className="arr-roles-grid">
+                              <div className="arr-role-item arr-role-full">
+                                <div className="arr-role-item-label">General Notes</div>
+                                <textarea className="arr-role-input" rows="2" value={arrObj.global} onChange={e => upd('global', e.target.value)} placeholder="General cues, form notes, count-in…" />
+                              </div>
+                              <div className="arr-role-item">
+                                <div className="arr-role-item-label">Drums</div>
+                                <textarea className="arr-role-input" rows="1" value={arrObj.drums} onChange={e => upd('drums', e.target.value)} placeholder="Fill on bar 8…" />
+                              </div>
+                              <div className="arr-role-item">
+                                <div className="arr-role-item-label">Keys</div>
+                                <textarea className="arr-role-input" rows="1" value={arrObj.keys} onChange={e => upd('keys', e.target.value)} placeholder="Organ intro…" />
+                              </div>
+                              <div className="arr-role-item">
+                                <div className="arr-role-item-label">Bass</div>
+                                <textarea className="arr-role-input" rows="1" value={arrObj.bass} onChange={e => upd('bass', e.target.value)} placeholder="Root notes only…" />
+                              </div>
+                              <div className="arr-role-item">
+                                <div className="arr-role-item-label">Guitar 2</div>
+                                <textarea className="arr-role-input" rows="1" value={arrObj.guitar2} onChange={e => upd('guitar2', e.target.value)} placeholder="Rhythm only…" />
+                              </div>
+                              <div className="arr-role-item arr-role-full">
+                                <div className="arr-role-item-label">Ending Cue</div>
+                                <textarea className="arr-role-input" rows="1" value={arrObj.endingCue} onChange={e => upd('endingCue', e.target.value)} placeholder="End on visual cue from drummer…" />
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                       <div className="toolbar" style={{ justifyContent: 'flex-end', gap: '.3rem' }}>
                         <button className="btn btn-small" onClick={saveEdit} style={{ borderColor: 'var(--success)', color: 'var(--success)' }}>Save</button>
@@ -3717,6 +3826,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                           {song.key && <span>{song.key}</span>}
                           {song.bpm && <span>{song.bpm}bpm</span>}
                           {song.vocalist && <span>({song.vocalist})</span>}
+                          {hasArrangementData(song.arrangement) && <span className="arr-roles-header-badge" title="Has arrangement notes">📋 arr</span>}
                         </div>
                       </div>
                       <div className="toolbar" style={{ justifyContent: 'flex-end' }}>
@@ -4346,7 +4456,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               <div>
                 <h3 style={{ margin: 0, fontSize: '1rem' }}>📧 Email / Share</h3>
                 <div style={{ fontSize: '.75rem', color: 'var(--text-muted)', marginTop: '.15rem' }}>
-                  {viewMode === 'advance' ? 'Advance view — arrangement notes included' : 'Stage view — minimal format'}
+                  {viewMode === 'advance' ? 'Advance view — per-role arrangement notes included' : 'Stage view — minimal format'}
                 </div>
               </div>
               <button className="btn btn-small" onClick={onClose} style={{ fontSize: '1rem', padding: '.1rem .5rem' }}>✕</button>
@@ -4466,9 +4576,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     <span>{parseDuration(song.duration)}min</span>
                     {song.key && <span style={{ fontSize: '.7rem', color: 'var(--text-muted)' }}>{song.key}</span>}
                   </div>
-                  {viewMode === 'stage' && song.arrangement && (
-                    <div className="arrangement-cue" title={song.arrangement}>
-                      ▸ {song.arrangement.slice(0, 40)}{song.arrangement.length > 40 ? '…' : ''}
+                  {viewMode === 'stage' && song.arrangement && getArrangementCue(song.arrangement) && (
+                    <div className="arrangement-cue" title={getArrangementCue(song.arrangement)}>
+                      ▸ {getArrangementCue(song.arrangement)}
                     </div>
                   )}
                 </div>
@@ -4494,12 +4604,22 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     ✕
                   </button>
                 </div>
-                {viewMode === 'advance' && song.arrangement && (
-                  <div className="arrangement-notes-row">
-                    <div className="arrangement-label">Arrangement</div>
-                    <div className="arrangement-notes-content">{song.arrangement}</div>
-                  </div>
-                )}
+                {viewMode === 'advance' && hasArrangementData(song.arrangement) && (() => {
+                  const arr = parseArrangement(song.arrangement);
+                  return (
+                    <div className="arrangement-notes-row">
+                      <div className="arrangement-label">Arrangement</div>
+                      <div className="arrangement-notes-content arr-role-display">
+                        {ARR_ROLES.filter(r => arr[r]).map(role => (
+                          <div key={role} className="arr-role-display-row">
+                            <span className="arr-role-display-label">{ARR_ROLE_LABELS[role]}</span>
+                            <span className="arr-role-display-text">{arr[role]}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
@@ -5691,17 +5811,19 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             if (!set.songs || set.songs.length === 0) return;
             if (settings.forceOpener) {
               const first = set.songs[0];
-              const existing = first.arrangement || '';
-              if (!existing.includes('[OPENER]')) {
-                set.songs[0] = { ...first, arrangement: `[OPENER] Establish groove before vocal. ${existing}`.trim() };
+              const arr = parseArrangement(first.arrangement);
+              if (!arr.global.includes('[OPENER]')) {
+                arr.global = `[OPENER] Establish groove before vocal. ${arr.global}`.trim();
+                set.songs[0] = { ...first, arrangement: serializeArrangement(arr) };
               }
             }
             if (settings.forceCloser) {
               const lastIdx = set.songs.length - 1;
               const last = set.songs[lastIdx];
-              const existing = last.arrangement || '';
-              if (!existing.includes('[CLOSER]')) {
-                set.songs[lastIdx] = { ...last, arrangement: `${existing}\n[CLOSER] Extended vamp – end on visual cue.`.trim() };
+              const arr = parseArrangement(last.arrangement);
+              if (!arr.global.includes('[CLOSER]')) {
+                arr.global = `${arr.global}\n[CLOSER] Extended vamp – end on visual cue.`.trim();
+                set.songs[lastIdx] = { ...last, arrangement: serializeArrangement(arr) };
               }
             }
           });
@@ -6191,9 +6313,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             const meta = [s.key, s.bpm ? `${s.bpm} BPM` : '', s.style].filter(Boolean).join('  |  ');
             lines.push(`${String(idx + 1).padStart(2, ' ')}.  ${(s.title || '').toUpperCase()}${s.artist ? `  —  ${s.artist}` : ''}`);
             if (meta) lines.push(`      ${meta}`);
-            if (isAdvance && s.arrangement) {
-              const wrapped = s.arrangement.split('\n').map(l => `      ▸ ${l}`).join('\n');
-              lines.push(wrapped);
+            if (isAdvance && hasArrangementData(s.arrangement)) {
+              const arr = parseArrangement(s.arrangement);
+              ARR_ROLES.filter(r => arr[r]).forEach(role => {
+                const label = ARR_ROLE_LABELS[role].toUpperCase().padEnd(10);
+                arr[role].split('\n').forEach((line, i) => {
+                  lines.push(i === 0 ? `      ${label} ${line}` : `                   ${line}`);
+                });
+              });
             }
             lines.push('');
           });
@@ -6378,9 +6505,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             // Estimate arrangement block height for advance view
             let arrLines = [];
             let arrBlockH = 0;
-            if (isAdvance && song.arrangement) {
+            if (isAdvance && hasArrangementData(song.arrangement)) {
+              const arrParsed = parseArrangement(song.arrangement);
+              const roleTexts = ARR_ROLES.filter(r => arrParsed[r])
+                .map(r => `${ARR_ROLE_LABELS[r].toUpperCase()}: ${arrParsed[r]}`);
+              const fullText = roleTexts.join('\n');
               doc.setFontSize(ARR_FONT);
-              arrLines = doc.splitTextToSize(song.arrangement, tableW - CELL_PAD * 2);
+              arrLines = doc.splitTextToSize(fullText, tableW - CELL_PAD * 2);
               arrBlockH = arrLines.length * (ARR_FONT + 3) + ARR_VPAD * 2 + 4;
             }
 
@@ -6397,7 +6528,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
             yPos = drawSongRow(song, yPos, rowCounter);
 
-            // Advance view: render arrangement notes beneath the song row
+            // Advance view: render per-role arrangement notes beneath the song row
             if (isAdvance && arrLines.length > 0) {
               const blockY = yPos;
               doc.setFillColor(245, 250, 245);
