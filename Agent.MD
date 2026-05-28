@@ -1,6 +1,6 @@
 
 AGENT.MD — Setlist Generator Pro v3.8+ Handoff Document
-Last updated: 2026-05-28 (PR #68)
+Last updated: 2026-05-28 (PR #71)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PROJECT OVERVIEW
@@ -217,6 +217,40 @@ RECENT WORK — MERGED PRs
   • SetlistView accepts advanceRoleFilter prop; falls back to all roles if undefined
   • CSS: .role-filter-bar, .role-filter-label, .role-filter-check
 
+── PR #70 (venue-csv-import) ────────────────────────────
+  Merged: 2026-05-28
+  Branch: claude/venue-csv-import
+
+  What shipped:
+  • "⬆ Import CSV" button in Venues tab — triggers hidden file input (PapaParse)
+  • "⬇ Sample CSV" button — downloads a two-row template (venue-import-sample.csv)
+    Columns: Name, Email, Phone, Contact Name, City, State, Venue Type,
+             Website, Status, Notes
+  • Column synonym map — flexible header matching:
+    name/venue, email/e-mail, phone/telephone/tel/mobile/cell,
+    contact/booker/contact name, city/town, state/province/region,
+    type/venue type/category, website/url/web/site,
+    status/pipeline/stage, notes/note/comments/description
+  • Deduplication by name (case-insensitive) — safe to re-import
+  • Toast: "Added X venues, skipped Y duplicates" / warning if no name col found
+  • bulkAddVenues(newVenues[]) in App — deduplicates against current venues state,
+    assigns genId() + createdAt, merges with BLANK_VENUE defaults
+  • onBulkAddVenues prop added to VenueModal signature and wired in App render
+  • venueCsvRef = React.useRef(null) added to VenueModal for the hidden input
+
+── PR #71 (pool-meter-songcount) ─────────────────────────
+  Merged: 2026-05-28
+  Branch: claude/pool-meter-songcount
+
+  What shipped:
+  • Pool meter bar above the Generate button in SetConfiguration
+    - Estimates songs needed: Σ ceil(setDuration_i / avgSongDuration) across all sets
+    - Green "X available · ~Y needed" when pool is sufficient
+    - Orange "X available · ~Y needed  ⚠ may exhaust" when pool would run out
+    - Hidden when allowSongReuse is true (no exhaustion possible) or library empty
+  • poolAvailable / poolRequired / poolOk derived values in SetConfiguration
+    — computed from activeSongs prop + settings, zero runtime cost
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KEY FUNCTIONS & LINE NUMBERS (approximate — verify on read)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -235,11 +269,13 @@ exportPDF()                   ~6190  — jsPDF export (view-mode aware)
 copyToClipboard()             ~6220  — Plain text copy (view-mode aware)
 openEmailShare()              ~6230  — Formats email-ready text, opens EmailShareModal
 downloadSampleCSV()           ~6070  — Downloads sample CSV with Arrangement column
-VenueModal()                  ~5630  — Venue CRM + Booking Calendar + EPK templates
+VenueModal()                  ~5710  — Venue CRM + Booking Calendar + EPK templates
 fillAndSend()                 inside VenueModal — builds mailto: from template + placeholders
-addVenue/updateVenue/...      ~6201  — CRUD for venues, bookings, EPK settings in App
+bulkAddVenues()               ~6335  — deduplicates + batch-adds venues from CSV import
+addVenue/updateVenue/...      ~6332  — CRUD for venues, bookings, EPK settings in App
 ARRANGEMENT_MACROS            ~661   — 22 quick-tag constants { cat, label, role, text }
 advanceRoleFilter             App state (Set<role>) — controls which roles appear in exports
+poolRequired / poolOk         SetConfiguration derived values — pool meter calculation
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EARLIER FIXES (pre-PR #56, documented in previous Agent.MD)
@@ -264,18 +300,11 @@ EARLIER FIXES (pre-PR #56, documented in previous Agent.MD)
 SUGGESTED NEXT STEPS (in priority order)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. Venue CSV import
-   Bulk-load venue prospect lists from spreadsheet using the same PapaParse
-   pipeline as song imports. Column synonyms: NAME/VENUE, EMAIL, PHONE, CITY, TYPE.
-
-4. "Remaining songs" meter in SetConfiguration
-   Show songs available vs. required before generation to prevent
-   pool-exhaustion warnings.
-
-5. Mobile Stage View optimisation
+1. Mobile Stage View optimisation
    Large-font, high-contrast mode for reading from 3 feet on stage.
+   Tap to enlarge individual song row, lock screen orientation.
 
-6. Phase 3 arrangement: per-role CSV columns
+2. Phase 3 arrangement: per-role CSV columns
    Expand ARRANGEMENT CSV column into ARRANGEMENT_GLOBAL / ARRANGEMENT_DRUMS /
-   ARRANGEMENT_KEYS etc. with IMPORT_COLUMN_SYNONYMS mapping, for spreadsheet
-   editing outside the app.
+   ARRANGEMENT_KEYS / ARRANGEMENT_BASS / ARRANGEMENT_GUITAR2 / ARRANGEMENT_ENDING_CUE
+   with IMPORT_COLUMN_SYNONYMS mapping, for spreadsheet editing outside the app.
