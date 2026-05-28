@@ -105,10 +105,41 @@ RECENT WORK — MERGED PRs
     (between Copy Text and Export PDF, styled in blue)
   • CSS: .email-share-modal, .email-share-textarea, .email-share-copied
 
+── PR #61 (structured-arrangement-roles) ────────────────
+  Merged: 2026-05-28
+  Branch: claude/structured-arrangement-roles
+
+  What shipped:
+  • Replaced single free-text arrangement textarea with 6-role grid:
+    General Notes | Drums | Keys | Bass | Guitar 2 | Ending Cue
+  • ARR_ROLES array + ARR_ROLE_LABELS map for ordering and display
+  • parseArrangement(str) → { global, drums, keys, bass, guitar2, endingCue }
+    - Plain-text strings (from PR #58) auto-migrate to global field
+  • serializeArrangement(obj) → JSON string, or plain string if only global set
+    - Preserves full CSV/import round-trip compat for single-field arrangements
+  • getArrangementCue(str) → 40-char Stage View cue
+    - Prefers endingCue over global, strips [OPENER]/[CLOSER] tags
+  • hasArrangementData(str) → bool for badge/conditional render
+  • Add form + Edit form: arr-roles-grid 2-col CSS layout, per-role textareas
+  • Advance View: per-role labeled rows (ARR_ROLE_LABELS display names)
+  • Email share: role labels padded (GENERAL   / DRUMS   / KEYS   etc.)
+  • PDF export: ROLE: text lines per populated role in arrangement block
+  • Library card: 📋 arr badge when any role field is non-empty
+  • Smart notes injection updated: [OPENER]/[CLOSER] targets global field
+    of parsed structure, then re-serialized — handles both legacy and new data
+  • CSS added: .arr-roles-grid, .arr-role-item, .arr-role-full,
+    .arr-role-item-label, .arr-role-input, .arr-role-display,
+    .arr-role-display-row, .arr-role-display-label, .arr-role-display-text,
+    .arr-roles-section, .arr-roles-header, .arr-roles-header-badge
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KEY FUNCTIONS & LINE NUMBERS (approximate — verify on read)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+parseArrangement()            ~562   — str → { global, drums, keys, bass, guitar2, endingCue }
+serializeArrangement()        ~572   — obj → JSON string (plain string if only global)
+getArrangementCue()           ~585   — 40-char Stage View cue from arrangement
+hasArrangementData()          ~593   — bool: any role field populated
 generateSetlistsCore()        ~2860  — main setlist algorithm
 generateSetlistsCore_WithTonalGravity()  ~2350
 generate()                    ~5590  — App-level trigger, calls core + injects arrangement notes
@@ -143,18 +174,18 @@ EARLIER FIXES (pre-PR #56, documented in previous Agent.MD)
 SUGGESTED NEXT STEPS (in priority order)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. Structured per-role arrangement modal (Phase 2 of arrangement layer)
-   Replace free-text arrangement string with structured fields:
-   { global, drums, keys, bass, guitar2, endingCue }
-   Render per-role rows in Advance View. Store as JSON string in arrangement field
-   for backward compatibility. Existing plain-text lives in 'global'.
-
-2. "Remaining songs" meter in SetConfiguration
+1. "Remaining songs" meter in SetConfiguration
    Show songs available vs. required before generation to prevent
    pool-exhaustion warnings. (Suggested in original Agent.MD)
 
-3. Soft pre-generation warning if library is too small for requested sets/duration
+2. Soft pre-generation warning if library is too small for requested sets/duration
 
-4. Mobile Stage View optimisation
+3. Mobile Stage View optimisation
    Large-font, high-contrast mode for reading from 3 feet on stage
    (current Stage View works but could be larger on mobile)
+
+4. Phase 3 arrangement: per-role fields in CSV import/export
+   Currently the Arrangement CSV column carries the raw JSON blob.
+   Could be expanded to individual columns (ARRANGEMENT_DRUMS,
+   ARRANGEMENT_KEYS, etc.) with IMPORT_COLUMN_SYNONYMS mapping,
+   for easier spreadsheet editing outside the app.
