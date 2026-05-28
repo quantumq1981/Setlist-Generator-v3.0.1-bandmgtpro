@@ -346,6 +346,10 @@
     }
     /* Arrangement Layer — Stage / Advance View Toggle */
     .view-toggle-bar { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+    .role-filter-bar { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-top: .35rem; padding: .3rem .5rem; background: rgba(74,222,128,.06); border: 1px solid rgba(74,222,128,.2); border-radius: 6px; }
+    .role-filter-label { font-size: .65rem; font-weight: 700; color: var(--success); text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+    .role-filter-check { display: flex; align-items: center; gap: .25rem; font-size: .72rem; color: var(--text-muted); cursor: pointer; user-select: none; }
+    .role-filter-check input[type="checkbox"] { width: auto; accent-color: var(--success); cursor: pointer; }
     .view-toggle-btn {
       font-size: .78rem; padding: .3rem .75rem; border-radius: 6px;
       border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer;
@@ -4642,7 +4646,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onMoveSong, onRemoveSong, onLockEntireSet, onDragStart, onDragEnd, onDragOverSong, onDragOverSet, onDropOnSong, onDropOnSet, onMoveToSet, dragState, totalSets, isReorderMode, touchFallbackEnabled, touchDrag, setTouchDrag, viewMode }) {
+    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onMoveSong, onRemoveSong, onLockEntireSet, onDragStart, onDragEnd, onDragOverSong, onDragOverSet, onDropOnSong, onDropOnSet, onMoveToSet, dragState, totalSets, isReorderMode, touchFallbackEnabled, touchDrag, setTouchDrag, viewMode, advanceRoleFilter }) {
       let runningTime = 0;
       const allLocked = setlist.songs.length > 0 && setlist.songs.every(s => locked.has(`${setIdx}:${s.id}`));
       const isSetDragTarget = dragState && dragState.active && dragState.overSetIdx === setIdx && dragState.fromSetIdx !== setIdx;
@@ -4769,11 +4773,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 </div>
                 {viewMode === 'advance' && hasArrangementData(song.arrangement) && (() => {
                   const arr = parseArrangement(song.arrangement);
+                  const rf = advanceRoleFilter || new Set(ARR_ROLES);
+                  const visibleRoles = ARR_ROLES.filter(r => arr[r] && rf.has(r));
+                  if (!visibleRoles.length) return null;
                   return (
                     <div className="arrangement-notes-row">
                       <div className="arrangement-label">Arrangement</div>
                       <div className="arrangement-notes-content arr-role-display">
-                        {ARR_ROLES.filter(r => arr[r]).map(role => (
+                        {visibleRoles.map(role => (
                           <div key={role} className="arr-role-display-row">
                             <span className="arr-role-display-label">{ARR_ROLE_LABELS[role]}</span>
                             <span className="arr-role-display-text">{arr[role]}</span>
@@ -6076,6 +6083,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       // Arrangement layer view mode: 'stage' (minimal) or 'advance' (full notes)
       const [viewMode, setViewMode] = useState('stage');
+      // Which roles to show in Advance View (UI + exports) — default: all
+      const [advanceRoleFilter, setAdvanceRoleFilter] = useState(new Set(ARR_ROLES));
 
       // Email / Share modal
       const [emailModal, setEmailModal] = useState({ open: false, text: '' });
@@ -6799,8 +6808,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             if (s.bpm) meta.push(`${s.bpm} BPM`);
             const metaStr = meta.length > 0 ? ` (${meta.join(' | ')})` : '';
             let line = `${idx + 1}. ${s.title}${s.artist ? ` - ${s.artist}` : ''}${metaStr}`;
-            if (viewMode === 'advance' && s.arrangement) {
-              line += `\n   [ARR] ${s.arrangement}`;
+            if (viewMode === 'advance' && hasArrangementData(s.arrangement)) {
+              const arr = parseArrangement(s.arrangement);
+              const rf = advanceRoleFilter || new Set(ARR_ROLES);
+              ARR_ROLES.filter(r => arr[r] && rf.has(r)).forEach(r => {
+                line += `\n   [${ARR_ROLE_LABELS[r].toUpperCase()}] ${arr[r]}`;
+              });
             }
             return line;
           }).join('\n');
@@ -6836,7 +6849,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             if (meta) lines.push(`      ${meta}`);
             if (isAdvance && hasArrangementData(s.arrangement)) {
               const arr = parseArrangement(s.arrangement);
-              ARR_ROLES.filter(r => arr[r]).forEach(role => {
+              const rf = advanceRoleFilter || new Set(ARR_ROLES);
+              ARR_ROLES.filter(r => arr[r] && rf.has(r)).forEach(role => {
                 const label = ARR_ROLE_LABELS[role].toUpperCase().padEnd(10);
                 arr[role].split('\n').forEach((line, i) => {
                   lines.push(i === 0 ? `      ${label} ${line}` : `                   ${line}`);
@@ -7028,7 +7042,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             let arrBlockH = 0;
             if (isAdvance && hasArrangementData(song.arrangement)) {
               const arrParsed = parseArrangement(song.arrangement);
-              const roleTexts = ARR_ROLES.filter(r => arrParsed[r])
+              const rf = advanceRoleFilter || new Set(ARR_ROLES);
+              const roleTexts = ARR_ROLES.filter(r => arrParsed[r] && rf.has(r))
                 .map(r => `${ARR_ROLE_LABELS[r].toUpperCase()}: ${arrParsed[r]}`);
               const fullText = roleTexts.join('\n');
               doc.setFontSize(ARR_FONT);
@@ -7887,21 +7902,41 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', flexWrap: 'wrap', gap: '.5rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem', flexWrap: 'wrap' }}>
                     <h3 className="panel-title" style={{ margin: 0 }}>Generated Setlists</h3>
-                    <div className="view-toggle-bar">
-                      <button
-                        className={`view-toggle-btn ${viewMode === 'stage' ? 'active-stage' : ''}`}
-                        onClick={() => setViewMode('stage')}
-                        title="Stage View — minimal, high-contrast for live performance"
-                      >
-                        🎤 Stage View
-                      </button>
-                      <button
-                        className={`view-toggle-btn ${viewMode === 'advance' ? 'active-advance' : ''}`}
-                        onClick={() => setViewMode('advance')}
-                        title="Advance View — full arrangement notes for hired musicians"
-                      >
-                        📋 Advance View
-                      </button>
+                    <div>
+                      <div className="view-toggle-bar">
+                        <button
+                          className={`view-toggle-btn ${viewMode === 'stage' ? 'active-stage' : ''}`}
+                          onClick={() => setViewMode('stage')}
+                          title="Stage View — minimal, high-contrast for live performance"
+                        >
+                          🎤 Stage View
+                        </button>
+                        <button
+                          className={`view-toggle-btn ${viewMode === 'advance' ? 'active-advance' : ''}`}
+                          onClick={() => setViewMode('advance')}
+                          title="Advance View — full arrangement notes for hired musicians"
+                        >
+                          📋 Advance View
+                        </button>
+                      </div>
+                      {viewMode === 'advance' && (
+                        <div className="role-filter-bar">
+                          <span className="role-filter-label">Show roles:</span>
+                          {ARR_ROLES.map(role => (
+                            <label key={role} className="role-filter-check">
+                              <input type="checkbox"
+                                checked={advanceRoleFilter.has(role)}
+                                onChange={e => {
+                                  const next = new Set(advanceRoleFilter);
+                                  if (e.target.checked) next.add(role); else next.delete(role);
+                                  setAdvanceRoleFilter(next);
+                                }}
+                              />
+                              {ARR_ROLE_LABELS[role]}
+                            </label>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="toolbar">
@@ -8002,6 +8037,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       touchDrag={touchDrag}
                       setTouchDrag={setTouchDrag}
                       viewMode={viewMode}
+                      advanceRoleFilter={advanceRoleFilter}
                     />
                   ))}
                 </div>
