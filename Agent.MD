@@ -1,6 +1,6 @@
 
 AGENT.MD — Setlist Generator Pro v3.8+ Handoff Document
-Last updated: 2026-05-28
+Last updated: 2026-05-28 (PR #64)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PROJECT OVERVIEW
@@ -47,7 +47,11 @@ App (line ~5443)
 ├── SetlistView (line ~4373) × N    — One per generated set
 │     Props include: viewMode ('stage'|'advance')
 ├── UnusedSongsPanel (line ~4233)
-├── EmailShareModal (line ~4331)    — NEW v3.9: email-ready text modal
+├── EmailShareModal (line ~4331)    — email-ready text modal
+├── VenueModal (line ~5630)         — NEW PR #64: Venues CRM + Booking Calendar + EPK
+│     Tab 1 — Venues: pipeline list, add/edit/delete, per-venue mailto: send buttons
+│     Tab 2 — Bookings: month-view calendar + booking CRUD
+│     Tab 3 — EPK & Templates: links + 4 editable email templates
 ├── BandModal
 ├── ImportSongsModal (line ~4529)
 ├── GigProfileModal
@@ -106,6 +110,7 @@ RECENT WORK — MERGED PRs
   • CSS: .email-share-modal, .email-share-textarea, .email-share-copied
 
 ── PR #61 (structured-arrangement-roles) ────────────────
+
   Merged: 2026-05-28
   Branch: claude/structured-arrangement-roles
 
@@ -132,6 +137,44 @@ RECENT WORK — MERGED PRs
     .arr-role-display-row, .arr-role-display-label, .arr-role-display-text,
     .arr-roles-section, .arr-roles-header, .arr-roles-header-badge
 
+── PR #64 (venue-crm-booking-calendar) ──────────────────
+  Merged: 2026-05-28
+  Branch: claude/venue-crm-booking-calendar
+
+  What shipped:
+  • VenueModal component — 📍 Venues button in band-bar, 3-tab modal:
+
+  TAB 1 — VENUES
+  • Add/edit/delete venue contacts:
+    name, email, phone, booker/contact name, city, state, venue type, website, notes
+  • Status pipeline: Prospect → Contacted → Responded → Call Scheduled → Booked → Pass
+  • Venues sorted by pipeline stage (booked first, pass last)
+  • 4 one-click email buttons per venue (Initial Outreach / Follow-Up /
+    Let's Connect / Booking Confirmed)
+    - Opens system email client via mailto: with pre-filled subject + body
+    - Placeholders substituted from EPK settings + active band name
+    - Auto-stamps lastContactDate; advances status Prospect → Contacted on send
+
+  TAB 2 — BOOKINGS
+  • Month-view booking calendar (confirmed=green, pending=yellow, cancelled=red)
+  • Add/edit/delete bookings linked to venue contacts
+  • Fields: venue, date, start/end time, fee, status, notes
+  • Booking list sorted chronologically; editing navigates calendar to that month
+
+  TAB 3 — EPK & TEMPLATES
+  • Store EPK URL, demo video URL, website, contact email/phone
+    — global (not per-band), persists in 'setlist_epk_settings_v3' localStorage key
+  • 4 fully editable email templates with Reset to Default per template
+  • Placeholders: {{band_name}} {{venue_name}} {{contact_name}} {{epk_link}}
+    {{demo_link}} {{date}} {{start_time}} {{fee}} {{contact_email}} {{contact_phone}}
+
+  DATA
+  • Venues: bandVenues(id) → 'setlist_band_venues_v3_{id}'  (per-band)
+  • Bookings: bandBookings(id) → 'setlist_band_bookings_v3_{id}'  (per-band)
+  • EPK settings: 'setlist_epk_settings_v3'  (global)
+  • Constants: VENUE_TYPES, VENUE_STATUSES, VENUE_STATUS_ORDER,
+    EMAIL_TEMPLATES_DEFAULT, EPK_SETTINGS_DEFAULT, BLANK_VENUE, BLANK_BOOKING
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KEY FUNCTIONS & LINE NUMBERS (approximate — verify on read)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -150,6 +193,9 @@ exportPDF()                   ~6190  — jsPDF export (view-mode aware)
 copyToClipboard()             ~6220  — Plain text copy (view-mode aware)
 openEmailShare()              ~6230  — Formats email-ready text, opens EmailShareModal
 downloadSampleCSV()           ~6070  — Downloads sample CSV with Arrangement column
+VenueModal()                  ~5630  — Venue CRM + Booking Calendar + EPK templates
+fillAndSend()                 inside VenueModal — builds mailto: from template + placeholders
+addVenue/updateVenue/...      ~6201  — CRUD for venues, bookings, EPK settings in App
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EARLIER FIXES (pre-PR #56, documented in previous Agent.MD)
@@ -174,18 +220,28 @@ EARLIER FIXES (pre-PR #56, documented in previous Agent.MD)
 SUGGESTED NEXT STEPS (in priority order)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. "Remaining songs" meter in SetConfiguration
+1. Arrangement Macros / Quick-Tags
+   Clickable buttons above role textareas to inject common directives:
+   [Hard Stop on 1] [Trash-Can / Visual Cue] [Fade on Groove] [4-bar Drum Intro]
+   Eliminates typing the same cues across 100+ songs. Macros stored as a constant
+   array, no new state needed.
+
+2. Role Filtering for Advance View export
+   Checkbox row (Drums / Bass / Keys / Guitar 2) filters which ARR_ROLES are
+   rendered in PDF, email, and print — gives each hired player a targeted document.
+
+3. Venue CSV import
+   Bulk-load venue prospect lists from spreadsheet using the same PapaParse
+   pipeline as song imports. Column synonyms: NAME/VENUE, EMAIL, PHONE, CITY, TYPE.
+
+4. "Remaining songs" meter in SetConfiguration
    Show songs available vs. required before generation to prevent
-   pool-exhaustion warnings. (Suggested in original Agent.MD)
+   pool-exhaustion warnings.
 
-2. Soft pre-generation warning if library is too small for requested sets/duration
+5. Mobile Stage View optimisation
+   Large-font, high-contrast mode for reading from 3 feet on stage.
 
-3. Mobile Stage View optimisation
-   Large-font, high-contrast mode for reading from 3 feet on stage
-   (current Stage View works but could be larger on mobile)
-
-4. Phase 3 arrangement: per-role fields in CSV import/export
-   Currently the Arrangement CSV column carries the raw JSON blob.
-   Could be expanded to individual columns (ARRANGEMENT_DRUMS,
-   ARRANGEMENT_KEYS, etc.) with IMPORT_COLUMN_SYNONYMS mapping,
-   for easier spreadsheet editing outside the app.
+6. Phase 3 arrangement: per-role CSV columns
+   Expand ARRANGEMENT CSV column into ARRANGEMENT_GLOBAL / ARRANGEMENT_DRUMS /
+   ARRANGEMENT_KEYS etc. with IMPORT_COLUMN_SYNONYMS mapping, for spreadsheet
+   editing outside the app.
