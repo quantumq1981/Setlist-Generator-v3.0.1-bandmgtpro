@@ -397,6 +397,20 @@
     .arr-role-display-row { display: flex; gap: .5rem; align-items: baseline; }
     .arr-role-display-label { font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--success); min-width: 62px; flex-shrink: 0; }
     .arr-role-display-text { font-size: .78rem; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; line-height: 1.4; }
+    /* Arrangement Macros */
+    .macro-strip { display: flex; flex-wrap: wrap; gap: .2rem; margin-bottom: .4rem; align-items: center; }
+    .macro-cat-label { font-size: .55rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); padding: 0 .1rem 0 .35rem; }
+    .macro-cat-label:first-child { padding-left: 0; }
+    .macro-btn {
+      font-size: .62rem; padding: .14rem .36rem; border-radius: 10px; line-height: 1.3;
+      border: 1px solid var(--border); background: transparent; color: var(--text-muted);
+      cursor: pointer; transition: opacity .12s;
+    }
+    .macro-btn:hover { opacity: .7; }
+    .macro-btn.cat-intro  { border-color: rgba(96,165,250,.5);  color: #60a5fa; }
+    .macro-btn.cat-ending { border-color: rgba(255,107,53,.5);  color: var(--accent); }
+    .macro-btn.cat-feel   { border-color: rgba(167,139,250,.5); color: #a78bfa; }
+    .macro-btn.cat-cues   { border-color: rgba(74,222,128,.5);  color: var(--success); }
 
     /* Email-Share Modal */
     .email-share-modal { width: min(640px, 95vw); max-height: 85vh; display: flex; flex-direction: column; background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
@@ -642,6 +656,32 @@
       const p = parseArrangement(arrangement);
       return ARR_ROLES.some(r => p[r]);
     }
+
+    /******************* ARRANGEMENT MACROS *******************/
+    const ARRANGEMENT_MACROS = [
+      { cat: 'intro',  label: '4-Bar Count-In',        role: 'global',    text: '[4-Bar Count-In]' },
+      { cat: 'intro',  label: 'Acoustic Start',         role: 'global',    text: '[Acoustic Start]' },
+      { cat: 'intro',  label: 'Direct Segue',           role: 'global',    text: '[Direct Segue]' },
+      { cat: 'intro',  label: 'Cold Open',              role: 'global',    text: '[Cold Open]' },
+      { cat: 'intro',  label: 'Drum Intro',             role: 'drums',     text: '[Drum Intro]' },
+      { cat: 'intro',  label: 'Keys Lead-In',           role: 'keys',      text: '[Keys Lead-In]' },
+      { cat: 'ending', label: 'Hard Stop on 1',         role: 'endingCue', text: '[Hard Stop on 1]' },
+      { cat: 'ending', label: 'Trash-Can / Visual Cue', role: 'endingCue', text: '[Trash-Can / Visual Cue]' },
+      { cat: 'ending', label: 'Fade on Groove',         role: 'endingCue', text: '[Fade on Groove]' },
+      { cat: 'ending', label: 'Big Ending',             role: 'endingCue', text: '[Big Ending]' },
+      { cat: 'ending', label: 'Tag × 3',                role: 'endingCue', text: '[Tag × 3]' },
+      { cat: 'ending', label: 'Vamp Out',               role: 'endingCue', text: '[Vamp Out]' },
+      { cat: 'feel',   label: 'Half-Time Feel',         role: 'global',    text: '[Half-Time Feel]' },
+      { cat: 'feel',   label: 'Double-Time Feel',       role: 'global',    text: '[Double-Time Feel]' },
+      { cat: 'feel',   label: 'Build to Chorus',        role: 'global',    text: '[Build to Chorus]' },
+      { cat: 'feel',   label: 'Breakdown',              role: 'global',    text: '[Breakdown]' },
+      { cat: 'cues',   label: 'Root Notes Only',        role: 'bass',      text: '[Root Notes Only]' },
+      { cat: 'cues',   label: 'Fill on Bar 8',          role: 'drums',     text: '[Fill on Bar 8]' },
+      { cat: 'cues',   label: 'Organ Tone',             role: 'keys',      text: '[Organ Tone]' },
+      { cat: 'cues',   label: 'Rootless Voicings',      role: 'keys',      text: '[Rootless Voicings]' },
+      { cat: 'cues',   label: 'Rhythm Only',            role: 'guitar2',   text: '[Rhythm Only]' },
+    ];
+    const MACRO_CATS = ['intro', 'ending', 'feel', 'cues'];
 
     /******************* VENUE CRM CONSTANTS *******************/
     const VENUE_TYPES = ['Bar','Restaurant','Club','Event Space','Casino','Festival','Corporate','Hotel','Theater','Other'];
@@ -3727,7 +3767,21 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             {(() => {
               const arrObj = parseArrangement(form.arrangement);
               const upd = (role, val) => setForm({ ...form, arrangement: serializeArrangement({ ...arrObj, [role]: val }) });
+              const appendMacro = (role, text) => { const cur = arrObj[role] || ''; upd(role, cur ? cur + ' ' + text : text); };
               return (
+                <>
+                <div className="macro-strip">
+                  {MACRO_CATS.map(cat => (
+                    <React.Fragment key={cat}>
+                      <span className="macro-cat-label">{cat}:</span>
+                      {ARRANGEMENT_MACROS.filter(m => m.cat === cat).map(m => (
+                        <button key={m.label} type="button" className={`macro-btn cat-${cat}`}
+                          onClick={() => appendMacro(m.role, m.text)}
+                          title={`→ ${ARR_ROLE_LABELS[m.role]}`}>{m.label}</button>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </div>
                 <div className="arr-roles-grid">
                   <div className="arr-role-item arr-role-full">
                     <div className="arr-role-item-label">General Notes</div>
@@ -3754,6 +3808,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     <textarea className="arr-role-input" rows="1" value={arrObj.endingCue} onChange={e => upd('endingCue', e.target.value)} placeholder="End on visual cue from drummer…" />
                   </div>
                 </div>
+                </>
               );
             })()}
           </div>
@@ -3873,7 +3928,21 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                         {(() => {
                           const arrObj = parseArrangement(editForm.arrangement);
                           const upd = (role, val) => setEditForm({ ...editForm, arrangement: serializeArrangement({ ...arrObj, [role]: val }) });
+                          const appendMacro = (role, text) => { const cur = arrObj[role] || ''; upd(role, cur ? cur + ' ' + text : text); };
                           return (
+                            <>
+                            <div className="macro-strip">
+                              {MACRO_CATS.map(cat => (
+                                <React.Fragment key={cat}>
+                                  <span className="macro-cat-label">{cat}:</span>
+                                  {ARRANGEMENT_MACROS.filter(m => m.cat === cat).map(m => (
+                                    <button key={m.label} type="button" className={`macro-btn cat-${cat}`}
+                                      onClick={() => appendMacro(m.role, m.text)}
+                                      title={`→ ${ARR_ROLE_LABELS[m.role]}`}>{m.label}</button>
+                                  ))}
+                                </React.Fragment>
+                              ))}
+                            </div>
                             <div className="arr-roles-grid">
                               <div className="arr-role-item arr-role-full">
                                 <div className="arr-role-item-label">General Notes</div>
@@ -3900,6 +3969,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                                 <textarea className="arr-role-input" rows="1" value={arrObj.endingCue} onChange={e => upd('endingCue', e.target.value)} placeholder="End on visual cue from drummer…" />
                               </div>
                             </div>
+                            </>
                           );
                         })()}
                       </div>
