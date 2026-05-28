@@ -408,6 +408,52 @@
     .email-share-textarea:focus { outline: 1px solid var(--accent); }
     .email-share-copied { color: var(--success); font-size: .82rem; font-weight: 600; }
 
+    /* ── Venue CRM & Booking Calendar ─────────────────────────────────────────── */
+    .venue-modal {
+      width: min(780px, 95vw); max-height: 88vh;
+      background: var(--secondary); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.25rem;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .venue-modal-body { overflow-y: auto; flex: 1; padding-right: .25rem; }
+    .venue-item {
+      background: var(--primary); border: 1px solid var(--border);
+      border-radius: 8px; padding: .65rem; margin-bottom: .45rem;
+    }
+    .venue-status-badge {
+      font-size: .62rem; font-weight: 700; padding: .1rem .4rem;
+      border-radius: 10px; text-transform: uppercase; letter-spacing: .04em;
+    }
+    .venue-email-actions { display: flex; gap: .3rem; flex-wrap: wrap; margin-top: .45rem; }
+    /* Booking Calendar */
+    .booking-cal-grid {
+      display: grid; grid-template-columns: repeat(7, 1fr);
+      gap: 2px; margin-bottom: .5rem;
+    }
+    .booking-cal-dow {
+      text-align: center; font-size: .62rem; font-weight: 700;
+      color: var(--text-muted); text-transform: uppercase; padding: .2rem 0;
+    }
+    .booking-cal-cell {
+      min-height: 52px; background: var(--primary);
+      border: 1px solid var(--border); border-radius: 4px; padding: .2rem; font-size: .7rem;
+    }
+    .booking-cal-cell.cal-empty { background: transparent; border-color: transparent; }
+    .booking-cal-cell.cal-today { border-color: var(--accent); background: rgba(255,107,53,.08); }
+    .booking-cal-daynum { font-weight: 700; font-size: .68rem; margin-bottom: .1rem; }
+    .booking-cal-event {
+      font-size: .58rem; padding: .06rem .22rem; border-radius: 3px;
+      margin-bottom: .08rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #111;
+    }
+    .booking-cal-event.confirmed { background: var(--success); }
+    .booking-cal-event.pending { background: var(--warning); }
+    .booking-cal-event.cancelled { background: var(--error); color: #fff; }
+    /* Template editor */
+    .tpl-body-textarea {
+      font-family: 'Space Mono', monospace; font-size: .76rem;
+      line-height: 1.5; resize: vertical; min-height: 200px;
+    }
+
     /* Import Modal Styles */
     .import-modal { width: min(720px, 95vw); max-height: 90vh; overflow-y: auto; background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
     .import-steps { display: flex; gap: .5rem; margin-bottom: 1rem; }
@@ -597,6 +643,50 @@
       return ARR_ROLES.some(r => p[r]);
     }
 
+    /******************* VENUE CRM CONSTANTS *******************/
+    const VENUE_TYPES = ['Bar','Restaurant','Club','Event Space','Casino','Festival','Corporate','Hotel','Theater','Other'];
+    const VENUE_STATUSES = [
+      { key: 'prospect',      label: 'Prospect',      color: '#9aa0a6' },
+      { key: 'contacted',     label: 'Contacted',     color: '#ff6b35' },
+      { key: 'responded',     label: 'Responded',     color: '#fbbf24' },
+      { key: 'call_scheduled',label: 'Call Scheduled',color: '#60a5fa' },
+      { key: 'booked',        label: 'Booked',        color: '#4ade80' },
+      { key: 'pass',          label: 'Pass',          color: '#ef4444' },
+    ];
+    const VENUE_STATUS_ORDER = { booked: 0, call_scheduled: 1, responded: 2, contacted: 3, prospect: 4, pass: 5 };
+
+    const EMAIL_TEMPLATES_DEFAULT = {
+      outreach: {
+        label: 'Initial Outreach',
+        subject: 'Live Music Inquiry — {{band_name}}',
+        body: `Hi {{contact_name}},\n\nMy name is [Your Name] and I represent {{band_name}}, a professional live band with a polished, high-energy performance. We've been a hit at venues throughout the area and I'd love to explore bringing us in for a night at {{venue_name}}.\n\nWe're flexible on dates and can tailor our set to your crowd.\n\nFull EPK and demo:\nEPK: {{epk_link}}\nDemo: {{demo_link}}\nWebsite: {{website}}\n\nFeel free to reach me at {{contact_email}} or {{contact_phone}}.\n\nLooking forward to connecting!\n\n[Your Name]\n{{band_name}}`
+      },
+      followup: {
+        label: 'Follow-Up',
+        subject: 'Following up — {{band_name}} Live Music',
+        body: `Hi {{contact_name}},\n\nJust circling back on my note from a couple weeks ago about bringing {{band_name}} in to perform at {{venue_name}}. I know things get busy — no pressure at all.\n\nIf there's a date that could work, I'd love to make it happen. EPK is still here: {{epk_link}}\n\nThanks for your time!\n\n[Your Name]\n{{band_name}}\n{{contact_email}} | {{contact_phone}}`
+      },
+      callRequest: {
+        label: "Let's Connect",
+        subject: "Quick call? — {{band_name}} at {{venue_name}}",
+        body: `Hi {{contact_name}},\n\nThanks for your interest in {{band_name}}! I'd love to jump on a quick 10-minute call to talk through availability, logistics, and how we can make it a great night for your guests.\n\nWould any of these times work?\n- [Day 1], [Time]\n- [Day 2], [Time]\n\nOr feel free to call me at {{contact_phone}} anytime.\n\nLooking forward to it!\n\n[Your Name]\n{{band_name}}`
+      },
+      bookingConfirmation: {
+        label: 'Booking Confirmed',
+        subject: 'Booking Confirmed — {{band_name}} at {{venue_name}}, {{date}}',
+        body: `Hi {{contact_name}},\n\nWe're officially locked in — here's a summary:\n\nBand: {{band_name}}\nVenue: {{venue_name}}\nDate: {{date}}\nStart Time: {{start_time}}\nAgreed Fee: {{fee}}\n\nI'll follow up closer to the date with load-in details and tech requirements. Don't hesitate to reach out if anything changes.\n\nLooking forward to a great night!\n\n[Your Name]\n{{band_name}}\n{{contact_email}} | {{contact_phone}}`
+      }
+    };
+
+    const EPK_SETTINGS_DEFAULT = {
+      epkUrl: '', demoVideoUrl: '', pressPhotoUrl: '',
+      website: '', contactEmail: '', contactPhone: '',
+      templates: EMAIL_TEMPLATES_DEFAULT
+    };
+
+    const BLANK_VENUE = { name: '', email: '', phone: '', contactName: '', type: 'Bar', city: '', state: '', website: '', notes: '', status: 'prospect', lastContactDate: '' };
+    const BLANK_BOOKING = { venueId: '', venueName: '', date: '', startTime: '', endTime: '', fee: '', status: 'pending', notes: '' };
+
     /******************* UTILITIES & GUARDS *******************/
     const genId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() :
       ('id-' + Math.random().toString(36).slice(2) + Date.now().toString(36));
@@ -716,7 +806,10 @@
       bandImports: (id) => `setlist_band_imports_v3_${id}`,
       bandGigs: (id) => `setlist_band_gigs_v3_${id}`,
       bandWatermark: (id) => `setlist_band_watermark_v3_${id}`,
-      bandSnapshots: (id) => `setlist_band_snapshots_v3_${id}`
+      bandSnapshots: (id) => `setlist_band_snapshots_v3_${id}`,
+      bandVenues: (id) => `setlist_band_venues_v3_${id}`,
+      bandBookings: (id) => `setlist_band_bookings_v3_${id}`,
+      epkSettings: 'setlist_epk_settings_v3'
     };
 
     const storageHealth = {
@@ -5533,6 +5626,326 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
+    /******************* VENUE MODAL *******************/
+    function VenueModal({ open, onClose, venues, bookings, epkSettings,
+      onSaveEpkSettings, onAddVenue, onUpdateVenue, onDeleteVenue,
+      onAddBooking, onUpdateBooking, onDeleteBooking, bandName, showToast }) {
+      const [vTab, setVTab] = useState('venues');
+      const [venueForm, setVenueForm] = useState(null);
+      const [editVenueId, setEditVenueId] = useState(null);
+      const [bookingForm, setBookingForm] = useState(null);
+      const [editBookingId, setEditBookingId] = useState(null);
+      const _now = new Date();
+      const [calYear, setCalYear] = useState(_now.getFullYear());
+      const [calMon, setCalMon] = useState(_now.getMonth());
+      const [localEpk, setLocalEpk] = useState(epkSettings);
+      const [tplKey, setTplKey] = useState('outreach');
+      const [epkDirty, setEpkDirty] = useState(false);
+
+      useEffect(() => { setLocalEpk(epkSettings); setEpkDirty(false); }, [open]);
+      if (!open) return null;
+
+      const statusInfo = (key) => VENUE_STATUSES.find(s => s.key === key) || VENUE_STATUSES[0];
+
+      const fillAndSend = (templateKey, venue, booking) => {
+        const tpl = (localEpk.templates || {})[templateKey] || EMAIL_TEMPLATES_DEFAULT[templateKey];
+        const repl = {
+          '{{band_name}}': bandName || '',
+          '{{venue_name}}': venue?.name || '',
+          '{{contact_name}}': venue?.contactName || venue?.name || '',
+          '{{epk_link}}': localEpk.epkUrl || '[EPK Link]',
+          '{{demo_link}}': localEpk.demoVideoUrl || '[Demo Link]',
+          '{{website}}': localEpk.website || '',
+          '{{contact_email}}': localEpk.contactEmail || '',
+          '{{contact_phone}}': localEpk.contactPhone || '',
+          '{{date}}': booking?.date || '',
+          '{{start_time}}': booking?.startTime || '',
+          '{{fee}}': booking?.fee || '',
+        };
+        let subj = tpl.subject; let body = tpl.body;
+        Object.entries(repl).forEach(([k, v]) => { subj = subj.split(k).join(v); body = body.split(k).join(v); });
+        const to = venue?.email || '';
+        window.open(`mailto:${to}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`);
+        if (venue) {
+          const today = new Date().toISOString().slice(0, 10);
+          onUpdateVenue({ ...venue, lastContactDate: today, status: venue.status === 'prospect' ? 'contacted' : venue.status });
+        }
+      };
+
+      const renderVenuesTab = () => {
+        if (venueForm) {
+          return (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.75rem' }}>
+                <div style={{ fontWeight: 700 }}>{editVenueId ? 'Edit Venue' : 'Add Venue'}</div>
+                <button className="btn btn-small" onClick={() => { setVenueForm(null); setEditVenueId(null); }}>← Back</button>
+              </div>
+              <div className="set-config">
+                <div className="input-group"><label>Venue Name *</label><input value={venueForm.name} onChange={e => setVenueForm({...venueForm, name: e.target.value})} placeholder="The Blue Room" /></div>
+                <div className="input-group"><label>Booker / Contact Name</label><input value={venueForm.contactName} onChange={e => setVenueForm({...venueForm, contactName: e.target.value})} placeholder="Jane Smith" /></div>
+                <div className="input-group"><label>Email</label><input type="email" value={venueForm.email} onChange={e => setVenueForm({...venueForm, email: e.target.value})} placeholder="booking@venue.com" /></div>
+                <div className="input-group"><label>Phone</label><input value={venueForm.phone} onChange={e => setVenueForm({...venueForm, phone: e.target.value})} placeholder="(555) 000-0000" /></div>
+                <div className="input-group"><label>City</label><input value={venueForm.city} onChange={e => setVenueForm({...venueForm, city: e.target.value})} placeholder="Nashville" /></div>
+                <div className="input-group"><label>State</label><input value={venueForm.state} onChange={e => setVenueForm({...venueForm, state: e.target.value})} placeholder="TN" /></div>
+                <div className="input-group"><label>Venue Type</label>
+                  <select value={venueForm.type} onChange={e => setVenueForm({...venueForm, type: e.target.value})}>
+                    {VENUE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="input-group"><label>Status</label>
+                  <select value={venueForm.status} onChange={e => setVenueForm({...venueForm, status: e.target.value})}>
+                    {VENUE_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="input-group"><label>Website</label><input value={venueForm.website} onChange={e => setVenueForm({...venueForm, website: e.target.value})} placeholder="https://venue.com" /></div>
+              <div className="input-group"><label>Notes</label><textarea value={venueForm.notes} onChange={e => setVenueForm({...venueForm, notes: e.target.value})} rows={2} placeholder="Capacity, parking, preferred genres..." style={{ resize: 'vertical' }} /></div>
+              <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'flex-end', marginTop: '.5rem' }}>
+                <button className="btn" onClick={() => { setVenueForm(null); setEditVenueId(null); }}>Cancel</button>
+                <button className="btn btn-primary" onClick={() => {
+                  if (!venueForm.name.trim()) { showToast('Venue name is required', 'warning'); return; }
+                  if (editVenueId) onUpdateVenue({ ...venueForm, id: editVenueId });
+                  else onAddVenue(venueForm);
+                  setVenueForm(null); setEditVenueId(null);
+                }}>{editVenueId ? 'Save Changes' : 'Add Venue'}</button>
+              </div>
+            </div>
+          );
+        }
+        const sortedVenues = [...venues].sort((a, b) => (VENUE_STATUS_ORDER[a.status] ?? 4) - (VENUE_STATUS_ORDER[b.status] ?? 4));
+        return (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.65rem' }}>
+              <div style={{ fontSize: '.8rem', color: 'var(--text-muted)' }}>{venues.length} venue{venues.length !== 1 ? 's' : ''}</div>
+              <button className="btn btn-small btn-primary" onClick={() => setVenueForm({...BLANK_VENUE})}>+ Add Venue</button>
+            </div>
+            {venues.length === 0 && (
+              <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2.5rem 1rem' }}>
+                No venues yet. Add your first prospect to start building your pipeline.
+              </div>
+            )}
+            {sortedVenues.map(venue => {
+              const si = statusInfo(venue.status);
+              const confirmedBooking = bookings.find(b => b.venueId === venue.id && b.status === 'confirmed');
+              return (
+                <div key={venue.id} className="venue-item">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '.5rem' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '.2rem' }}>
+                        <span style={{ fontWeight: 700 }}>{venue.name}</span>
+                        <span className="venue-status-badge" style={{ background: si.color, color: si.key === 'booked' || si.key === 'responded' || si.key === 'prospect' ? '#111' : '#fff' }}>{si.label}</span>
+                        <span style={{ fontSize: '.72rem', color: 'var(--text-muted)' }}>{venue.type}</span>
+                      </div>
+                      <div style={{ fontSize: '.75rem', color: 'var(--text-muted)' }}>
+                        {venue.contactName && <span>{venue.contactName} · </span>}
+                        {venue.city && <span>{venue.city}{venue.state ? ', ' + venue.state : ''}{venue.email ? ' · ' : ''}</span>}
+                        {venue.email && <span>{venue.email}</span>}
+                      </div>
+                      {venue.lastContactDate && (
+                        <div style={{ fontSize: '.7rem', color: 'var(--accent)', marginTop: '.15rem' }}>Last contact: {venue.lastContactDate}</div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '.25rem', flexShrink: 0 }}>
+                      <button className="btn btn-small" onClick={() => { setVenueForm({...venue}); setEditVenueId(venue.id); }} title="Edit">✏️</button>
+                      <button className="btn btn-small" onClick={() => onDeleteVenue(venue.id)} style={{ color: 'var(--error)', borderColor: 'var(--error)' }} title="Delete">✕</button>
+                    </div>
+                  </div>
+                  <div className="venue-email-actions">
+                    {Object.entries(EMAIL_TEMPLATES_DEFAULT).map(([key, def]) => (
+                      <button key={key} className="btn btn-small"
+                        onClick={() => fillAndSend(key, venue, confirmedBooking)}
+                        style={{ fontSize: '.68rem', borderColor: '#60a5fa', color: '#60a5fa' }}
+                        title={`Open email: ${def.label}`}>
+                        ✉ {def.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      };
+
+      const renderBookingsTab = () => {
+        const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        const dim = new Date(calYear, calMon + 1, 0).getDate();
+        const fd = new Date(calYear, calMon, 1).getDay();
+        const cells = [...Array(fd).fill(null), ...Array.from({length: dim}, (_, i) => i + 1)];
+        while (cells.length % 7) cells.push(null);
+        const weeks = [];
+        for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+        const bookingsByDay = {};
+        bookings.filter(b => {
+          if (!b.date) return false;
+          const [y, m] = b.date.split('-').map(Number);
+          return y === calYear && m - 1 === calMon;
+        }).forEach(b => {
+          const d = parseInt(b.date.split('-')[2]);
+          if (!bookingsByDay[d]) bookingsByDay[d] = [];
+          bookingsByDay[d].push(b);
+        });
+        const todayStr = new Date().toISOString().slice(0, 10);
+
+        return (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.5rem' }}>
+              <button className="btn btn-small" onClick={() => { const p = new Date(calYear, calMon - 1, 1); setCalYear(p.getFullYear()); setCalMon(p.getMonth()); }}>‹</button>
+              <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '.88rem', fontWeight: 700 }}>{MONTH_NAMES[calMon]} {calYear}</span>
+              <button className="btn btn-small" onClick={() => { const n = new Date(calYear, calMon + 1, 1); setCalYear(n.getFullYear()); setCalMon(n.getMonth()); }}>›</button>
+            </div>
+            <div className="booking-cal-grid">
+              {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => <div key={d} className="booking-cal-dow">{d}</div>)}
+              {weeks.flat().map((day, i) => {
+                const dateStr = day ? `${calYear}-${String(calMon+1).padStart(2,'0')}-${String(day).padStart(2,'0')}` : null;
+                const dayB = day ? (bookingsByDay[day] || []) : [];
+                const isToday = dateStr === todayStr;
+                return (
+                  <div key={i} className={`booking-cal-cell${isToday ? ' cal-today' : ''}${!day ? ' cal-empty' : ''}`}>
+                    {day && <div className="booking-cal-daynum">{day}</div>}
+                    {dayB.map(b => (
+                      <div key={b.id} className={`booking-cal-event ${b.status}`} title={`${b.venueName} ${b.startTime || ''}`}>
+                        {(b.venueName || 'Gig').slice(0, 9)}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '.65rem', marginTop: '.25rem' }}>
+              {bookingForm ? (
+                <div>
+                  <div style={{ fontWeight: 700, marginBottom: '.5rem' }}>{editBookingId ? 'Edit Booking' : 'Add Booking'}</div>
+                  <div className="set-config">
+                    <div className="input-group"><label>Venue *</label>
+                      <select value={bookingForm.venueId} onChange={e => { const v = venues.find(x => x.id === e.target.value); setBookingForm({...bookingForm, venueId: e.target.value, venueName: v?.name || ''}); }}>
+                        <option value="">— Select Venue —</option>
+                        {venues.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="input-group"><label>Status</label>
+                      <select value={bookingForm.status} onChange={e => setBookingForm({...bookingForm, status: e.target.value})}>
+                        <option value="pending">Pending</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </div>
+                    <div className="input-group"><label>Date *</label><input type="date" value={bookingForm.date} onChange={e => setBookingForm({...bookingForm, date: e.target.value})} /></div>
+                    <div className="input-group"><label>Fee</label><input value={bookingForm.fee} onChange={e => setBookingForm({...bookingForm, fee: e.target.value})} placeholder="$500" /></div>
+                    <div className="input-group"><label>Start Time</label><input type="time" value={bookingForm.startTime} onChange={e => setBookingForm({...bookingForm, startTime: e.target.value})} /></div>
+                    <div className="input-group"><label>End Time</label><input type="time" value={bookingForm.endTime} onChange={e => setBookingForm({...bookingForm, endTime: e.target.value})} /></div>
+                  </div>
+                  <div className="input-group"><label>Notes</label><textarea value={bookingForm.notes} onChange={e => setBookingForm({...bookingForm, notes: e.target.value})} rows={2} style={{ resize: 'vertical' }} /></div>
+                  <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
+                    <button className="btn" onClick={() => { setBookingForm(null); setEditBookingId(null); }}>Cancel</button>
+                    <button className="btn btn-primary" onClick={() => {
+                      if (!bookingForm.date || !bookingForm.venueId) { showToast('Date and venue are required', 'warning'); return; }
+                      if (editBookingId) onUpdateBooking({ ...bookingForm, id: editBookingId });
+                      else onAddBooking(bookingForm);
+                      setBookingForm(null); setEditBookingId(null);
+                    }}>{editBookingId ? 'Save' : 'Add Booking'}</button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.5rem' }}>
+                    <div style={{ fontSize: '.8rem', color: 'var(--text-muted)' }}>All Bookings ({bookings.length})</div>
+                    <button className="btn btn-small btn-primary" onClick={() => setBookingForm({...BLANK_BOOKING})}>+ Add</button>
+                  </div>
+                  {bookings.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: '.85rem', textAlign: 'center', padding: '1rem' }}>No bookings yet.</div>}
+                  {[...bookings].sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(b => {
+                    const sc = b.status === 'confirmed' ? 'var(--success)' : b.status === 'cancelled' ? 'var(--error)' : 'var(--warning)';
+                    return (
+                      <div key={b.id} style={{ background: 'var(--primary)', border: '1px solid var(--border)', borderRadius: 8, padding: '.5rem .65rem', marginBottom: '.35rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '.5rem' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: '.88rem' }}>{b.venueName || '—'}</div>
+                          <div style={{ fontSize: '.75rem', color: 'var(--text-muted)' }}>
+                            {b.date}{b.startTime && ` · ${b.startTime}`}{b.fee && ` · ${b.fee}`}
+                            <span style={{ marginLeft: '.4rem', color: sc, fontWeight: 700, fontSize: '.65rem' }}>{b.status.toUpperCase()}</span>
+                          </div>
+                          {b.notes && <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>{b.notes}</div>}
+                        </div>
+                        <div style={{ display: 'flex', gap: '.25rem' }}>
+                          <button className="btn btn-small" onClick={() => {
+                            setBookingForm({...b}); setEditBookingId(b.id);
+                            if (b.date) { const [y, m] = b.date.split('-').map(Number); setCalYear(y); setCalMon(m - 1); }
+                          }}>✏️</button>
+                          <button className="btn btn-small" onClick={() => onDeleteBooking(b.id)} style={{ color: 'var(--error)', borderColor: 'var(--error)' }}>✕</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      };
+
+      const renderSettingsTab = () => {
+        const tpls = localEpk.templates || EMAIL_TEMPLATES_DEFAULT;
+        const curTpl = tpls[tplKey] || EMAIL_TEMPLATES_DEFAULT[tplKey];
+        const upd = (field, val) => { setLocalEpk({...localEpk, [field]: val}); setEpkDirty(true); };
+        const updTpl = (field, val) => { setLocalEpk({...localEpk, templates: { ...tpls, [tplKey]: { ...curTpl, [field]: val } }}); setEpkDirty(true); };
+        return (
+          <div>
+            <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: '.75rem', marginBottom: '.75rem' }}>
+              <div style={{ fontWeight: 700, fontSize: '.85rem', marginBottom: '.5rem' }}>EPK &amp; Contact Links</div>
+              <div className="set-config">
+                <div className="input-group"><label>EPK URL</label><input value={localEpk.epkUrl || ''} onChange={e => upd('epkUrl', e.target.value)} placeholder="https://your-epk.com" /></div>
+                <div className="input-group"><label>Demo Video URL</label><input value={localEpk.demoVideoUrl || ''} onChange={e => upd('demoVideoUrl', e.target.value)} placeholder="https://youtu.be/..." /></div>
+                <div className="input-group"><label>Contact Email</label><input value={localEpk.contactEmail || ''} onChange={e => upd('contactEmail', e.target.value)} placeholder="booking@yourband.com" /></div>
+                <div className="input-group"><label>Contact Phone</label><input value={localEpk.contactPhone || ''} onChange={e => upd('contactPhone', e.target.value)} placeholder="(555) 000-0000" /></div>
+              </div>
+              <div className="input-group"><label>Website</label><input value={localEpk.website || ''} onChange={e => upd('website', e.target.value)} placeholder="https://yourband.com" /></div>
+              {epkDirty && <button className="btn btn-primary btn-small" onClick={() => { onSaveEpkSettings(localEpk); setEpkDirty(false); showToast('Settings saved', 'success'); }}>Save Settings</button>}
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '.85rem', marginBottom: '.5rem' }}>Email Templates</div>
+              <div style={{ display: 'flex', gap: '.35rem', flexWrap: 'wrap', marginBottom: '.65rem' }}>
+                {Object.entries(EMAIL_TEMPLATES_DEFAULT).map(([key, def]) => (
+                  <button key={key} className={`btn btn-small${tplKey === key ? ' btn-toggle-active' : ''}`} onClick={() => setTplKey(key)}>{def.label}</button>
+                ))}
+              </div>
+              <div style={{ fontSize: '.7rem', color: 'var(--text-muted)', marginBottom: '.5rem', lineHeight: 1.6 }}>
+                Placeholders: <code>{'{{band_name}}'}</code> <code>{'{{venue_name}}'}</code> <code>{'{{contact_name}}'}</code> <code>{'{{epk_link}}'}</code> <code>{'{{demo_link}}'}</code> <code>{'{{date}}'}</code> <code>{'{{start_time}}'}</code> <code>{'{{fee}}'}</code> <code>{'{{contact_email}}'}</code> <code>{'{{contact_phone}}'}</code>
+              </div>
+              <div className="input-group"><label>Subject</label><input value={curTpl.subject} onChange={e => updTpl('subject', e.target.value)} /></div>
+              <div className="input-group"><label>Body</label>
+                <textarea className="tpl-body-textarea" value={curTpl.body} onChange={e => updTpl('body', e.target.value)} rows={10} />
+              </div>
+              <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
+                <button className="btn btn-small" onClick={() => { const def = EMAIL_TEMPLATES_DEFAULT[tplKey]; setLocalEpk({...localEpk, templates: { ...tpls, [tplKey]: { ...def } }}); setEpkDirty(true); }}>Reset to Default</button>
+                {epkDirty && <button className="btn btn-primary btn-small" onClick={() => { onSaveEpkSettings(localEpk); setEpkDirty(false); showToast('Templates saved', 'success'); }}>Save</button>}
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      return (
+        <div className="modal-backdrop" onClick={onClose}>
+          <div className="venue-modal" onClick={e => e.stopPropagation()}>
+            <div className="panel-header" style={{ marginBottom: '.5rem' }}>
+              <div className="panel-title">📍 Venues &amp; Bookings</div>
+              <button className="btn btn-small" onClick={onClose}>✕ Close</button>
+            </div>
+            <div className="import-tabs" style={{ marginBottom: '.65rem' }}>
+              <button className={`import-tab${vTab === 'venues' ? ' active' : ''}`} onClick={() => setVTab('venues')}>Venues ({venues.length})</button>
+              <button className={`import-tab${vTab === 'bookings' ? ' active' : ''}`} onClick={() => setVTab('bookings')}>Bookings ({bookings.length})</button>
+              <button className={`import-tab${vTab === 'settings' ? ' active' : ''}`} onClick={() => setVTab('settings')}>EPK &amp; Templates</button>
+            </div>
+            <div className="venue-modal-body">
+              {vTab === 'venues' && renderVenuesTab()}
+              {vTab === 'bookings' && renderBookingsTab()}
+              {vTab === 'settings' && renderSettingsTab()}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', secondaryLabel = '', secondaryAction = null, onConfirm, onCancel }) {
       if (!open) return null;
       return (
@@ -5596,6 +6009,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       // Email / Share modal
       const [emailModal, setEmailModal] = useState({ open: false, text: '' });
+
+      // Venue CRM & Bookings
+      const [venueModal, setVenueModal] = useState(false);
+      const [venues, setVenues] = useState([]);
+      const [bookings, setBookings] = useState([]);
+      const [epkSettings, setEpkSettingsState] = useState(EPK_SETTINGS_DEFAULT);
 
       const showToast = (message, type = 'success') => setToast({ message, type });
 
@@ -5734,17 +6153,32 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const storedImports = LS.get(LS_KEYS.bandImports(activeBandId)) || [];
         const storedGigs = LS.get(LS_KEYS.bandGigs(activeBandId)) || [];
         const storedWatermark = LS.get(LS_KEYS.bandWatermark(activeBandId)) || null;
+        const storedVenues = LS.get(LS_KEYS.bandVenues(activeBandId)) || [];
+        const storedBookings = LS.get(LS_KEYS.bandBookings(activeBandId)) || [];
 
         setSongs(normalizedSongs);
         setSettings(storedSettings);
         setImports(storedImports);
         setGigs(storedGigs);
         setWatermarkImg(storedWatermark);
+        setVenues(storedVenues);
+        setBookings(storedBookings);
 
         setSetlists([]);
         setLocked(new Set());
         setLibraryTab('active');
       }, [activeBandId]);
+
+      // Load global EPK settings on mount (not per-band)
+      useEffect(() => {
+        const stored = LS.get(LS_KEYS.epkSettings);
+        if (stored) {
+          setEpkSettingsState({
+            ...EPK_SETTINGS_DEFAULT, ...stored,
+            templates: { ...EMAIL_TEMPLATES_DEFAULT, ...(stored.templates || {}) }
+          });
+        }
+      }, []);
 
       // SAVE ACTIVE BAND DATA
       useEffect(() => {
@@ -5754,6 +6188,23 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       useEffect(() => {
         if (activeBandId) LS.set(LS_KEYS.bandSettings(activeBandId), settings);
       }, [settings, activeBandId]);
+
+      useEffect(() => {
+        if (activeBandId) LS.set(LS_KEYS.bandVenues(activeBandId), venues);
+      }, [venues, activeBandId]);
+
+      useEffect(() => {
+        if (activeBandId) LS.set(LS_KEYS.bandBookings(activeBandId), bookings);
+      }, [bookings, activeBandId]);
+
+      // Venue & Booking CRUD
+      const addVenue = (form) => { setVenues(prev => [...prev, { ...form, id: genId(), createdAt: Date.now() }]); showToast('Venue added', 'success'); };
+      const updateVenue = (v) => { setVenues(prev => prev.map(x => x.id === v.id ? v : x)); };
+      const deleteVenue = (id) => { setVenues(prev => prev.filter(x => x.id !== id)); showToast('Venue removed', 'success'); };
+      const addBooking = (form) => { setBookings(prev => [...prev, { ...form, id: genId(), createdAt: Date.now() }]); showToast('Booking added', 'success'); };
+      const updateBooking = (b) => { setBookings(prev => prev.map(x => x.id === b.id ? b : x)); showToast('Booking updated', 'success'); };
+      const deleteBooking = (id) => { setBookings(prev => prev.filter(x => x.id !== id)); showToast('Booking removed', 'success'); };
+      const saveEpkSettings = (s) => { setEpkSettingsState(s); LS.set(LS_KEYS.epkSettings, s); };
 
       // PHASE 2: Build lock plan from current setlists
       const buildLockPlanFromCurrentSetlists = () => {
@@ -7306,6 +7757,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 </div>
                 <button className="btn btn-small" onClick={() => setBandModal(true)}>Manage Bands</button>
                 <button className="btn btn-small" onClick={() => setGigModal(true)} style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>Gig Profiles</button>
+                <button className="btn btn-small" onClick={() => setVenueModal(true)} style={{ borderColor: '#60a5fa', color: '#60a5fa' }}>📍 Venues</button>
               </div>
               <div className="toolbar">
                 <select value={activeBandId || ''} onChange={(e) => switchBand(e.target.value)}>
@@ -7530,6 +7982,23 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               onImportCSVToGig={importCSVToGig}
               setlists={setlists}
               bandName={activeBand?.name || 'Band'}
+            />
+
+            <VenueModal
+              open={venueModal}
+              onClose={() => setVenueModal(false)}
+              venues={venues}
+              bookings={bookings}
+              epkSettings={epkSettings}
+              onSaveEpkSettings={saveEpkSettings}
+              onAddVenue={addVenue}
+              onUpdateVenue={updateVenue}
+              onDeleteVenue={deleteVenue}
+              onAddBooking={addBooking}
+              onUpdateBooking={updateBooking}
+              onDeleteBooking={deleteBooking}
+              bandName={activeBand?.name || 'Band'}
+              showToast={showToast}
             />
             </div>
           </IDEBackground>
