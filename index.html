@@ -4021,6 +4021,22 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const openHelp = (featureKey) => setActiveHelpKey(featureKey);
       const closeHelp = () => setActiveHelpKey(null);
 
+      const poolAvailable = (activeSongs || []).length;
+      const poolRequired = (() => {
+        if (!poolAvailable) return 0;
+        const total = (activeSongs || []).reduce((s, x) => s + (parseDuration(x.duration) || 4), 0);
+        const avgDur = Math.max(total / poolAvailable, 1);
+        const n = settings.numSets || 1;
+        const durations = settings.setDurations || [];
+        let needed = 0;
+        for (let i = 0; i < n; i++) {
+          const dur = (durations[i] > 0 ? durations[i] : (settings.setDuration || 45));
+          needed += Math.ceil(dur / avgDur);
+        }
+        return needed;
+      })();
+      const poolOk = !!(settings.allowSongReuse) || poolAvailable >= poolRequired;
+
       return (
         <div className="panel">
           <div className="panel-header">
@@ -4479,6 +4495,20 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
   </div>
 </div>
 
+          {!settings.allowSongReuse && poolAvailable > 0 && poolRequired > 0 && (
+            <div style={{
+              padding: '.35rem .65rem', borderRadius: 6, marginTop: '.5rem', marginBottom: '.3rem',
+              background: poolOk ? 'rgba(74,222,128,.07)' : 'rgba(255,107,53,.08)',
+              border: `1px solid ${poolOk ? 'rgba(74,222,128,.25)' : 'rgba(255,107,53,.45)'}`,
+              fontSize: '.74rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '.5rem',
+            }}>
+              <span style={{ color: 'var(--text-muted)' }}>Song pool</span>
+              <span style={{ fontWeight: 700, color: poolOk ? 'var(--success)' : 'var(--accent)' }}>
+                {poolAvailable} available · ~{poolRequired} needed
+              </span>
+              {!poolOk && <span style={{ color: 'var(--accent)', fontSize: '.68rem' }}>⚠ may exhaust</span>}
+            </div>
+          )}
           <button className="btn btn-primary" onClick={onGenerate} disabled={songCount === 0} style={{ width: '100%', marginTop: '.5rem' }}>
             Generate Setlists
           </button>
