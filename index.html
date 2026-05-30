@@ -5923,6 +5923,125 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         }
       };
 
+      const downloadGigSheet = (booking, venue, linkedSetlist) => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
+        const margin = 48;
+        const contentW = pageW - margin * 2;
+        const ACCENT = [61, 79, 95];
+        const MUTED = [120, 120, 120];
+        const TEXT = [30, 30, 30];
+        const LIGHT_BG = [242, 242, 242];
+
+        let y = margin;
+
+        // Band name + GIG SHEET label
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(22);
+        doc.setTextColor(...TEXT);
+        doc.text((bandName || 'Band').toUpperCase(), margin, y);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(...MUTED);
+        doc.text('GIG SHEET', margin, y + 15);
+        y += 32;
+
+        doc.setDrawColor(...ACCENT);
+        doc.setLineWidth(2);
+        doc.line(margin, y, margin + contentW, y);
+        y += 20;
+
+        const sectionHeader = (label) => {
+          doc.setFillColor(...ACCENT);
+          doc.rect(margin, y, contentW, 20, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9);
+          doc.setTextColor(255, 255, 255);
+          doc.text(label, margin + 8, y + 13);
+          y += 26;
+          doc.setTextColor(...TEXT);
+        };
+
+        const labelW = 80;
+        const row = (label, value) => {
+          if (!value) return;
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9);
+          doc.setTextColor(...MUTED);
+          doc.text(label.toUpperCase(), margin, y);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(10);
+          doc.setTextColor(...TEXT);
+          const lines = doc.splitTextToSize(String(value), contentW - labelW - 4);
+          doc.text(lines, margin + labelW, y);
+          y += Math.max(lines.length * 13, 14);
+        };
+
+        // VENUE
+        sectionHeader('VENUE');
+        if (venue) {
+          row('Name', venue.name);
+          const loc = [venue.city, venue.state].filter(Boolean).join(', ');
+          if (loc) row('Location', loc);
+          row('Phone', venue.phone);
+          row('Email', venue.email);
+          row('Contact', venue.contactName);
+          row('Website', venue.website);
+        } else {
+          row('Name', booking.venueName);
+        }
+        y += 12;
+
+        // SHOW DETAILS
+        sectionHeader('SHOW DETAILS');
+        row('Date', booking.date);
+        if (booking.startTime) row('Start', booking.startTime);
+        if (booking.endTime) row('End', booking.endTime);
+        if (booking.fee) row('Fee', booking.fee);
+        row('Status', (booking.status || '').toUpperCase());
+        if (booking.notes) row('Notes', booking.notes);
+        y += 12;
+
+        // SETLIST
+        if (linkedSetlist && linkedSetlist.songs && linkedSetlist.songs.length) {
+          sectionHeader(`SETLIST — ${(linkedSetlist.name || '').toUpperCase()}`);
+          linkedSetlist.songs.forEach((song, idx) => {
+            if (y > pageH - 60) { doc.addPage(); y = margin + 10; }
+            if (idx % 2 === 1) {
+              doc.setFillColor(...LIGHT_BG);
+              doc.rect(margin, y - 10, contentW, 22, 'F');
+            }
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10);
+            doc.setTextColor(...TEXT);
+            doc.text(`${String(idx + 1).padStart(2, ' ')}.`, margin, y);
+            doc.text((song.title || '').toUpperCase(), margin + 22, y);
+            const meta = [song.artist, song.key, song.bpm ? `${song.bpm} bpm` : '', song.duration ? `${song.duration}m` : ''].filter(Boolean).join('  ·  ');
+            if (meta) {
+              doc.setFont('helvetica', 'normal');
+              doc.setFontSize(8);
+              doc.setTextColor(...MUTED);
+              doc.text(meta, margin + 22, y + 11);
+              y += 23;
+            } else {
+              y += 16;
+            }
+          });
+          y += 8;
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9);
+          doc.setTextColor(...MUTED);
+          const totalDur = linkedSetlist.songs.reduce((s, x) => s + (Number(x.duration) || 0), 0);
+          doc.text(`${linkedSetlist.songs.length} songs  ·  ~${Math.round(totalDur)} min`, margin + contentW, y, { align: 'right' });
+        }
+
+        const dateSlug = (booking.date || 'undated').replace(/-/g, '');
+        const venueSlug = (booking.venueName || 'venue').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 20);
+        doc.save(`gig-sheet-${venueSlug}-${dateSlug}.pdf`);
+      };
+
       const renderVenuesTab = () => {
         if (venueForm) {
           return (
@@ -6181,6 +6300,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                           {b.notes && <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>{b.notes}</div>}
                         </div>
                         <div style={{ display: 'flex', gap: '.25rem' }}>
+                          <button className="btn btn-small" title="Download gig sheet PDF"
+                            style={{ color: 'var(--success)', borderColor: 'var(--success)' }}
+                            onClick={() => downloadGigSheet(b, bookingVenue || null, linkedSetlist || null)}>📄</button>
                           {bookingVenue?.email && (
                             <button className="btn btn-small" title="Send booking confirmation email"
                               style={{ color: '#60a5fa', borderColor: '#60a5fa' }}
