@@ -1,6 +1,6 @@
 
 AGENT.MD — Setlist Generator Pro v3.8+ Handoff Document
-Last updated: 2026-05-28 (PR #74)
+Last updated: 2026-05-30 (PR #79)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PROJECT OVERVIEW
@@ -51,11 +51,19 @@ App (line ~6110)
 ├── StageModeOverlay (line ~5795)   — Full-screen dark overlay for on-stage reading
 │     Triggered by "📱 Stage Mode" button in view toggle bar
 │     ESC key or exit button closes; read-only, scrollable
+├── Next Gig Banner (~line 8118)    — Inline JSX (no separate component)
+│     Appears between band-bar and main-grid when a future confirmed/pending booking exists
+│     Shows: venue · date · start time · fee · linked setlist · status badge · days-until
+│     Clicking opens VenueModal; hidden when no upcoming bookings
 ├── UnusedSongsPanel (line ~4600)
 ├── EmailShareModal (line ~4680)    — email-ready text modal
 ├── VenueModal (line ~5840)         — Venues CRM + Booking Calendar + EPK
 │     Tab 1 — Venues: pipeline list, add/edit/delete, CSV import, per-venue mailto: send
 │     Tab 2 — Bookings: month-view calendar + booking CRUD
+│             Booking fields: venue, date, start/end time, fee, status, setlistId, notes
+│             Status options: pending | confirmed | completed | cancelled
+│             ✉ button on rows with a venue email → fires bookingConfirmation template
+│             Setlist dropdown links a saved setlist to the gig; name shown in list row
 │     Tab 3 — EPK & Templates: links + 4 editable email templates
 ├── BandModal
 ├── ImportSongsModal (line ~4600)
@@ -298,6 +306,52 @@ RECENT WORK — MERGED PRs
   • ARR_ROLE_IMPORT_HEADERS constant (~line 690) — synonym map for each role:
     e.g. 'arr drums', 'arrangement drums', 'arr_drums' all map to drums role
 
+── PR #76 (lv-henderson-venues-data) ────────────────────
+  Merged: 2026-05-30
+  Branch: claude/lv-henderson-venues-data
+
+  What shipped:
+  • las-vegas-henderson-venues.csv — 57 Las Vegas/Henderson live music venue
+    prospects, ready to import via Venues tab → ⬆ Import CSV
+  • Columns: Name, Email, Phone, Contact Name, City, State, Venue Type,
+    Website, Status (all=prospect), Notes (live music days/schedule)
+  • Coverage: Strip/casino lounges (20), Fremont East/Downtown/Arts District (12),
+    off-Strip Las Vegas (14), Henderson/Green Valley (11)
+  • Phone: 54/57 venues; websites: 56/57; booking emails: 3 (Hard Rock Live,
+    The Barbershop, SoulBelly BBQ)
+
+── PR #78 (bookings-setlist-link) ───────────────────────
+  Merged: 2026-05-30
+  Branch: claude/bookings-setlist-link
+
+  What shipped:
+  • Setlist linking — booking form shows a setlist dropdown when saved setlists
+    exist; selection stored as setlistId on the booking object
+  • Linked setlist name rendered in booking list row (accent colour, 🎵 prefix)
+  • Completed status added — 4th option alongside pending/confirmed/cancelled
+    - Grey styling in both calendar (.booking-cal-event.completed) and list row
+  • BLANK_BOOKING gains setlistId: '' field
+  • setlists prop threaded App → VenueModal so dropdown stays in sync
+
+── PR #79 (next-gig-widget-email-from-booking) ──────────
+  Merged: 2026-05-30
+  Branch: claude/next-gig-widget-email-from-booking
+
+  What shipped:
+  • Next Gig banner — inline IIFE between band-bar and main-grid (~line 8118)
+    - Filters bookings for status confirmed|pending and date >= today
+    - Sorts ascending, shows nearest upcoming gig
+    - Displays: venue · date · start time · fee · linked setlist · status badge · days-until
+    - Clicking banner opens VenueModal; renders nothing if no future bookings
+    - CSS: .next-gig-banner, .next-gig-label, .next-gig-venue, .next-gig-date,
+      .next-gig-setlist, .next-gig-days, .next-gig-status.confirmed/pending
+
+  • Email from booking — ✉ button in booking list row (~line 6187)
+    - Shown only when the linked venue has an email address
+    - Calls fillAndSend('bookingConfirmation', bookingVenue, b)
+    - Pre-fills template with venue name, contact, date, start time, fee
+    - Opens system mail client via mailto:; advances venue status on send
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KEY FUNCTIONS & LINE NUMBERS (approximate — verify on read)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -320,13 +374,17 @@ openEmailShare()              ~7040  — Formats email-ready text, opens EmailSh
 downloadSampleCSV()           ~6838  — Downloads sample CSV with 6 per-role arr columns
 StageModeOverlay()            ~5795  — full-screen dark overlay component
 VenueModal()                  ~5840  — Venue CRM + Booking Calendar + EPK templates
-fillAndSend()                 inside VenueModal — builds mailto: from template + placeholders
-bulkAddVenues()               ~6430  — deduplicates + batch-adds venues from CSV import
-addVenue/updateVenue/...      ~6420  — CRUD for venues, bookings, EPK settings in App
+fillAndSend()                 ~5901  — builds + opens mailto: from template + placeholders;
+                                       also auto-advances venue status on send
+renderBookingsTab()           ~6072  — booking calendar + CRUD form (inside VenueModal)
+bulkAddVenues()               ~6526  — deduplicates + batch-adds venues from CSV import
+addVenue/updateVenue/...      ~6520  — CRUD for venues, bookings, EPK settings in App
 ARRANGEMENT_MACROS            ~665   — 22 quick-tag constants { cat, label, role, text }
 advanceRoleFilter             App state (Set<role>) — controls which roles appear in exports
 stageMode                     App state (bool) — controls StageModeOverlay visibility
 poolRequired / poolOk         SetConfiguration derived values — pool meter calculation
+BLANK_BOOKING                 ~815   — { venueId, venueName, date, startTime, endTime,
+                                         fee, status, setlistId, notes }
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EARLIER FIXES (pre-PR #56, documented in previous Agent.MD)
@@ -351,15 +409,15 @@ EARLIER FIXES (pre-PR #56, documented in previous Agent.MD)
 SUGGESTED NEXT STEPS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. Gig history / past setlists view
-   Browse previously saved gig profiles with their setlists, dates, and venues.
-   Useful for avoiding setlist repeats at the same venue.
+1. Tap-to-highlight in Stage Mode
+   Tap a song row in StageModeOverlay to mark it as the current song — enlarges
+   that row and dims the rest. Tap again or swipe to advance.
 
-2. Tap-to-highlight in Stage Mode
-   Tap a song row in StageModeOverlay to enlarge it for a beat (current-song
-   indicator), then auto-advance or manually tap to move to the next song.
+2. Gig history / repeat-venue guard
+   When adding a booking for a venue you've played before, surface a warning
+   showing the last setlist used there so you can avoid repeats.
 
-3. Venue CSV import — column-type normalisation
+3. Venue CSV import — status normalisation
    Validate and normalise the 'status' column on import against VENUE_STATUSES
    key list (currently imported verbatim; invalid values silently default to
    BLANK_VENUE.status = 'prospect').
@@ -368,3 +426,7 @@ SUGGESTED NEXT STEPS
    Expose the 6 per-role arr columns in the manual column-mapping dropdowns of
    the Import+Normalize modal so users can hand-assign them when header names
    don't match the synonym table.
+
+5. Booking export / print view
+   One-page gig sheet: venue name, address, date/time, fee, contact, and the
+   linked setlist printed together — useful for load-in day.
