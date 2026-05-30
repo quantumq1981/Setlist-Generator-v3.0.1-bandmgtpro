@@ -389,6 +389,21 @@
     .stage-overlay-song {
       display: flex; align-items: flex-start; gap: .9rem;
       padding: .7rem 0; border-bottom: 1px solid rgba(255,255,255,.05);
+      cursor: pointer; border-radius: 6px;
+      transition: opacity .18s ease, background .18s ease;
+    }
+    .stage-overlay-song:hover { background: rgba(255,255,255,.04); }
+    .stage-overlay-song.stage-current {
+      background: rgba(255,107,53,.10);
+      border-left: 3px solid var(--accent);
+      padding-left: .55rem;
+      border-bottom-color: rgba(255,107,53,.18);
+    }
+    .stage-overlay-song.stage-dimmed { opacity: .28; }
+    .stage-current-badge {
+      font-size: .55rem; font-weight: 900; letter-spacing: .09em;
+      color: var(--accent); text-transform: uppercase;
+      margin-left: .4rem; vertical-align: middle; opacity: .85;
     }
     .stage-song-num {
       font-size: 2rem; font-weight: 900; color: rgba(255,255,255,.15);
@@ -5932,12 +5947,47 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
     /******************* STAGE MODE OVERLAY *******************/
     function StageModeOverlay({ open, onClose, setlists }) {
+      const [currentKey, setCurrentKey] = React.useState(null);
+      const currentRef = React.useRef(null);
+
+      // Reset highlight when overlay opens
+      useEffect(() => { if (open) setCurrentKey(null); }, [open]);
+
+      // Auto-scroll to current song
+      useEffect(() => {
+        if (currentKey && currentRef.current) {
+          currentRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, [currentKey]);
+
+      // Build flat song key list for keyboard nav
+      const flatKeys = React.useMemo(() => {
+        if (!setlists) return [];
+        const keys = [];
+        setlists.forEach((sl, si) => {
+          sl.songs.forEach((_, idx) => keys.push(`${si}-${idx}`));
+        });
+        return keys;
+      }, [setlists]);
+
       useEffect(() => {
         if (!open) return;
-        const handler = (e) => { if (e.key === 'Escape') onClose(); };
+        const handler = (e) => {
+          if (e.key === 'Escape') { onClose(); return; }
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            setCurrentKey(prev => {
+              if (!flatKeys.length) return prev;
+              const idx = flatKeys.indexOf(prev);
+              if (e.key === 'ArrowDown') return flatKeys[Math.min(idx + 1, flatKeys.length - 1)];
+              return flatKeys[Math.max(idx - 1, 0)];
+            });
+          }
+        };
         document.addEventListener('keydown', handler);
         return () => document.removeEventListener('keydown', handler);
-      }, [open]);
+      }, [open, flatKeys]);
+
       if (!open || !setlists || setlists.length === 0) return null;
       return (
         <div className="stage-overlay">
@@ -5954,11 +6004,22 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     const t = runningTime;
                     runningTime += Number(song.duration) || 0;
                     const cue = song.arrangement ? getArrangementCue(song.arrangement) : '';
+                    const key = `${si}-${songIdx}`;
+                    const isCurrent = currentKey === key;
+                    const isDimmed = currentKey !== null && !isCurrent;
                     return (
-                      <div key={song.id + '-' + songIdx} className="stage-overlay-song">
+                      <div
+                        key={song.id + '-' + songIdx}
+                        ref={isCurrent ? currentRef : null}
+                        className={`stage-overlay-song${isCurrent ? ' stage-current' : ''}${isDimmed ? ' stage-dimmed' : ''}`}
+                        onClick={() => setCurrentKey(isCurrent ? null : key)}
+                      >
                         <span className="stage-song-num">{songIdx + 1}</span>
                         <div className="stage-song-body">
-                          <div className="stage-song-title">{song.title}</div>
+                          <div className="stage-song-title">
+                            {song.title}
+                            {isCurrent && <span className="stage-current-badge">▶ NOW</span>}
+                          </div>
                           <div className="stage-song-meta">
                             <span>{song.artist}</span>
                             {song.key && <span className="stage-song-key">{song.key}</span>}
