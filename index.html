@@ -523,6 +523,23 @@
     .booking-cal-event.pending { background: var(--warning); }
     .booking-cal-event.cancelled { background: var(--error); color: #fff; }
     .booking-cal-event.completed { background: #555; color: #ccc; }
+    /* Next gig banner */
+    .next-gig-banner {
+      display: flex; align-items: center; gap: .55rem; flex-wrap: wrap;
+      background: var(--surface); border: 1px solid var(--border);
+      border-left: 3px solid var(--accent); border-radius: 6px;
+      padding: .42rem .75rem; margin-bottom: .65rem;
+      font-size: .78rem; cursor: pointer;
+    }
+    .next-gig-banner:hover { border-color: var(--accent); }
+    .next-gig-label { font-size: .58rem; font-weight: 800; letter-spacing: .07em; color: var(--accent); text-transform: uppercase; white-space: nowrap; }
+    .next-gig-venue { font-weight: 700; }
+    .next-gig-date { color: var(--text-muted); font-size: .74rem; }
+    .next-gig-setlist { color: var(--accent); font-size: .74rem; }
+    .next-gig-days { margin-left: auto; font-size: .7rem; font-weight: 700; color: var(--text-muted); white-space: nowrap; }
+    .next-gig-status { font-size: .58rem; font-weight: 800; padding: .1rem .28rem; border-radius: 3px; white-space: nowrap; }
+    .next-gig-status.confirmed { background: var(--success); color: #111; }
+    .next-gig-status.pending { background: var(--warning); color: #111; }
     /* Template editor */
     .tpl-body-textarea {
       font-family: 'Space Mono', monospace; font-size: .76rem;
@@ -6151,6 +6168,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   {[...bookings].sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(b => {
                     const sc = b.status === 'confirmed' ? 'var(--success)' : b.status === 'cancelled' ? 'var(--error)' : b.status === 'completed' ? '#888' : 'var(--warning)';
                     const linkedSetlist = b.setlistId && setlists ? setlists.find(sl => sl.id === b.setlistId) : null;
+                    const bookingVenue = venues.find(v => v.id === b.venueId);
                     return (
                       <div key={b.id} style={{ background: 'var(--primary)', border: '1px solid var(--border)', borderRadius: 8, padding: '.5rem .65rem', marginBottom: '.35rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '.5rem' }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -6163,6 +6181,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                           {b.notes && <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>{b.notes}</div>}
                         </div>
                         <div style={{ display: 'flex', gap: '.25rem' }}>
+                          {bookingVenue?.email && (
+                            <button className="btn btn-small" title="Send booking confirmation email"
+                              style={{ color: '#60a5fa', borderColor: '#60a5fa' }}
+                              onClick={() => fillAndSend('bookingConfirmation', bookingVenue, b)}>✉</button>
+                          )}
                           <button className="btn btn-small" onClick={() => {
                             setBookingForm({...b}); setEditBookingId(b.id);
                             if (b.date) { const [y, m] = b.date.split('-').map(Number); setCalYear(y); setCalMon(m - 1); }
@@ -8091,6 +8114,28 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 </select>
               </div>
             </div>
+
+            {(() => {
+              const today = new Date().toISOString().slice(0, 10);
+              const next = [...bookings]
+                .filter(b => b.date >= today && (b.status === 'confirmed' || b.status === 'pending'))
+                .sort((a, b) => a.date.localeCompare(b.date))[0];
+              if (!next) return null;
+              const sl = next.setlistId ? setlists.find(s => s.id === next.setlistId) : null;
+              const msUntil = new Date(next.date) - new Date(today);
+              const daysUntil = Math.round(msUntil / 86400000);
+              const daysLabel = daysUntil === 0 ? 'TODAY' : daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`;
+              return (
+                <div className="next-gig-banner" onClick={() => setVenueModal(true)}>
+                  <span className="next-gig-label">Next Gig</span>
+                  <span className="next-gig-venue">{next.venueName || '—'}</span>
+                  <span className="next-gig-date">{next.date}{next.startTime && ` · ${next.startTime}`}{next.fee && ` · ${next.fee}`}</span>
+                  {sl && <span className="next-gig-setlist">🎵 {sl.name}</span>}
+                  <span className={`next-gig-status ${next.status}`}>{next.status.toUpperCase()}</span>
+                  <span className="next-gig-days">{daysLabel}</span>
+                </div>
+              );
+            })()}
 
             <div className="main-grid">
               <SongLibrary
