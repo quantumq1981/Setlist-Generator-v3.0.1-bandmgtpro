@@ -1,6 +1,6 @@
 
 AGENT.MD — Setlist Generator Pro v3.8+ Handoff Document
-Last updated: 2026-05-30 (PR #84)
+Last updated: 2026-05-30 (PR #90)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PROJECT OVERVIEW
@@ -52,9 +52,11 @@ App (line ~6110)
 │     Toolbar buttons: Copy Text | 📧 Email / Share | Export PDF
 ├── SetlistView (line ~4720) × N    — One per generated set
 │     Props include: viewMode ('stage'|'advance'), advanceRoleFilter
-├── StageModeOverlay (line ~5795)   — Full-screen dark overlay for on-stage reading
+├── StageModeOverlay (line ~5934)   — Full-screen dark overlay for on-stage reading
 │     Triggered by "📱 Stage Mode" button in view toggle bar
-│     ESC key or exit button closes; read-only, scrollable
+│     Tap-to-highlight: tap a row to mark it active (accent orange), others dim
+│     ArrowUp/ArrowDown navigate and auto-scroll; tap active row to clear
+│     ESC key or exit button closes; highlight resets on every open
 ├── Next Gig Banner (~line 8118)    — Inline JSX (no separate component)
 │     Appears between band-bar and main-grid when a future confirmed/pending booking exists
 │     Shows: venue · date · start time · fee · linked setlist · status badge · days-until
@@ -402,6 +404,43 @@ RECENT WORK — MERGED PRs
     .media-clip-row-label, .media-clip-row-ts, .media-clip-add,
     details.media-clip-player, .media-clip-iframe-wrap
 
+── PR #86 (pdf-stage-ready-redesign) ───────────────────
+  Merged: 2026-05-30
+  Branch: claude/pdf-stage-ready-redesign
+
+  What shipped:
+  • exportPDF() redesigned for stage readability and clean print layout
+  • Song rows now show: rounded number badge | TITLE (caps) + artist italic
+    sub-line | KEY | BPM | STYLE — no inline arrangement text on song rows
+  • Arrangement notes collected during render into a footnotes[] array,
+    printed on the summary/diagnostic page under "ARRANGEMENT NOTES" section
+    - Each footnote numbered to match the song badge
+    - Only emitted for songs with hasArrangementData() = true
+  • Column widths: NUM_W=38 | KEY_W=10% | BPM_W=10% | STY_W=22% | TTL_W=remainder
+  • Summary page unchanged (total time, songs per set, diagnostic) + footnotes appended
+  • Result: cleaner on-stage document — arrangement detail on back page only
+  • CSS/PDF: no changes to DOM; all formatting in jsPDF drawing code (~line 7100)
+
+── PR #90 (stage-mode-tap-highlight) ───────────────────
+  Merged: 2026-05-30
+  Branch: claude/stage-mode-tap-highlight
+
+  What shipped:
+  • Tap-to-highlight in StageModeOverlay — tap a song row to mark it active
+    - Active row: accent-orange background (rgba(255,107,53,.10)), left border, ▶ NOW badge
+    - All other rows: dimmed to 28% opacity (.stage-dimmed)
+    - Tap the active row again to clear the highlight
+  • ArrowDown / ArrowUp keyboard navigation — moves highlight through songs
+    in order, auto-scrolls active row into view (scrollIntoView smooth/center)
+  • Highlight state stored in currentKey ("${si}-${songIdx}") — keyed per set + position
+  • ESC still exits Stage Mode (unchanged)
+  • Highlight resets to null whenever the overlay opens (useEffect on open prop)
+  • flatKeys memo — ordered array of all song keys for keyboard navigation
+  • currentRef — React.useRef attached to the active row for auto-scroll
+  • New CSS: .stage-overlay-song gains cursor:pointer + border-radius + transition;
+    .stage-overlay-song.stage-current, .stage-overlay-song.stage-dimmed,
+    .stage-current-badge added; .stage-overlay-song:hover rule added
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KEY FUNCTIONS & LINE NUMBERS (approximate — verify on read)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -425,8 +464,8 @@ exportPDF()                   ~7100  — jsPDF export (view-mode aware)
 copyToClipboard()             ~7030  — Plain text copy (view-mode aware)
 openEmailShare()              ~7040  — Formats email-ready text, opens EmailShareModal
 downloadSampleCSV()           ~6838  — Downloads sample CSV with 6 per-role arr columns
-StageModeOverlay()            ~5795  — full-screen dark overlay component
-VenueModal()                  ~5840  — Venue CRM + Booking Calendar + EPK templates
+StageModeOverlay()            ~5934  — full-screen dark overlay; tap-to-highlight, arrow nav
+VenueModal()                  ~5982  — Venue CRM + Booking Calendar + EPK templates
 downloadGigSheet()            ~5926  — generates + downloads jsPDF gig sheet for a booking;
                                        sections: header, venue, show details, setlist (if linked)
 fillAndSend()                 ~5901  — builds + opens mailto: from template + placeholders;
@@ -464,32 +503,24 @@ EARLIER FIXES (pre-PR #56, documented in previous Agent.MD)
 SUGGESTED NEXT STEPS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. Tap-to-highlight in Stage Mode
-   Tap a song row in StageModeOverlay to mark it as the current song — enlarges
-   that row and dims the rest. Tap again or swipe to advance.
-
-2. Gig history / repeat-venue guard
+1. Gig history / repeat-venue guard
    When adding a booking for a venue you've played before, surface a warning
-   showing the last setlist used there so you can avoid repeats.
+   showing the last setlist used there so you can avoid repeat songs.
 
-3. Venue CSV import — status normalisation
+2. Venue CSV import — status normalisation
    Validate and normalise the 'status' column on import against VENUE_STATUSES
    key list (currently imported verbatim; invalid values silently default to
    BLANK_VENUE.status = 'prospect').
 
-4. Per-role CSV columns — Import+Normalize column mapping UI
+3. Per-role CSV columns — Import+Normalize column mapping UI
    Expose the 6 per-role arr columns in the manual column-mapping dropdowns of
    the Import+Normalize modal so users can hand-assign them when header names
    don't match the synonym table.
 
-5. Booking export / print view
-   One-page gig sheet: venue name, address, date/time, fee, contact, and the
-   linked setlist printed together — useful for load-in day.
-
-6. Stage-ready PDF redesign — simplify song rows to Title/Key/BPM/Style, move
-   arrangement notes to numbered footnotes on the summary page for a cleaner
-   on-stage document.
-
-7. Song media/audio linking — extend mediaLinks to support direct audio uploads
+4. Song media/audio linking — extend mediaLinks to support direct audio uploads
    (MP3/WAV stored as base64 or object URL) in addition to YouTube links;
    playlist-level reference view.
+
+5. Booking analytics / dashboard
+   Summary view: total gigs, total fees, most-played venues, songs-per-gig
+   averages — useful for end-of-year or grant reporting.
