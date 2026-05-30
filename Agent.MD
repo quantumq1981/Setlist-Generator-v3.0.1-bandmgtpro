@@ -1,6 +1,6 @@
 
 AGENT.MD — Setlist Generator Pro v3.8+ Handoff Document
-Last updated: 2026-05-30 (PR #79)
+Last updated: 2026-05-30 (PR #84)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PROJECT OVERVIEW
@@ -35,6 +35,10 @@ SONG OBJECT SCHEMA (current)
   arrangement: string    — JSON-encoded { global, drums, keys, bass, guitar2, endingCue }
                            or plain text (legacy) — parseArrangement() handles both
   styleInferred: bool   — optional, set when style was auto-inferred from artist
+  mediaLinks:  array    — YouTube reference clips: [{ id, url, ts, label }]
+                           url: YouTube URL (youtu.be/, watch?v=, /embed/ formats, incl. unlisted)
+                           ts: optional timestamp string "MM:SS" or "H:MM:SS"
+                           label: short description of what the clip demonstrates
 }
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -64,6 +68,7 @@ App (line ~6110)
 │             Status options: pending | confirmed | completed | cancelled
 │             ✉ button on rows with a venue email → fires bookingConfirmation template
 │             Setlist dropdown links a saved setlist to the gig; name shown in list row
+│             📄 button on every row → downloadGigSheet() generates jsPDF gig sheet
 │     Tab 3 — EPK & Templates: links + 4 editable email templates
 ├── BandModal
 ├── ImportSongsModal (line ~4600)
@@ -352,10 +357,58 @@ RECENT WORK — MERGED PRs
     - Pre-fills template with venue name, contact, date, start time, fee
     - Opens system mail client via mailto:; advances venue status on send
 
+── PR #82 (gig-sheet-pdf) ────────────────────────────────
+  Merged: 2026-05-30
+  Branch: claude/gig-sheet-pdf
+
+  What shipped:
+  • 📄 button on every booking list row — generates and downloads a jsPDF gig sheet
+  • downloadGigSheet(booking, venue, linkedSetlist) defined inside VenueModal (~line 5926)
+    alongside fillAndSend — uses window.jspdf already loaded by the app
+  • PDF sections: Band name header + GIG SHEET label, accent rule divider,
+    VENUE (name/city-state/phone/email/contact/website),
+    SHOW DETAILS (date/start/end time/fee/status/notes),
+    SETLIST (numbered rows: title caps · artist · key · BPM · duration,
+    alternating row shading, total songs + runtime footer)
+  • Setlist section only appears when a setlist is linked to the booking
+  • Handles page overflow for long setlists (new page when within 60pt of bottom)
+  • Filename pattern: gig-sheet-{venue-slug}-{YYYYMMDD}.pdf
+  • 📄 button always visible regardless of venue email
+
+── PR #84 (youtube-media-links) ─────────────────────────
+  Merged: 2026-05-30
+  Branch: claude/youtube-media-links
+
+  What shipped:
+  • song.mediaLinks[] — new array field on song objects: [{ id, url, ts, label }]
+    - url: YouTube URL (youtu.be/, watch?v=, /embed/ formats, including unlisted)
+    - ts: optional timestamp string "MM:SS" or "H:MM:SS"
+    - label: short description of what the clip demonstrates
+  • "Reference Clips (YouTube)" section in Add and Edit song forms,
+    below the arrangement roles grid
+    - URL + MM:SS + label inputs → "+ Add" validates YouTube ID before saving
+    - Listed clips show label, timestamp, and remove button
+  • Advance View: "Clips" row appears below Arrangement for songs with media links
+    - Each clip is a <details> accordion: click ▶ to expand 16:9 inline iframe player
+    - Player starts at specified timestamp via ?start=N embed param
+    - Hidden in Stage Mode (no distractions on stage)
+  • Helper functions (global scope, ~line 751):
+    - getYTVideoId(url) — extracts 11-char ID from known URL patterns
+    - tsToSeconds(ts) — MM:SS or H:MM:SS → integer seconds
+    - getYTEmbedUrl(url, ts) — builds embed URL with optional ?start=N
+  • SongLibrary state additions: newClip, editClip ({ url, ts, label })
+  • form and editForm now include mediaLinks: []
+  • CSS: .media-clips-section, .media-clips-label, .media-clip-row,
+    .media-clip-row-label, .media-clip-row-ts, .media-clip-add,
+    details.media-clip-player, .media-clip-iframe-wrap
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KEY FUNCTIONS & LINE NUMBERS (approximate — verify on read)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+getYTVideoId()                ~751   — extracts 11-char YouTube ID from youtu.be/watch?v=/embed/ URLs
+tsToSeconds()                 ~751   — MM:SS or H:MM:SS timestamp string → integer seconds
+getYTEmbedUrl()               ~751   — builds YouTube embed URL with optional ?start=N param
 parseArrangement()            ~695   — str → { global, drums, keys, bass, guitar2, endingCue }
 serializeArrangement()        ~705   — obj → JSON string (plain string if only global)
 getArrangementCue()           ~718   — 40-char Stage View cue from arrangement
@@ -374,6 +427,8 @@ openEmailShare()              ~7040  — Formats email-ready text, opens EmailSh
 downloadSampleCSV()           ~6838  — Downloads sample CSV with 6 per-role arr columns
 StageModeOverlay()            ~5795  — full-screen dark overlay component
 VenueModal()                  ~5840  — Venue CRM + Booking Calendar + EPK templates
+downloadGigSheet()            ~5926  — generates + downloads jsPDF gig sheet for a booking;
+                                       sections: header, venue, show details, setlist (if linked)
 fillAndSend()                 ~5901  — builds + opens mailto: from template + placeholders;
                                        also auto-advances venue status on send
 renderBookingsTab()           ~6072  — booking calendar + CRUD form (inside VenueModal)
@@ -430,3 +485,11 @@ SUGGESTED NEXT STEPS
 5. Booking export / print view
    One-page gig sheet: venue name, address, date/time, fee, contact, and the
    linked setlist printed together — useful for load-in day.
+
+6. Stage-ready PDF redesign — simplify song rows to Title/Key/BPM/Style, move
+   arrangement notes to numbered footnotes on the summary page for a cleaner
+   on-stage document.
+
+7. Song media/audio linking — extend mediaLinks to support direct audio uploads
+   (MP3/WAV stored as base64 or object URL) in addition to YouTube links;
+   playlist-level reference view.
