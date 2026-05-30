@@ -522,6 +522,7 @@
     .booking-cal-event.confirmed { background: var(--success); }
     .booking-cal-event.pending { background: var(--warning); }
     .booking-cal-event.cancelled { background: var(--error); color: #fff; }
+    .booking-cal-event.completed { background: #555; color: #ccc; }
     /* Template editor */
     .tpl-body-textarea {
       font-family: 'Space Mono', monospace; font-size: .76rem;
@@ -794,7 +795,7 @@
     };
 
     const BLANK_VENUE = { name: '', email: '', phone: '', contactName: '', type: 'Bar', city: '', state: '', website: '', notes: '', status: 'prospect', lastContactDate: '' };
-    const BLANK_BOOKING = { venueId: '', venueName: '', date: '', startTime: '', endTime: '', fee: '', status: 'pending', notes: '' };
+    const BLANK_BOOKING = { venueId: '', venueName: '', date: '', startTime: '', endTime: '', fee: '', status: 'pending', setlistId: '', notes: '' };
 
     /******************* UTILITIES & GUARDS *******************/
     const genId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() :
@@ -5859,7 +5860,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     }
 
     /******************* VENUE MODAL *******************/
-    function VenueModal({ open, onClose, venues, bookings, epkSettings,
+    function VenueModal({ open, onClose, venues, bookings, setlists, epkSettings,
       onSaveEpkSettings, onAddVenue, onUpdateVenue, onDeleteVenue,
       onAddBooking, onUpdateBooking, onDeleteBooking, bandName, showToast, onBulkAddVenues }) {
       const [vTab, setVTab] = useState('venues');
@@ -6112,6 +6113,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       <select value={bookingForm.status} onChange={e => setBookingForm({...bookingForm, status: e.target.value})}>
                         <option value="pending">Pending</option>
                         <option value="confirmed">Confirmed</option>
+                        <option value="completed">Completed</option>
                         <option value="cancelled">Cancelled</option>
                       </select>
                     </div>
@@ -6119,6 +6121,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     <div className="input-group"><label>Fee</label><input value={bookingForm.fee} onChange={e => setBookingForm({...bookingForm, fee: e.target.value})} placeholder="$500" /></div>
                     <div className="input-group"><label>Start Time</label><input type="time" value={bookingForm.startTime} onChange={e => setBookingForm({...bookingForm, startTime: e.target.value})} /></div>
                     <div className="input-group"><label>End Time</label><input type="time" value={bookingForm.endTime} onChange={e => setBookingForm({...bookingForm, endTime: e.target.value})} /></div>
+                    {setlists && setlists.length > 0 && (
+                      <div className="input-group"><label>Setlist</label>
+                        <select value={bookingForm.setlistId || ''} onChange={e => setBookingForm({...bookingForm, setlistId: e.target.value})}>
+                          <option value="">— None —</option>
+                          {setlists.map(sl => <option key={sl.id} value={sl.id}>{sl.name}</option>)}
+                        </select>
+                      </div>
+                    )}
                   </div>
                   <div className="input-group"><label>Notes</label><textarea value={bookingForm.notes} onChange={e => setBookingForm({...bookingForm, notes: e.target.value})} rows={2} style={{ resize: 'vertical' }} /></div>
                   <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
@@ -6139,7 +6149,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   </div>
                   {bookings.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: '.85rem', textAlign: 'center', padding: '1rem' }}>No bookings yet.</div>}
                   {[...bookings].sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(b => {
-                    const sc = b.status === 'confirmed' ? 'var(--success)' : b.status === 'cancelled' ? 'var(--error)' : 'var(--warning)';
+                    const sc = b.status === 'confirmed' ? 'var(--success)' : b.status === 'cancelled' ? 'var(--error)' : b.status === 'completed' ? '#888' : 'var(--warning)';
+                    const linkedSetlist = b.setlistId && setlists ? setlists.find(sl => sl.id === b.setlistId) : null;
                     return (
                       <div key={b.id} style={{ background: 'var(--primary)', border: '1px solid var(--border)', borderRadius: 8, padding: '.5rem .65rem', marginBottom: '.35rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '.5rem' }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -6148,6 +6159,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                             {b.date}{b.startTime && ` · ${b.startTime}`}{b.fee && ` · ${b.fee}`}
                             <span style={{ marginLeft: '.4rem', color: sc, fontWeight: 700, fontSize: '.65rem' }}>{b.status.toUpperCase()}</span>
                           </div>
+                          {linkedSetlist && <div style={{ fontSize: '.72rem', color: 'var(--accent)', marginTop: '.1rem' }}>🎵 {linkedSetlist.name}</div>}
                           {b.notes && <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>{b.notes}</div>}
                         </div>
                         <div style={{ display: 'flex', gap: '.25rem' }}>
@@ -8337,6 +8349,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               onClose={() => setVenueModal(false)}
               venues={venues}
               bookings={bookings}
+              setlists={setlists}
               epkSettings={epkSettings}
               onSaveEpkSettings={saveEpkSettings}
               onAddVenue={addVenue}
