@@ -540,6 +540,21 @@
     .next-gig-status { font-size: .58rem; font-weight: 800; padding: .1rem .28rem; border-radius: 3px; white-space: nowrap; }
     .next-gig-status.confirmed { background: var(--success); color: #111; }
     .next-gig-status.pending { background: var(--warning); color: #111; }
+    /* Media / YouTube clips */
+    .media-clips-section { margin-top: .55rem; border-top: 1px solid var(--border); padding-top: .45rem; }
+    .media-clips-label { font-size: .6rem; font-weight: 800; letter-spacing: .06em; color: var(--text-muted); text-transform: uppercase; margin-bottom: .35rem; }
+    .media-clip-row { display: flex; align-items: center; gap: .35rem; padding: .28rem .4rem; border-radius: 5px; background: var(--primary); border: 1px solid var(--border); margin-bottom: .25rem; font-size: .78rem; }
+    .media-clip-row-label { flex: 1; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .media-clip-row-ts { font-family: 'Space Mono', monospace; font-size: .68rem; color: var(--accent); white-space: nowrap; }
+    .media-clip-add { display: flex; gap: .3rem; flex-wrap: wrap; margin-top: .3rem; align-items: center; }
+    .media-clip-add input { font-size: .78rem; flex: 1; min-width: 80px; }
+    .media-clip-add input[placeholder="MM:SS"] { flex: 0 0 58px; }
+    details.media-clip-player { margin-bottom: .25rem; }
+    details.media-clip-player summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: .35rem; padding: .28rem .4rem; border-radius: 5px; background: var(--primary); border: 1px solid var(--border); font-size: .78rem; }
+    details.media-clip-player summary::-webkit-details-marker { display: none; }
+    details.media-clip-player summary .clip-play-icon { font-size: .9rem; }
+    .media-clip-iframe-wrap { position: relative; padding-top: 56.25%; margin-top: .4rem; border-radius: 6px; overflow: hidden; }
+    .media-clip-iframe-wrap iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
     /* Template editor */
     .tpl-body-textarea {
       font-family: 'Space Mono', monospace; font-size: .76rem;
@@ -734,6 +749,22 @@
       const p = parseArrangement(arrangement);
       return ARR_ROLES.some(r => p[r]);
     }
+
+    const getYTVideoId = (url) => {
+      const m = (url || '').match(/(?:youtu\.be\/|[?&]v=|\/embed\/)([A-Za-z0-9_-]{11})/);
+      return m ? m[1] : null;
+    };
+    const tsToSeconds = (ts) => {
+      if (!ts) return 0;
+      const parts = String(ts).split(':').map(Number).reverse();
+      return (parts[0] || 0) + (parts[1] || 0) * 60 + (parts[2] || 0) * 3600;
+    };
+    const getYTEmbedUrl = (url, ts) => {
+      const id = getYTVideoId(url);
+      if (!id) return null;
+      const secs = tsToSeconds(ts);
+      return `https://www.youtube.com/embed/${id}${secs ? `?start=${secs}` : ''}`;
+    };
 
     /******************* ARRANGEMENT MACROS *******************/
     const ARRANGEMENT_MACROS = [
@@ -3724,14 +3755,17 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       onClearAll,
       latestImport
     }) {
-      const [form, setForm] = useState({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '', arrangement: '' });
+      const [form, setForm] = useState({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '', arrangement: '', mediaLinks: [] });
       const [editingId, setEditingId] = useState(null);
       const [editForm, setEditForm] = useState({});
+      const [newClip, setNewClip] = useState({ url: '', ts: '', label: '' });
+      const [editClip, setEditClip] = useState({ url: '', ts: '', label: '' });
 
       const handleAdd = () => {
         if (!form.title || !form.artist || !form.duration) return;
         onAddSong(form);
-        setForm({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '', arrangement: '' });
+        setForm({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '', arrangement: '', mediaLinks: [] });
+        setNewClip({ url: '', ts: '', label: '' });
       };
 
       const startEdit = (song) => {
@@ -3744,8 +3778,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           key: song.key || '',
           bpm: song.bpm || '',
           vocalist: song.vocalist || '',
-          arrangement: song.arrangement || ''
+          arrangement: song.arrangement || '',
+          mediaLinks: song.mediaLinks || []
         });
+        setEditClip({ url: '', ts: '', label: '' });
       };
 
       const cancelEdit = () => {
@@ -3912,6 +3948,28 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             })()}
           </div>
 
+          <div className="media-clips-section">
+            <div className="media-clips-label">Reference Clips (YouTube)</div>
+            {(form.mediaLinks || []).map(clip => (
+              <div key={clip.id} className="media-clip-row">
+                <span className="media-clip-row-label">{clip.label || clip.url}</span>
+                {clip.ts && <span className="media-clip-row-ts">▸ {clip.ts}</span>}
+                <button className="btn btn-small" style={{ color: 'var(--error)', borderColor: 'var(--error)', padding: '0 .3rem' }}
+                  onClick={() => setForm({ ...form, mediaLinks: form.mediaLinks.filter(c => c.id !== clip.id) })}>✕</button>
+              </div>
+            ))}
+            <div className="media-clip-add">
+              <input value={newClip.url} onChange={e => setNewClip({ ...newClip, url: e.target.value })} placeholder="YouTube URL" className="input" />
+              <input value={newClip.ts} onChange={e => setNewClip({ ...newClip, ts: e.target.value })} placeholder="MM:SS" className="input" />
+              <input value={newClip.label} onChange={e => setNewClip({ ...newClip, label: e.target.value })} placeholder="Label (e.g. Extended ending)" className="input" />
+              <button className="btn btn-small btn-primary" onClick={() => {
+                if (!newClip.url || !getYTVideoId(newClip.url)) return;
+                setForm({ ...form, mediaLinks: [...(form.mediaLinks || []), { ...newClip, id: genId() }] });
+                setNewClip({ url: '', ts: '', label: '' });
+              }}>+ Add</button>
+            </div>
+          </div>
+
           <button className="btn btn-primary" onClick={handleAdd} style={{ width: '100%', marginBottom: '1rem' }}>
             Add Song (to Active)
           </button>
@@ -4071,6 +4129,27 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                             </>
                           );
                         })()}
+                      </div>
+                      <div className="media-clips-section">
+                        <div className="media-clips-label">Reference Clips (YouTube)</div>
+                        {(editForm.mediaLinks || []).map(clip => (
+                          <div key={clip.id} className="media-clip-row">
+                            <span className="media-clip-row-label">{clip.label || clip.url}</span>
+                            {clip.ts && <span className="media-clip-row-ts">▸ {clip.ts}</span>}
+                            <button className="btn btn-small" style={{ color: 'var(--error)', borderColor: 'var(--error)', padding: '0 .3rem' }}
+                              onClick={() => setEditForm({ ...editForm, mediaLinks: editForm.mediaLinks.filter(c => c.id !== clip.id) })}>✕</button>
+                          </div>
+                        ))}
+                        <div className="media-clip-add">
+                          <input value={editClip.url} onChange={e => setEditClip({ ...editClip, url: e.target.value })} placeholder="YouTube URL" className="input" />
+                          <input value={editClip.ts} onChange={e => setEditClip({ ...editClip, ts: e.target.value })} placeholder="MM:SS" className="input" />
+                          <input value={editClip.label} onChange={e => setEditClip({ ...editClip, label: e.target.value })} placeholder="Label (e.g. Extended ending)" className="input" />
+                          <button className="btn btn-small btn-primary" onClick={() => {
+                            if (!editClip.url || !getYTVideoId(editClip.url)) return;
+                            setEditForm({ ...editForm, mediaLinks: [...(editForm.mediaLinks || []), { ...editClip, id: genId() }] });
+                            setEditClip({ url: '', ts: '', label: '' });
+                          }}>+ Add</button>
+                        </div>
                       </div>
                       <div className="toolbar" style={{ justifyContent: 'flex-end', gap: '.3rem' }}>
                         <button className="btn btn-small" onClick={saveEdit} style={{ borderColor: 'var(--success)', color: 'var(--success)' }}>Save</button>
@@ -4915,6 +4994,29 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     </div>
                   );
                 })()}
+                {viewMode === 'advance' && song.mediaLinks && song.mediaLinks.length > 0 && (
+                  <div className="arrangement-notes-row">
+                    <div className="arrangement-label">Clips</div>
+                    <div className="arrangement-notes-content" style={{ padding: '.3rem 0' }}>
+                      {song.mediaLinks.map(clip => {
+                        const embedUrl = getYTEmbedUrl(clip.url, clip.ts);
+                        if (!embedUrl) return null;
+                        return (
+                          <details key={clip.id} className="media-clip-player">
+                            <summary>
+                              <span className="clip-play-icon">▶</span>
+                              <span style={{ fontWeight: 600, flex: 1 }}>{clip.label || 'Clip'}</span>
+                              {clip.ts && <span className="media-clip-row-ts">{clip.ts}</span>}
+                            </summary>
+                            <div className="media-clip-iframe-wrap">
+                              <iframe src={embedUrl} allowFullScreen title={clip.label || 'Reference clip'} />
+                            </div>
+                          </details>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
