@@ -7387,160 +7387,158 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const tableX = margin;
         const tableW = pageW - margin * 2;                // 540pt
 
-        // Column layout — style column widened for compound genres (southern rock, jazz rock, etc.)
-        const cols = {
-          title:  { x: tableX,                   w: tableW * 0.36 }, // Song Title ~36%
-          artist: { x: tableX + tableW * 0.36,   w: tableW * 0.20 }, // Artist ~20%
-          key:    { x: tableX + tableW * 0.56,   w: tableW * 0.11 }, // Key ~11%
-          bpm:    { x: tableX + tableW * 0.67,   w: tableW * 0.10 }, // BPM ~10%
-          style:  { x: tableX + tableW * 0.77,   w: tableW * 0.23 }, // Style ~23%
-        };
-        const ROW_H = 44;
-        const HEADER_ROW_H = 38;
-        const CELL_PAD = 10;
-        const TITLE_SIZE = 28;
-        const HEADER_FONT = 13;
-        const BODY_FONT = 14;
+        // Palette
+        const ACCENT    = [61, 79, 95];
+        const ALT_ROW   = [246, 247, 249];
+        const LINE_C    = [215, 215, 215];
+        const TEXT_C    = [22, 22, 22];
+        const MUTED_C   = [110, 110, 118];
+        const ACCENT_FN = [80, 100, 140]; // footnote number colour
 
-        // Palette (light background with faded watermark)
-        const HDR_R = 61, HDR_G = 79, HDR_B = 95;
-        const ALT_ROW = [245, 245, 245];
-        const LINE_C = [220, 220, 220];
-        const TEXT_C = [30, 30, 30];
+        // Column layout: # | TITLE+artist stacked | KEY | BPM | STYLE
+        const NUM_W   = 38;
+        const KEY_W   = tableW * 0.10;
+        const BPM_W   = tableW * 0.10;
+        const STY_W   = tableW * 0.22;
+        const TTL_W   = tableW - NUM_W - KEY_W - BPM_W - STY_W;
+        const cols = {
+          num:   { x: tableX,                             w: NUM_W  },
+          title: { x: tableX + NUM_W,                    w: TTL_W  },
+          key:   { x: tableX + NUM_W + TTL_W,            w: KEY_W  },
+          bpm:   { x: tableX + NUM_W + TTL_W + KEY_W,    w: BPM_W  },
+          style: { x: tableX + NUM_W + TTL_W + KEY_W + BPM_W, w: STY_W },
+        };
+
+        const ROW_H      = 52;
+        const HDR_H      = 28;
+        const CELL_PAD   = 8;
+        const TITLE_SIZE = 26;
+        const HDR_FONT   = 10;
+        const TITLE_FONT = 13;
+        const ARTIST_FONT = 8;
+        const META_FONT  = 12;
 
         const addWatermark = () => {
           if (!watermarkImg) return;
           doc.saveGraphicsState();
           doc.setGState(new doc.GState({ opacity: 0.12 }));
-          try {
-            doc.addImage(watermarkImg, 'AUTO', 0, 0, pageW, pageH);
-          } catch (err) {
-            console.warn('Watermark image error:', err);
-          }
+          try { doc.addImage(watermarkImg, 'AUTO', 0, 0, pageW, pageH); }
+          catch (err) { console.warn('Watermark image error:', err); }
           doc.restoreGraphicsState();
         };
 
-        const truncate = (text, maxWidth) => {
-          if (doc.getTextWidth(text) <= maxWidth) return text;
-          while (doc.getTextWidth(text + '…') > maxWidth && text.length > 0) {
-            text = text.slice(0, -1);
-          }
+        const truncate = (text, maxW) => {
+          if (doc.getTextWidth(text) <= maxW) return text;
+          while (doc.getTextWidth(text + '…') > maxW && text.length > 0) text = text.slice(0, -1);
           return text + '…';
         };
 
-        // Draw the dark header row for the table
         const drawTableHeader = (y) => {
-          doc.setFillColor(HDR_R, HDR_G, HDR_B);
-          doc.rect(tableX, y, tableW, HEADER_ROW_H, 'F');
-
+          doc.setFillColor(...ACCENT);
+          doc.rect(tableX, y, tableW, HDR_H, 'F');
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(HEADER_FONT);
+          doc.setFontSize(HDR_FONT);
           doc.setTextColor(255, 255, 255);
-          const textY = y + HEADER_ROW_H / 2 + 4;
-          doc.text('SONG TITLE', cols.title.x + CELL_PAD, textY);
-          doc.text('ARTIST', cols.artist.x + CELL_PAD, textY);
-          doc.text('KEY', cols.key.x + cols.key.w / 2, textY, { align: 'center' });
-          doc.text('BPM', cols.bpm.x + cols.bpm.w / 2, textY, { align: 'center' });
-          doc.text('STYLE', cols.style.x + CELL_PAD, textY);
-
-          return y + HEADER_ROW_H;
+          const ty = y + HDR_H / 2 + 3.5;
+          doc.text('#', cols.num.x + NUM_W / 2, ty, { align: 'center' });
+          doc.text('SONG TITLE', cols.title.x + CELL_PAD, ty);
+          doc.text('KEY', cols.key.x + KEY_W / 2, ty, { align: 'center' });
+          doc.text('BPM', cols.bpm.x + BPM_W / 2, ty, { align: 'center' });
+          doc.text('STYLE', cols.style.x + CELL_PAD, ty);
+          return y + HDR_H;
         };
 
-        // Draw one song row (alternating dark background)
-        const drawSongRow = (song, y, rowIdx) => {
+        const drawSongRow = (song, y, rowIdx, fnNum) => {
           if (rowIdx % 2 === 1) {
             doc.setFillColor(...ALT_ROW);
             doc.rect(tableX, y, tableW, ROW_H, 'F');
           }
-
           doc.setDrawColor(...LINE_C);
-          doc.setLineWidth(0.5);
+          doc.setLineWidth(0.4);
           doc.line(tableX, y, tableX + tableW, y);
 
+          // Song number badge
+          doc.setFillColor(...ACCENT);
+          doc.roundedRect(cols.num.x + 4, y + 8, NUM_W - 8, ROW_H - 16, 3, 3, 'F');
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(BODY_FONT);
+          doc.setFontSize(12);
+          doc.setTextColor(255, 255, 255);
+          doc.text(String(rowIdx + 1), cols.num.x + NUM_W / 2, y + ROW_H / 2 + 4.5, { align: 'center' });
+
+          // Title
+          const titleY = song.artist ? y + 20 : y + ROW_H / 2 + 5;
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(TITLE_FONT);
           doc.setTextColor(...TEXT_C);
-          const textY = y + ROW_H / 2 + BODY_FONT * 0.35;
+          const maxTitleW = cols.title.w - CELL_PAD - (fnNum ? 14 : 4);
+          const titleTxt = truncate((song.title || '').toUpperCase(), maxTitleW);
+          doc.text(titleTxt, cols.title.x + CELL_PAD, titleY);
 
-          // Song Title — all-caps with ellipsis on overflow
-          doc.text(
-            truncate((song.title || '').toUpperCase(), cols.title.w - CELL_PAD * 2),
-            cols.title.x + CELL_PAD, textY
-          );
-
-          // Artist — mixed case, smaller feel via same font
-          doc.text(
-            truncate(song.artist || '', cols.artist.w - CELL_PAD * 2),
-            cols.artist.x + CELL_PAD, textY
-          );
-
-          if (song.key) {
-            doc.text(String(song.key), cols.key.x + cols.key.w / 2, textY, { align: 'center' });
+          // Footnote superscript
+          if (fnNum) {
+            const tw = doc.getTextWidth(titleTxt);
+            doc.setFontSize(7);
+            doc.setTextColor(...ACCENT_FN);
+            doc.text(String(fnNum), cols.title.x + CELL_PAD + tw + 2, titleY - 5);
           }
 
-          if (song.bpm) {
-            doc.text(String(song.bpm), cols.bpm.x + cols.bpm.w / 2, textY, { align: 'center' });
+          // Artist sub-line
+          if (song.artist) {
+            doc.setFont('helvetica', 'italic');
+            doc.setFontSize(ARTIST_FONT);
+            doc.setTextColor(...MUTED_C);
+            doc.text(truncate(song.artist, cols.title.w - CELL_PAD * 2), cols.title.x + CELL_PAD, y + 35);
           }
 
-          if (song.style) {
-            doc.text(
-              truncate(song.style, cols.style.w - CELL_PAD * 2),
-              cols.style.x + CELL_PAD, textY
-            );
-          }
+          // Key / BPM / Style
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(META_FONT);
+          doc.setTextColor(...TEXT_C);
+          const metaY = y + ROW_H / 2 + 4.5;
+          if (song.key)   doc.text(String(song.key),  cols.key.x  + KEY_W / 2, metaY, { align: 'center' });
+          if (song.bpm)   doc.text(String(song.bpm),  cols.bpm.x  + BPM_W / 2, metaY, { align: 'center' });
+          if (song.style) doc.text(truncate(song.style, STY_W - CELL_PAD), cols.style.x + CELL_PAD / 2, metaY);
 
           return y + ROW_H;
         };
 
-        // Draw vertical column dividers for the visible table area
         const drawColumnLines = (startY, endY) => {
           doc.setDrawColor(...LINE_C);
-          doc.setLineWidth(0.5);
+          doc.setLineWidth(0.4);
           doc.rect(tableX, startY, tableW, endY - startY);
-          [cols.artist.x, cols.key.x, cols.bpm.x, cols.style.x].forEach(x => {
+          [cols.title.x, cols.key.x, cols.bpm.x, cols.style.x].forEach(x => {
             doc.line(x, startY, x, endY);
           });
         };
+
+        // Collect footnotes during rendering (advance mode only)
+        const footnotes = [];
 
         // --- Render each set ---
         setlists.forEach((set, setIdx) => {
           if (setIdx > 0) doc.addPage();
           addWatermark();
 
-          // Set title centred at top
+          // Set title + band/duration sub-line
           let yPos = margin + TITLE_SIZE;
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(TITLE_SIZE);
           doc.setTextColor(0, 0, 0);
-          const setTitle = (set.name || `Set ${setIdx + 1}`).toUpperCase();
-          doc.text(setTitle, pageW / 2, yPos, { align: 'center' });
-          yPos += TITLE_SIZE + 12;
+          doc.text((set.name || `Set ${setIdx + 1}`).toUpperCase(), pageW / 2, yPos, { align: 'center' });
+          yPos += 8;
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(9);
+          doc.setTextColor(...MUTED_C);
+          const subLine = `${activeBand?.name || ''}  ·  ${set.songs.length} songs  ·  ~${Math.round(set.totalTime)} min`;
+          doc.text(subLine, pageW / 2, yPos + 10, { align: 'center' });
+          yPos += 22;
 
-          // Table header
           let pageTableTop = yPos;
           yPos = drawTableHeader(yPos);
 
-          // Song rows
           let rowCounter = 0;
-          const ARR_FONT = 9;
-          const ARR_VPAD = 6;
           set.songs.forEach((song) => {
-            // Estimate arrangement block height for advance view
-            let arrLines = [];
-            let arrBlockH = 0;
-            if (isAdvance && hasArrangementData(song.arrangement)) {
-              const arrParsed = parseArrangement(song.arrangement);
-              const rf = advanceRoleFilter || new Set(ARR_ROLES);
-              const roleTexts = ARR_ROLES.filter(r => arrParsed[r] && rf.has(r))
-                .map(r => `${ARR_ROLE_LABELS[r].toUpperCase()}: ${arrParsed[r]}`);
-              const fullText = roleTexts.join('\n');
-              doc.setFontSize(ARR_FONT);
-              arrLines = doc.splitTextToSize(fullText, tableW - CELL_PAD * 2);
-              arrBlockH = arrLines.length * (ARR_FONT + 3) + ARR_VPAD * 2 + 4;
-            }
-
-            // Page break check
-            if (yPos + ROW_H + arrBlockH > pageH - margin) {
+            if (yPos + ROW_H > pageH - margin) {
               drawColumnLines(pageTableTop, yPos);
               doc.addPage();
               addWatermark();
@@ -7550,38 +7548,32 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               rowCounter = 0;
             }
 
-            yPos = drawSongRow(song, yPos, rowCounter);
-
-            // Advance view: render per-role arrangement notes beneath the song row
-            if (isAdvance && arrLines.length > 0) {
-              const blockY = yPos;
-              doc.setFillColor(245, 250, 245);
-              doc.rect(tableX, blockY, tableW, arrBlockH, 'F');
-              doc.setDrawColor(180, 210, 180);
-              doc.setLineWidth(0.5);
-              doc.rect(tableX, blockY, tableW, arrBlockH);
-              doc.setFont('helvetica', 'bold');
-              doc.setFontSize(7);
-              doc.setTextColor(60, 140, 60);
-              doc.text('ARRANGEMENT', tableX + CELL_PAD, blockY + ARR_VPAD + 7);
-              doc.setFont('helvetica', 'normal');
-              doc.setFontSize(ARR_FONT);
-              doc.setTextColor(50, 50, 50);
-              let lineY = blockY + ARR_VPAD + 7 + (ARR_FONT + 1);
-              arrLines.forEach(line => {
-                doc.text(line, tableX + CELL_PAD, lineY);
-                lineY += ARR_FONT + 3;
+            let fnNum = null;
+            if (isAdvance && hasArrangementData(song.arrangement)) {
+              fnNum = footnotes.length + 1;
+              footnotes.push({
+                num: fnNum,
+                title: song.title,
+                setName: set.name || `Set ${setIdx + 1}`,
+                arr: parseArrangement(song.arrangement),
               });
-              yPos += arrBlockH;
             }
 
+            yPos = drawSongRow(song, yPos, rowCounter, fnNum);
             rowCounter++;
           });
 
           drawColumnLines(pageTableTop, yPos);
+
+          // Set footer
+          yPos += 6;
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(...MUTED_C);
+          doc.text(`Total: ${set.songs.length} songs  ·  ${Math.round(set.totalTime)} min`, tableX + tableW, yPos, { align: 'right' });
         });
 
-        // --- Summary page ---
+        // --- Summary / footnotes page ---
         if (setlists.length > 0) {
           doc.addPage();
           addWatermark();
@@ -7591,87 +7583,93 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           doc.setFontSize(TITLE_SIZE);
           doc.setTextColor(0, 0, 0);
           doc.text('SETLIST SUMMARY', pageW / 2, yPos, { align: 'center' });
-          yPos += TITLE_SIZE + 20;
+          yPos += TITLE_SIZE + 16;
 
           doc.setFont('helvetica', 'normal');
-          doc.setFontSize(12);
-          doc.text(`Band: ${activeBand?.name || 'Unknown'}`, margin, yPos);
-          yPos += 20;
-          doc.text(`Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, margin, yPos);
-          yPos += 20;
-          doc.text(`Total Sets: ${setlists.length}`, margin, yPos);
-          yPos += 20;
+          doc.setFontSize(11);
+          doc.setTextColor(...TEXT_C);
+          doc.text(`Band: ${activeBand?.name || 'Unknown'}`, margin, yPos); yPos += 18;
+          doc.text(`Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, margin, yPos); yPos += 18;
+          doc.text(`Total Sets: ${setlists.length}`, margin, yPos); yPos += 18;
           const totalSongs = setlists.reduce((s, set) => s + set.songs.length, 0);
-          const totalTime = setlists.reduce((s, set) => s + set.totalTime, 0);
-          doc.text(`Total Songs: ${totalSongs}  |  Total Time: ${Math.round(totalTime)} minutes`, margin, yPos);
-          yPos += 20;
-          doc.text(`View: ${isAdvance ? 'Advance / Hired Gun (arrangement notes included)' : 'Stage View (minimal)'}`, margin, yPos);
-          yPos += 34;
+          const totalTime  = setlists.reduce((s, set) => s + set.totalTime, 0);
+          doc.text(`Total Songs: ${totalSongs}  ·  Total Time: ~${Math.round(totalTime)} min`, margin, yPos); yPos += 18;
+          doc.text(`Export mode: ${isAdvance ? 'Advance (arrangement footnotes on this page)' : 'Stage (minimal)'}`, margin, yPos); yPos += 28;
 
-          // Per-set quality breakdown
+          // Quality scores
           const qScores = setlists.qualityScores;
           if (qScores && qScores.length > 0) {
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(14);
-            doc.text('Quality Scores', margin, yPos);
-            yPos += 22;
-
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(11);
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(...TEXT_C);
+            doc.text('Quality Scores', margin, yPos); yPos += 18;
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
             qScores.forEach((q, qi) => {
-              const color = q.overall >= 75 ? [0, 128, 0] : q.overall >= 50 ? [120, 100, 0] : [180, 0, 0];
-              doc.setTextColor(...color);
-              doc.text(`Set ${qi + 1}: Overall ${q.overall}/100  |  Energy: ${q.energy}  |  Tonal: ${q.tonal}  |  Diversity: ${q.diversity}  |  Duration: ${q.duration}`, margin, yPos);
-              yPos += 18;
+              const col = q.overall >= 75 ? [0, 120, 0] : q.overall >= 50 ? [130, 100, 0] : [170, 0, 0];
+              doc.setTextColor(...col);
+              doc.text(`Set ${qi + 1}: Overall ${q.overall}/100  ·  Energy: ${q.energy}  ·  Tonal: ${q.tonal}  ·  Diversity: ${q.diversity}  ·  Duration: ${q.duration}`, margin, yPos);
+              yPos += 16;
             });
-            doc.setTextColor(0, 0, 0);
+            doc.setTextColor(...TEXT_C);
           }
 
-          // Anchor key info
-          if (setlists.anchorKey) {
-            yPos += 10;
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(11);
-            doc.text(`Anchor Key: ${setlists.anchorKey}`, margin, yPos);
-          }
+          if (setlists.anchorKey) { yPos += 6; doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.text(`Anchor Key: ${setlists.anchorKey}`, margin, yPos); yPos += 16; }
 
-          // Tonal diagnostics per set
           if (setlists.diagnostics) {
-            yPos += 28;
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(14);
-            doc.text('Tonal Diagnostics', margin, yPos);
-            yPos += 22;
-
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(10);
-            doc.setTextColor(80, 80, 80);
+            yPos += 10;
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(...TEXT_C);
+            doc.text('Tonal Diagnostics', margin, yPos); yPos += 18;
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...MUTED_C);
             setlists.diagnostics.forEach((diag, di) => {
               if (!diag) return;
-              if (yPos + 30 > pageH - margin) {
-                doc.addPage();
-                addWatermark();
-                yPos = margin + 20;
-              }
-              doc.text(`Set ${di + 1} - Tonal Flow: ${diag.qualityScore} (avg circle distance: ${diag.avgCircleDistance})`, margin, yPos);
-              yPos += 14;
+              if (yPos + 28 > pageH - margin) { doc.addPage(); addWatermark(); yPos = margin + 20; }
+              doc.text(`Set ${di + 1} — Tonal Flow: ${diag.qualityScore}  (avg circle distance: ${diag.avgCircleDistance})`, margin, yPos); yPos += 13;
               if (diag.contrastJumps && diag.contrastJumps.length > 0) {
-                const jumpsText = `  Key jumps: ${diag.contrastJumps.map(j => `#${j.position} ${j.from}\u2192${j.to} (${j.distance})`).join(', ')}`;
-                const jumpLines = doc.splitTextToSize(jumpsText, tableW);
-                jumpLines.forEach(line => {
-                  doc.text(line, margin, yPos);
-                  yPos += 13;
-                });
+                const txt = `  Key jumps: ${diag.contrastJumps.map(j => `#${j.position} ${j.from}→${j.to} (${j.distance})`).join(', ')}`;
+                doc.splitTextToSize(txt, tableW).forEach(line => { doc.text(line, margin, yPos); yPos += 12; });
               }
-              yPos += 6;
+              yPos += 4;
             });
-            doc.setTextColor(0, 0, 0);
+            doc.setTextColor(...TEXT_C);
+          }
+
+          // Arrangement footnotes
+          if (footnotes.length > 0) {
+            yPos += 18;
+            if (yPos + 30 > pageH - margin) { doc.addPage(); addWatermark(); yPos = margin + 10; }
+            doc.setFillColor(...ACCENT);
+            doc.rect(margin, yPos, tableW, 24, 'F');
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
+            doc.text('ARRANGEMENT NOTES', margin + 8, yPos + 16);
+            yPos += 30;
+
+            const rf = advanceRoleFilter || new Set(ARR_ROLES);
+            footnotes.forEach(fn => {
+              if (yPos + 36 > pageH - margin) { doc.addPage(); addWatermark(); yPos = margin + 16; }
+              doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...ACCENT_FN);
+              doc.text(String(fn.num), margin, yPos);
+              doc.setTextColor(...TEXT_C);
+              doc.text(fn.title.toUpperCase(), margin + 14, yPos);
+              doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...MUTED_C);
+              const setLabelX = margin + 14 + doc.getTextWidth(fn.title.toUpperCase()) + 5;
+              doc.text(`(${fn.setName})`, setLabelX, yPos);
+              yPos += 14;
+
+              ARR_ROLES.filter(r => fn.arr[r] && rf.has(r)).forEach(role => {
+                if (yPos + 16 > pageH - margin) { doc.addPage(); addWatermark(); yPos = margin + 16; }
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(90, 90, 90);
+                doc.text(ARR_ROLE_LABELS[role].toUpperCase(), margin + 14, yPos);
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...TEXT_C);
+                const noteLines = doc.splitTextToSize(fn.arr[role], tableW - 14 - 72);
+                doc.text(noteLines, margin + 86, yPos);
+                yPos += Math.max(noteLines.length * 11, 12);
+              });
+              yPos += 10;
+            });
           }
         }
 
-        const safeBandName = (activeBand?.name || 'band').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
-        const viewSuffix = isAdvance ? '-advance' : '-stage';
-        doc.save(`setlist-${safeBandName}${viewSuffix}-${new Date().toISOString().slice(0, 10)}.pdf`);
+        const safeName = (activeBand?.name || 'band').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+        const suffix   = isAdvance ? '-advance' : '-stage';
+        doc.save(`setlist-${safeName}${suffix}-${new Date().toISOString().slice(0, 10)}.pdf`);
       };
 
       const toggleLock = (setIdx, songId) => {
