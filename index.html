@@ -350,6 +350,58 @@
     .role-filter-label { font-size: .65rem; font-weight: 700; color: var(--success); text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
     .role-filter-check { display: flex; align-items: center; gap: .25rem; font-size: .72rem; color: var(--text-muted); cursor: pointer; user-select: none; }
     .role-filter-check input[type="checkbox"] { width: auto; accent-color: var(--success); cursor: pointer; }
+    /* Gig Notes reference panel */
+    .gig-notes-panel { margin-top: .45rem; }
+    .gig-notes-toggle {
+      width: 100%; text-align: left; padding: .3rem .7rem;
+      background: rgba(167,139,250,.06); border: 1px solid rgba(167,139,250,.2);
+      border-radius: 6px; color: rgba(167,139,250,.75);
+      font-size: .68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+      cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+      transition: background .15s, border-color .15s;
+    }
+    .gig-notes-toggle:hover { background: rgba(167,139,250,.12); border-color: #a78bfa; color: #c4b5fd; }
+    .gig-notes-body {
+      margin-top: .4rem; border: 1px solid rgba(255,255,255,.07);
+      border-radius: 8px; background: rgba(255,255,255,.015); overflow: hidden;
+    }
+    .gig-notes-section { padding: .55rem .75rem; }
+    .gig-notes-section + .gig-notes-section { border-top: 1px solid rgba(255,255,255,.05); }
+    .gig-notes-section-title {
+      font-size: .58rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase;
+      color: rgba(255,255,255,.22); margin-bottom: .38rem;
+    }
+    .gig-notes-grooves {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: .16rem .6rem;
+    }
+    .gig-notes-groove-row { display: flex; gap: .4rem; align-items: baseline; }
+    .gig-notes-groove-style {
+      font-size: .67rem; font-weight: 700; color: rgba(96,165,250,.85);
+      min-width: 105px; flex-shrink: 0; white-space: nowrap;
+    }
+    .gig-notes-groove-note { font-size: .64rem; color: rgba(255,255,255,.35); }
+    .gig-notes-lang-cats { display: flex; flex-wrap: wrap; gap: .55rem; }
+    .gig-notes-lang-cat { flex: 1; min-width: 110px; }
+    .gig-notes-lang-cat-title {
+      font-size: .58rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase;
+      margin-bottom: .22rem;
+    }
+    .gig-notes-lang-terms { display: flex; flex-direction: column; gap: .12rem; }
+    .gig-notes-lang-term { display: flex; gap: .3rem; align-items: baseline; }
+    .gig-notes-lang-key {
+      font-family: 'Space Mono', monospace; font-size: .6rem;
+      background: rgba(255,255,255,.07); border-radius: 3px;
+      padding: .02rem .22rem; color: rgba(255,255,255,.65);
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .gig-notes-lang-def { font-size: .65rem; color: rgba(255,255,255,.32); }
+    .gig-notes-examples { display: flex; flex-direction: column; gap: .22rem; }
+    .gig-notes-example-row { display: flex; gap: .5rem; align-items: baseline; }
+    .gig-notes-example-song {
+      font-size: .68rem; font-weight: 700; color: rgba(255,255,255,.65);
+      white-space: nowrap; flex-shrink: 0; min-width: 130px;
+    }
+    .gig-notes-example-note { font-size: .65rem; color: rgba(255,107,53,.55); font-style: italic; }
     .view-toggle-btn {
       font-size: .78rem; padding: .3rem .75rem; border-radius: 6px;
       border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer;
@@ -815,6 +867,72 @@
       guitar2:   ['arr guitar2','arrangement guitar2','arr_guitar2','guitar 2','arr guitar 2','arrangement_guitar2','arr guitar','arrangement guitar2'],
       endingCue: ['arr ending cue','arrangement ending cue','arr_ending_cue','ending cue','arr ending','arrangement_ending_cue','ending','arr ending cue'],
     };
+
+    /******************* GIG NOTES REFERENCE DATA *******************/
+    const GIG_NOTES_GROOVES = [
+      { style: 'Shuffle',           note: 'Triplet feel • Deep pocket • Don\'t rush' },
+      { style: 'Rock',              note: 'Straight 8ths • Strong backbeat • Consistent kick' },
+      { style: 'Neo-Soul',          note: 'Behind beat • Ghost notes • Less is more' },
+      { style: 'Funk',              note: 'Linear feel • Dynamic ghosts • Tight subdivision' },
+      { style: 'Pop',               note: '4-on-floor • Even hats • Metronomic' },
+      { style: 'Swing',             note: 'Ride-led • Hat 2&4 • Feather kick' },
+      { style: 'One Drop',          note: 'No beat 1 • Accent 3 • Space is king' },
+      { style: 'Motown',            note: 'Driving 8ths • Forward motion • Lock bass' },
+      { style: 'Disco',             note: 'Four-floor • Even 16ths • Lift choruses' },
+      { style: 'Train Beat',        note: 'Rolling snare • Light touch • Keep moving' },
+      { style: 'Bossa',             note: 'Cross-stick • Smooth independence • Stay relaxed' },
+      { style: 'Songo',             note: 'Cascara feel • Interactive • Lock percussion' },
+      { style: 'Second Line',       note: 'Loose swing • Parade feel • In the cracks' },
+      { style: 'Boom Bap',          note: 'Fat backbeat • Slightly behind • Sparse fills' },
+      { style: 'Half-Time Shuffle', note: 'Triplet grid • Heavy pocket • Deep backbeat' },
+      { style: '6/8 Ballad',        note: 'Feel in 2 • Wide phrases • Support vocal' },
+      { style: 'Afrobeat',          note: 'Repetitive pulse • Minimal fills • Hypnotic' },
+      { style: 'Modern Pop',        note: 'Big toms • Simple groove • Build sections' },
+      { style: 'Worship',           note: 'Dynamic arc • Spacious verses • Explosive chorus' },
+      { style: 'Samba',             note: 'Flowing subdivision • Light feet • Constant motion' },
+      { style: 'Jazz Waltz',        note: 'Swing in 3 • Ride-led • Don\'t overplay' },
+      { style: 'Brushes',           note: 'Texture first • Sweep time • Minimal accents' },
+    ];
+    const GIG_NOTES_LANGUAGE = [
+      { cat: 'Dynamics', color: 'rgba(74,222,128,.8)', terms: [
+        { term: 'Lay Out', def: 'Tacet' },
+        { term: 'Lite',    def: '50%' },
+        { term: 'Pocket',  def: 'Groove only' },
+        { term: 'Build',   def: 'Controlled intensity increase' },
+        { term: 'Lift',    def: 'Energy up, tempo unchanged' },
+        { term: 'Full',    def: 'Concert volume' },
+        { term: 'Down',    def: 'Return to groove' },
+      ]},
+      { cat: 'Transitions', color: 'rgba(96,165,250,.8)', terms: [
+        { term: '1BF',   def: '1-bar fill' },
+        { term: '2BF',   def: '2-bar fill' },
+        { term: 'Setup', def: 'Cue next section' },
+        { term: 'ST',    def: 'Stop time' },
+        { term: 'Break', def: 'Band drops out' },
+        { term: 'Push',  def: 'Anticipated entrance' },
+      ]},
+      { cat: 'Hits', color: 'rgba(255,107,53,.8)', terms: [
+        { term: 'Shots',   def: 'Ensemble accents' },
+        { term: 'Figures', def: 'Written rhythmic line' },
+        { term: 'Kicks',   def: 'Band hits' },
+        { term: 'Stabs',   def: 'Short accents' },
+      ]},
+      { cat: 'Endings', color: 'rgba(167,139,250,.8)', terms: [
+        { term: 'Cold',       def: '' },
+        { term: 'Tag ×2',     def: '' },
+        { term: 'Vamp & Cue', def: '' },
+        { term: 'Rit',        def: '' },
+        { term: 'Button',     def: '' },
+        { term: 'Big Ending', def: '' },
+      ]},
+    ];
+    const GIG_NOTES_EXAMPLES = [
+      { song: 'Superstition',      note: 'Funk • Tight ghosts • Shots C2 • Build Bridge • Cold End' },
+      { song: 'Billie Jean',       note: 'Pop • Dead-steady pulse • No fills V1 • Open hats Chorus • Vamp & Cue' },
+      { song: 'September',         note: 'Disco • Even hats • Lift Chorus • Shots Outro • Big Ending' },
+      { song: 'Tennessee Whiskey', note: 'Shuffle • Deep pocket • Brushes V1 • Full C3 • Rit + Button' },
+      { song: 'Valerie',           note: 'Motown • Push slightly • Lock bass • Simple fills • Cold' },
+    ];
 
     /******************* VENUE CRM CONSTANTS *******************/
     const VENUE_TYPES = ['Bar','Restaurant','Club','Event Space','Casino','Festival','Corporate','Hotel','Theater','Other'];
@@ -5945,6 +6063,70 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
+    /******************* GIG NOTES PANEL *******************/
+    function GigNotesPanel() {
+      const [open, setOpen] = React.useState(false);
+      return (
+        <div className="gig-notes-panel">
+          <button className="gig-notes-toggle" onClick={() => setOpen(o => !o)}>
+            <span>📖 Gig Notes Reference</span>
+            <span>{open ? '▲' : '▼'}</span>
+          </button>
+          {open && (
+            <div className="gig-notes-body">
+
+              {/* Groove & Feel */}
+              <div className="gig-notes-section">
+                <div className="gig-notes-section-title">Groove &amp; Feel Reference</div>
+                <div className="gig-notes-grooves">
+                  {GIG_NOTES_GROOVES.map(({ style, note }) => (
+                    <div key={style} className="gig-notes-groove-row">
+                      <span className="gig-notes-groove-style">{style}</span>
+                      <span className="gig-notes-groove-note">{note}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Arrangement Language */}
+              <div className="gig-notes-section">
+                <div className="gig-notes-section-title">Arrangement Language</div>
+                <div className="gig-notes-lang-cats">
+                  {GIG_NOTES_LANGUAGE.map(({ cat, color, terms }) => (
+                    <div key={cat} className="gig-notes-lang-cat">
+                      <div className="gig-notes-lang-cat-title" style={{ color }}>{cat}</div>
+                      <div className="gig-notes-lang-terms">
+                        {terms.map(({ term, def }) => (
+                          <div key={term} className="gig-notes-lang-term">
+                            <span className="gig-notes-lang-key">{term}</span>
+                            {def && <span className="gig-notes-lang-def">= {def}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Example Song Notes */}
+              <div className="gig-notes-section">
+                <div className="gig-notes-section-title">Example Song Notes</div>
+                <div className="gig-notes-examples">
+                  {GIG_NOTES_EXAMPLES.map(({ song, note }) => (
+                    <div key={song} className="gig-notes-example-row">
+                      <span className="gig-notes-example-song">{song}</span>
+                      <span className="gig-notes-example-note">{note}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+          )}
+        </div>
+      );
+    }
+
     /******************* STAGE MODE OVERLAY *******************/
     function StageModeOverlay({ open, onClose, setlists }) {
       const [currentKey, setCurrentKey] = React.useState(null);
@@ -8513,6 +8695,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                           ))}
                         </div>
                       )}
+                      {viewMode === 'advance' && <GigNotesPanel />}
                     </div>
                   </div>
                   <div className="toolbar">
