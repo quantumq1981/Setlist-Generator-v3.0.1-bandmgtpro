@@ -6452,12 +6452,41 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 if (orig) colMap[field] = orig;
               });
               if (!colMap.name) { showToast('CSV must have a Name or Venue column', 'warning'); return; }
+              // Normalise a free-text status value against the VENUE_STATUSES pipeline.
+              // Matches the canonical key, the display label, or a common synonym;
+              // returns null when blank/unrecognised so callers can default + count.
+              const STATUS_SYNONYMS = {
+                prospect: ['prospect','lead','leads','new','potential','target'],
+                contacted: ['contacted','contact','reached out','reached','outreach','emailed','called','pitched'],
+                responded: ['responded','response','replied','reply','interested','in talks'],
+                call_scheduled: ['call scheduled','call_scheduled','callscheduled','call','meeting','meeting scheduled','scheduled'],
+                booked: ['booked','book','confirmed','confirm','won','signed','playing'],
+                pass: ['pass','passed','declined','decline','rejected','reject','no','dead','lost','not interested'],
+              };
+              const normalizeStatus = (raw) => {
+                const s = (raw || '').trim().toLowerCase();
+                if (!s) return null;
+                if (VENUE_STATUSES.some(v => v.key === s)) return s;
+                const byLabel = VENUE_STATUSES.find(v => v.label.toLowerCase() === s);
+                if (byLabel) return byLabel.key;
+                for (const [key, syns] of Object.entries(STATUS_SYNONYMS)) {
+                  if (syns.includes(s)) return key;
+                }
+                return null;
+              };
+              let statusCoerced = 0;
               const parsed = data.map(row => {
                 const v = {};
                 Object.entries(colMap).forEach(([field, col]) => { v[field] = (row[col] || '').trim(); });
+                if (colMap.status) {
+                  const norm = normalizeStatus(v.status);
+                  if (norm) { v.status = norm; }
+                  else { if (v.status) statusCoerced++; v.status = 'prospect'; }
+                }
                 return v;
               }).filter(v => v.name);
               if (!parsed.length) { showToast('No valid venue rows found', 'warning'); return; }
+              if (statusCoerced) showToast(`${statusCoerced} unrecognised status value${statusCoerced !== 1 ? 's' : ''} set to Prospect`, 'warning');
               onBulkAddVenues(parsed);
             },
             error: () => showToast('Error parsing CSV', 'error'),
