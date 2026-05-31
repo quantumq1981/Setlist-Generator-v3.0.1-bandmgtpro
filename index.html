@@ -2717,6 +2717,21 @@
 
         if (!cols) continue; // no columns detected yet — can't parse data rows
         const cells = bhAssignRow(row, cols);
+
+        // Wrapped-cell continuation: BandHelper wraps a long Title/Artist onto a
+        // second line that carries no Key/BPM/Duration. Stitch it onto the prior
+        // song's matching field instead of dropping it or making a phantom row.
+        const hasMeta = !!(cells.key || cells.bpm || cells.duration);
+        if (!hasMeta) {
+          if (cur && cur.songs.length) {
+            const last = cur.songs[cur.songs.length - 1];
+            if (cells.title) last.title = (last.title + ' ' + cells.title).replace(/\s+/g, ' ').trim();
+            if (cells.artist) last.artist = (last.artist + ' ' + cells.artist).replace(/\s+/g, ' ').trim();
+            if (cells.vocalist) last.vocalist = ((last.vocalist ? last.vocalist + ' ' : '') + cells.vocalist).replace(/\s+/g, ' ').trim();
+          }
+          continue;
+        }
+
         const title = (cells.title || '').trim();
         if (!title || /^title$/i.test(title)) continue;
 
