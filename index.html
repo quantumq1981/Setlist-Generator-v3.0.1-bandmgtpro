@@ -607,6 +607,29 @@
     .next-gig-status { font-size: .58rem; font-weight: 800; padding: .1rem .28rem; border-radius: 3px; white-space: nowrap; }
     .next-gig-status.confirmed { background: var(--success); color: #111; }
     .next-gig-status.pending { background: var(--warning); color: #111; }
+    /* Repeat-venue guard (booking form) */
+    .repeat-venue-guard { margin: .4rem 0 .55rem; padding: .5rem .6rem; border: 1px solid var(--warning); border-left: 3px solid var(--warning); border-radius: 6px; background: rgba(251,191,36,.08); }
+    .repeat-venue-guard-head { font-size: .76rem; font-weight: 800; color: var(--warning); margin-bottom: .35rem; }
+    .repeat-venue-guard-list { display: flex; flex-direction: column; gap: .2rem; }
+    .repeat-venue-guard-row { display: flex; align-items: center; gap: .5rem; font-size: .72rem; color: var(--text-muted); }
+    .repeat-venue-guard-status { text-transform: capitalize; font-weight: 700; }
+    .repeat-venue-guard-setname { color: var(--accent); font-weight: 600; }
+    .repeat-venue-guard-songs { margin-top: .4rem; padding-top: .4rem; border-top: 1px dashed var(--border); font-size: .72rem; line-height: 1.4; color: var(--text); }
+    .repeat-venue-guard-songs-label { font-weight: 800; color: var(--warning); }
+    /* Booking analytics dashboard */
+    .analytics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: .5rem; margin-bottom: 1rem; }
+    .analytics-card { background: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: .6rem .65rem; }
+    .analytics-card-value { font-family: 'Space Mono', monospace; font-size: 1.35rem; font-weight: 700; color: var(--accent); line-height: 1.1; }
+    .analytics-card-label { font-size: .66rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text); margin-top: .2rem; }
+    .analytics-card-sub { font-size: .64rem; color: var(--text-muted); margin-top: .15rem; }
+    .analytics-section { margin-top: .5rem; }
+    .analytics-section-title { font-size: .7rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: .45rem; }
+    .analytics-bars { display: flex; flex-direction: column; gap: .35rem; }
+    .analytics-bar-row { display: flex; align-items: center; gap: .5rem; font-size: .76rem; }
+    .analytics-bar-name { flex: 0 0 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .analytics-bar-track { flex: 1; height: 10px; background: var(--secondary); border-radius: 5px; overflow: hidden; }
+    .analytics-bar-fill { display: block; height: 100%; background: var(--accent); border-radius: 5px; min-width: 3px; }
+    .analytics-bar-count { flex: 0 0 auto; font-family: 'Space Mono', monospace; font-weight: 700; color: var(--text-muted); }
     /* Media / YouTube clips */
     .media-clips-section { margin-top: .55rem; border-top: 1px solid var(--border); padding-top: .45rem; }
     .media-clips-label { font-size: .6rem; font-weight: 800; letter-spacing: .06em; color: var(--text-muted); text-transform: uppercase; margin-bottom: .35rem; }
@@ -2545,6 +2568,175 @@
       }
       return lines.join('\n');
     }
+
+    /******************* BANDHELPER SETLIST (SET-AWARE) PARSER *******************/
+    // BandHelper exports a setlist PDF as a table grouped under "Set N (time-time)"
+    // headers. Songs carry: Title, Artist, Key, Tempo, Style, Duration, Vocalist —
+    // but Style is often blank and the "Tempo Style" header can render merged, so we
+    // map cells to columns by their X-position (fixed in the PDF) rather than by
+    // collapsing tab-index, which misaligns whenever a cell is empty.
+
+    // Extract rows preserving each text item's X position, grouped into visual rows
+    // by Y. Returns [{ page, rows:[{ y, items:[{str,x}] }] }].
+    async function pdfExtractRows(arrayBuffer) {
+      if (!window.pdfjsLib) throw new Error('PDF.js not loaded');
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const pages = [];
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        const items = content.items
+          .filter(it => it.str && it.str.trim())
+          .map(it => ({ str: it.str.replace(/\s+$/, ''), x: it.transform[4], y: it.transform[5] }))
+          .sort((a, b) => (Math.abs(b.y - a.y) > 3 ? b.y - a.y : a.x - b.x));
+        const rows = [];
+        let cur = null;
+        for (const it of items) {
+          if (!cur || Math.abs(it.y - cur.y) > 3) {
+            cur = { y: it.y, items: [it] };
+            rows.push(cur);
+          } else {
+            cur.items.push(it);
+          }
+        }
+        pages.push({ page: p, rows });
+      }
+      return pages;
+    }
+
+    const BH_SET_HEADER_RE = /^Set\s+(\d+)\b\s*(?:\(([^)]*)\))?/i;
+
+    function bhFieldOfHeader(label) {
+      const p = String(label).trim().toLowerCase();
+      if (/^(title|song|song\s*title|tune)$/.test(p)) return 'title';
+      if (/^(artist|band|performer)$/.test(p)) return 'artist';
+      if (/^(duration|dur|time|length)$/.test(p)) return 'duration';
+      if (/^(style|genre|type|feel)$/.test(p)) return 'style';
+      if (/^(key|tonality|pitch)$/.test(p)) return 'key';
+      if (/^(bpm|tempo|speed)$/.test(p)) return 'bpm';
+      if (/^(vocalist|singer|vox|vocal|vocals|lead)$/.test(p)) return 'vocalist';
+      return null;
+    }
+
+    // Detect the column layout from a header row. Each header item may itself contain
+    // several field words (e.g. a merged "Tempo Style"); we split and estimate an X for
+    // each token so empty data cells can still be assigned correctly. Returns a sorted
+    // array of { field, x } or null when the row isn't a recognisable header.
+    function bhDetectColumns(row) {
+      const cols = [];
+      for (const it of row.items) {
+        const tokens = it.str.trim().split(/\s+/);
+        const fields = tokens.map(bhFieldOfHeader);
+        const known = fields.filter(Boolean);
+        if (known.length === 1 && tokens.length === 1) {
+          cols.push({ field: known[0], x: it.x });
+        } else if (known.length >= 1) {
+          // Spread merged header tokens across the item's width estimate.
+          const per = (it.str.length || 1);
+          let off = 0;
+          for (let i = 0; i < tokens.length; i++) {
+            if (fields[i]) cols.push({ field: fields[i], x: it.x + (off / per) * Math.max(per * 3, 12) });
+            off += tokens[i].length + 1;
+          }
+        }
+      }
+      const fieldsFound = new Set(cols.map(c => c.field));
+      if (!fieldsFound.has('title') || cols.length < 3) return null;
+      cols.sort((a, b) => a.x - b.x);
+      return cols;
+    }
+
+    // Assign a data row's items to columns by nearest X boundary (midpoints between
+    // adjacent column anchors). Items in the same column are concatenated in X order.
+    function bhAssignRow(row, cols) {
+      const bounds = [];
+      for (let i = 0; i < cols.length; i++) {
+        const left = i === 0 ? -Infinity : (cols[i - 1].x + cols[i].x) / 2;
+        const right = i === cols.length - 1 ? Infinity : (cols[i].x + cols[i + 1].x) / 2;
+        bounds.push({ field: cols[i].field, left, right });
+      }
+      const out = {};
+      for (const it of [...row.items].sort((a, b) => a.x - b.x)) {
+        const b = bounds.find(b => it.x >= b.left && it.x < b.right) || bounds[bounds.length - 1];
+        out[b.field] = out[b.field] ? out[b.field] + ' ' + it.str.trim() : it.str.trim();
+      }
+      return out;
+    }
+
+    function bhCleanDuration(raw) {
+      const r = String(raw || '').trim();
+      if (/^\d{1,2}:\d{2}$/.test(r)) {
+        const [m, s] = r.split(':').map(Number);
+        return String(Math.round((m + s / 60) * 100) / 100);
+      }
+      const n = parseFloat(r);
+      return n > 0 ? String(n) : '';
+    }
+
+    function bhCleanKey(raw) {
+      let k = String(raw || '').trim();
+      if (!k) return '';
+      if (/^[A-G][b#]?\s*\/\s*[A-G]/.test(k)) return k.replace(/\s*\/\s*/g, '/');
+      k = k.replace(/maj(or)?$/i, '');
+      if (/^[A-Ga-g][b#]?m?$/.test(k)) return k.charAt(0).toUpperCase() + k.slice(1);
+      return String(raw).trim();
+    }
+
+    function bhCleanVocalist(raw) {
+      const v = String(raw || '').trim();
+      return /^all!?$/i.test(v) ? 'ALL' : v;
+    }
+
+    // Parse a BandHelper setlist document (rows from pdfExtractRows) into sets.
+    // Returns { sets:[{ name, songs:[{title,artist,key,bpm,style,duration,vocalist}] }],
+    //           songCount } — songs before any "Set N" header fall into "Set 1".
+    function pdfParseBandHelperSets(pages) {
+      const allRows = pages.flatMap(pg => pg.rows);
+      let cols = null;
+      const sets = [];
+      let cur = null;
+      const ensureSet = (name) => { cur = { name: name || `Set ${sets.length + 1}`, songs: [] }; sets.push(cur); };
+
+      for (const row of allRows) {
+        const text = row.items.map(it => it.str).join(' ').replace(/\s+/g, ' ').trim();
+        if (!text) continue;
+
+        const setMatch = text.match(BH_SET_HEADER_RE);
+        if (setMatch) { ensureSet(`Set ${setMatch[1]}`); continue; }
+
+        // Skip band-title / date / summary lines (e.g. "Down South Jukers (1 of 3)",
+        // "35 songs, 3:35", "3/21/26, 12:00pm to 4:00pm").
+        if (/^\d+\s+songs?\b/i.test(text)) continue;
+        if (/\bsongs?,\s*\d+:\d{2}\b/i.test(text)) continue;
+        if (/^\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(text)) continue;
+        if (/\(\d+\s+of\s+\d+\)/i.test(text)) continue;
+
+        // Header row?
+        if (!cols) { const c = bhDetectColumns(row); if (c) { cols = c; continue; } }
+        else if (bhDetectColumns(row)) { continue; } // repeated header on a later page
+
+        if (!cols) continue; // no columns detected yet — can't parse data rows
+        const cells = bhAssignRow(row, cols);
+        const title = (cells.title || '').trim();
+        if (!title || /^title$/i.test(title)) continue;
+
+        if (!cur) ensureSet('Set 1');
+        cur.songs.push({
+          title,
+          artist: (cells.artist || '').trim(),
+          key: bhCleanKey(cells.key),
+          bpm: (String(cells.bpm || '').match(/\d+/) || [''])[0],
+          style: (cells.style || '').trim().toLowerCase(),
+          duration: bhCleanDuration(cells.duration),
+          vocalist: bhCleanVocalist(cells.vocalist),
+        });
+      }
+
+      const filtered = sets.filter(s => s.songs.length);
+      return { sets: filtered, songCount: filtered.reduce((n, s) => n + s.songs.length, 0) };
+    }
+
+    /******************* END BANDHELPER SETLIST PARSER *******************/
 
     /******************* END PDF IMPORT ENGINE *******************/
 
@@ -5768,7 +5960,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     }
 
     /******************* GIG PROFILES *******************/
-    function GigProfileModal({ open, onClose, gigs, onCreateGig, onDeleteGig, onLoadGig, onSaveToGig, onExportGigCSV, onImportCSVToGig, setlists, bandName }) {
+    function GigProfileModal({ open, onClose, gigs, onCreateGig, onDeleteGig, onLoadGig, onSaveToGig, onExportGigCSV, onImportCSVToGig, onImportBandHelper, setlists, bandName }) {
+      const bhRef = React.useRef(null);
+      const [bhAddLib, setBhAddLib] = useState(false);
       const [form, setForm] = useState({
         name: '', venue: '', date: '', notes: '',
         // Venue info fields (common across GigSalad, Sonicbids, Bands in Town, Gigmit, etc.)
@@ -5811,6 +6005,22 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
             <div style={{ marginBottom: '1rem', fontSize: '.85rem', color: 'var(--text-muted)' }}>
               Create gig profiles for specific venues and dates. Save and load setlists for each gig. Export gig setlists as CSV.
+            </div>
+
+            {/* Import a pre-made setlist (e.g. BandHelper PDF export) as a standalone saved gig */}
+            <div style={{ marginBottom: '1rem', padding: '.6rem .7rem', border: '1px dashed var(--accent)', borderRadius: '8px', background: 'rgba(255,107,53,.06)' }}>
+              <input ref={bhRef} type="file" accept=".pdf" style={{ display: 'none' }}
+                onChange={e => { const f = e.target.files[0]; if (f) onImportBandHelper(f, bhAddLib); e.target.value = ''; }} />
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '.6rem' }}>
+                <button className="btn btn-small btn-primary" onClick={() => bhRef.current?.click()}>⬆ Import Setlist from PDF</button>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '.35rem', cursor: 'pointer', fontSize: '.78rem', color: 'var(--text-muted)', textTransform: 'none' }}>
+                  <input type="checkbox" checked={bhAddLib} onChange={e => setBhAddLib(e.target.checked)} style={{ width: 'auto' }} />
+                  also add songs to my library
+                </label>
+              </div>
+              <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', marginTop: '.4rem' }}>
+                Upload a BandHelper setlist PDF — its Set 1/2/3 are reconstructed and saved here as a gig you can load, annotate, and export. Your song library stays untouched unless you tick the box.
+              </div>
             </div>
 
             {setlists.length === 0 && gigs.length > 0 && (
@@ -6452,12 +6662,41 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 if (orig) colMap[field] = orig;
               });
               if (!colMap.name) { showToast('CSV must have a Name or Venue column', 'warning'); return; }
+              // Normalise a free-text status value against the VENUE_STATUSES pipeline.
+              // Matches the canonical key, the display label, or a common synonym;
+              // returns null when blank/unrecognised so callers can default + count.
+              const STATUS_SYNONYMS = {
+                prospect: ['prospect','lead','leads','new','potential','target'],
+                contacted: ['contacted','contact','reached out','reached','outreach','emailed','called','pitched'],
+                responded: ['responded','response','replied','reply','interested','in talks'],
+                call_scheduled: ['call scheduled','call_scheduled','callscheduled','call','meeting','meeting scheduled','scheduled'],
+                booked: ['booked','book','confirmed','confirm','won','signed','playing'],
+                pass: ['pass','passed','declined','decline','rejected','reject','no','dead','lost','not interested'],
+              };
+              const normalizeStatus = (raw) => {
+                const s = (raw || '').trim().toLowerCase();
+                if (!s) return null;
+                if (VENUE_STATUSES.some(v => v.key === s)) return s;
+                const byLabel = VENUE_STATUSES.find(v => v.label.toLowerCase() === s);
+                if (byLabel) return byLabel.key;
+                for (const [key, syns] of Object.entries(STATUS_SYNONYMS)) {
+                  if (syns.includes(s)) return key;
+                }
+                return null;
+              };
+              let statusCoerced = 0;
               const parsed = data.map(row => {
                 const v = {};
                 Object.entries(colMap).forEach(([field, col]) => { v[field] = (row[col] || '').trim(); });
+                if (colMap.status) {
+                  const norm = normalizeStatus(v.status);
+                  if (norm) { v.status = norm; }
+                  else { if (v.status) statusCoerced++; v.status = 'prospect'; }
+                }
                 return v;
               }).filter(v => v.name);
               if (!parsed.length) { showToast('No valid venue rows found', 'warning'); return; }
+              if (statusCoerced) showToast(`${statusCoerced} unrecognised status value${statusCoerced !== 1 ? 's' : ''} set to Prospect`, 'warning');
               onBulkAddVenues(parsed);
             },
             error: () => showToast('Error parsing CSV', 'error'),
@@ -6533,6 +6772,87 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         );
       };
 
+      const renderAnalyticsTab = () => {
+        const parseFee = (f) => Number(String(f || '').replace(/[^0-9.]/g, '')) || 0;
+        const today = new Date().toISOString().slice(0, 10);
+        const thisYear = String(new Date().getFullYear());
+        const fmtMoney = (n) => '$' + Math.round(n).toLocaleString();
+
+        const total = bookings.length;
+        const byStatus = { pending: 0, confirmed: 0, completed: 0, cancelled: 0 };
+        bookings.forEach(b => { if (byStatus[b.status] != null) byStatus[b.status]++; });
+        const active = bookings.filter(b => b.status !== 'cancelled');
+        const upcoming = bookings.filter(b => (b.status === 'confirmed' || b.status === 'pending') && b.date && b.date >= today);
+        const completed = bookings.filter(b => b.status === 'completed');
+
+        const totalValue = active.reduce((s, b) => s + parseFee(b.fee), 0);
+        const earned = completed.reduce((s, b) => s + parseFee(b.fee), 0);
+        const upcomingValue = upcoming.reduce((s, b) => s + parseFee(b.fee), 0);
+        const feeGigs = active.filter(b => parseFee(b.fee) > 0);
+        const avgFee = feeGigs.length ? totalValue / feeGigs.length : 0;
+
+        const thisYearGigs = active.filter(b => (b.date || '').startsWith(thisYear));
+        const thisYearValue = thisYearGigs.reduce((s, b) => s + parseFee(b.fee), 0);
+
+        // Most-played venues (by non-cancelled booking count)
+        const venueCounts = {};
+        active.forEach(b => { const n = b.venueName || 'Unknown'; venueCounts[n] = (venueCounts[n] || 0) + 1; });
+        const topVenues = Object.entries(venueCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+        // Songs-per-gig average across bookings with a resolvable linked setlist
+        const linkedCounts = active
+          .map(b => (b.setlistId && setlists ? setlists.find(sl => sl.id === b.setlistId) : null))
+          .filter(sl => sl && sl.songs)
+          .map(sl => sl.songs.length);
+        const avgSongs = linkedCounts.length ? linkedCounts.reduce((s, n) => s + n, 0) / linkedCounts.length : 0;
+
+        const stat = (label, value, sub) => (
+          <div className="analytics-card">
+            <div className="analytics-card-value">{value}</div>
+            <div className="analytics-card-label">{label}</div>
+            {sub && <div className="analytics-card-sub">{sub}</div>}
+          </div>
+        );
+
+        if (!total) {
+          return <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2.5rem 1rem' }}>No bookings yet. Add bookings to see your analytics.</div>;
+        }
+
+        return (
+          <div>
+            <div className="analytics-grid">
+              {stat('Total Gigs', total, `${byStatus.completed} completed · ${upcoming.length} upcoming`)}
+              {stat('Upcoming', upcoming.length, fmtMoney(upcomingValue) + ' booked')}
+              {stat('Total Value', fmtMoney(totalValue), 'excludes cancelled')}
+              {stat('Earned', fmtMoney(earned), `${byStatus.completed} completed gig${byStatus.completed !== 1 ? 's' : ''}`)}
+              {stat('Avg Fee', fmtMoney(avgFee), `across ${feeGigs.length} priced gig${feeGigs.length !== 1 ? 's' : ''}`)}
+              {stat(thisYear + ' Gigs', thisYearGigs.length, fmtMoney(thisYearValue))}
+              {stat('Avg Songs/Gig', avgSongs ? avgSongs.toFixed(1) : '—', linkedCounts.length ? `${linkedCounts.length} with setlist` : 'link setlists to track')}
+              {stat('Pipeline', `${byStatus.confirmed}✓ ${byStatus.pending}⏳`, `${byStatus.cancelled} cancelled`)}
+            </div>
+
+            <div className="analytics-section">
+              <div className="analytics-section-title">Most-Played Venues</div>
+              {topVenues.length === 0 ? (
+                <div style={{ color: 'var(--text-muted)', fontSize: '.78rem' }}>No venue data yet.</div>
+              ) : (
+                <div className="analytics-bars">
+                  {topVenues.map(([name, count]) => (
+                    <div key={name} className="analytics-bar-row">
+                      <span className="analytics-bar-name" title={name}>{name}</span>
+                      <span className="analytics-bar-track">
+                        <span className="analytics-bar-fill" style={{ width: `${(count / topVenues[0][1]) * 100}%` }} />
+                      </span>
+                      <span className="analytics-bar-count">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      };
+
       const renderBookingsTab = () => {
         const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
         const dim = new Date(calYear, calMon + 1, 0).getDate();
@@ -6552,6 +6872,20 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           bookingsByDay[d].push(b);
         });
         const todayStr = new Date().toISOString().slice(0, 10);
+
+        // Repeat-venue guard: when a venue is picked in the booking form, surface
+        // prior bookings at that venue and the most recent linked setlist so the
+        // user can avoid repeating songs at the same room.
+        const venueHistory = (() => {
+          if (!bookingForm || !bookingForm.venueId) return null;
+          const prior = bookings
+            .filter(b => b.venueId === bookingForm.venueId && b.id !== editBookingId)
+            .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          if (!prior.length) return null;
+          const withSet = prior.find(b => b.setlistId && setlists && setlists.some(sl => sl.id === b.setlistId));
+          const lastSetlist = withSet ? setlists.find(sl => sl.id === withSet.setlistId) : null;
+          return { prior, withSet: withSet || null, lastSetlist };
+        })();
 
         return (
           <div>
@@ -6611,6 +6945,31 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       </div>
                     )}
                   </div>
+                  {venueHistory && (
+                    <div className="repeat-venue-guard">
+                      <div className="repeat-venue-guard-head">
+                        🔁 You've booked {bookingForm.venueName || 'this venue'} before — {venueHistory.prior.length} prior booking{venueHistory.prior.length !== 1 ? 's' : ''}
+                      </div>
+                      <div className="repeat-venue-guard-list">
+                        {venueHistory.prior.slice(0, 5).map(b => {
+                          const sl = b.setlistId && setlists ? setlists.find(x => x.id === b.setlistId) : null;
+                          return (
+                            <div key={b.id} className="repeat-venue-guard-row">
+                              <span>{b.date || 'no date'}</span>
+                              <span className="repeat-venue-guard-status">{b.status}</span>
+                              {sl && <span className="repeat-venue-guard-setname">🎵 {sl.name}</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {venueHistory.lastSetlist && venueHistory.lastSetlist.songs && venueHistory.lastSetlist.songs.length > 0 && (
+                        <div className="repeat-venue-guard-songs">
+                          <span className="repeat-venue-guard-songs-label">Last setlist played here ({venueHistory.withSet.date || 'no date'}) — avoid repeats:</span>
+                          {' '}{venueHistory.lastSetlist.songs.map(s => s.title).filter(Boolean).join(' · ')}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="input-group"><label>Notes</label><textarea value={bookingForm.notes} onChange={e => setBookingForm({...bookingForm, notes: e.target.value})} rows={2} style={{ resize: 'vertical' }} /></div>
                   <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
                     <button className="btn" onClick={() => { setBookingForm(null); setEditBookingId(null); }}>Cancel</button>
@@ -6720,11 +7079,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             <div className="import-tabs" style={{ marginBottom: '.65rem' }}>
               <button className={`import-tab${vTab === 'venues' ? ' active' : ''}`} onClick={() => setVTab('venues')}>Venues ({venues.length})</button>
               <button className={`import-tab${vTab === 'bookings' ? ' active' : ''}`} onClick={() => setVTab('bookings')}>Bookings ({bookings.length})</button>
+              <button className={`import-tab${vTab === 'analytics' ? ' active' : ''}`} onClick={() => setVTab('analytics')}>📊 Analytics</button>
               <button className={`import-tab${vTab === 'settings' ? ' active' : ''}`} onClick={() => setVTab('settings')}>EPK &amp; Templates</button>
             </div>
             <div className="venue-modal-body">
               {vTab === 'venues' && renderVenuesTab()}
               {vTab === 'bookings' && renderBookingsTab()}
+              {vTab === 'analytics' && renderAnalyticsTab()}
               {vTab === 'settings' && renderSettingsTab()}
             </div>
           </div>
@@ -8417,6 +8778,69 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         showToast('Setlists saved to gig profile', 'success');
       };
 
+      // Import a pre-made BandHelper setlist PDF as a standalone saved gig.
+      // Parses Set N (...) sections into setlists; optionally adds new songs to library.
+      const importBandHelperSetlist = async (file, addToLibrary) => {
+        if (!file) return;
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const pages = await pdfExtractRows(arrayBuffer);
+          const parsed = pdfParseBandHelperSets(pages);
+          if (!parsed.sets.length) { showToast('No setlist data found in PDF — is this a BandHelper setlist export?', 'error'); return; }
+
+          const existingNorms = songs.map(s => normTitle(s.title));
+          const libAdds = [];
+          let addedToLib = 0;
+
+          const builtSetlists = parsed.sets.map((set, i) => {
+            const setSongs = set.songs.map(s => {
+              const dur = parseDuration(s.duration);
+              let style = (s.style && PDF_KNOWN_STYLES.has(s.style)) ? s.style : '';
+              let inferred = false;
+              if (!style) {
+                const inf = inferStyleFromArtistBpm(s.artist, s.bpm);
+                if (inf) { style = inf.style; inferred = true; } else style = 'midtempo';
+              }
+              const songObj = {
+                id: genId(), status: 'active',
+                title: sanitizeInput(s.title), artist: sanitizeInput(s.artist),
+                duration: dur, style, key: s.key || '', bpm: s.bpm || '',
+                vocalist: s.vocalist || '', arrangement: '',
+                ...(inferred ? { styleInferred: true } : {})
+              };
+              if (addToLibrary && songObj.title && !isTitleDupe(songObj.title, existingNorms)) {
+                existingNorms.push(normTitle(songObj.title));
+                libAdds.push(songObj);
+                addedToLib++;
+              }
+              return songObj;
+            });
+            return {
+              id: genId(), name: set.name || `Set ${i + 1}`, songs: setSongs,
+              totalTime: setSongs.reduce((a, x) => a + (Number(x.duration) || 0), 0)
+            };
+          });
+
+          const gigName = file.name.replace(/\.pdf$/i, '').trim() || 'Imported Setlist';
+          const newGig = {
+            id: genId(), name: gigName, venue: '', date: '', notes: 'Imported from BandHelper PDF',
+            setlists: JSON.parse(JSON.stringify(builtSetlists)),
+            savedAt: Date.now(), createdAt: Date.now(), importedFrom: 'bandhelper'
+          };
+          const updatedGigs = [...gigs, newGig];
+          setGigs(updatedGigs);
+          LS.set(LS_KEYS.bandGigs(activeBandId), updatedGigs);
+          if (addToLibrary && libAdds.length) setSongs(prev => [...prev, ...libAdds]);
+
+          let msg = `Imported "${gigName}" — ${builtSetlists.length} set${builtSetlists.length !== 1 ? 's' : ''}, ${parsed.songCount} songs (saved to Gig Profiles)`;
+          if (addToLibrary) msg += ` — ${addedToLib} new song${addedToLib !== 1 ? 's' : ''} added to library`;
+          showToast(msg, 'success');
+        } catch (err) {
+          console.error('BandHelper import error:', err);
+          showToast('Failed to parse PDF: ' + (err.message || 'unknown error'), 'error');
+        }
+      };
+
       const exportGigCSV = (gigId) => {
         const gig = gigs.find(g => g.id === gigId);
         if (!gig || !gig.setlists || gig.setlists.length === 0) return showToast('No setlists saved for this gig', 'warning');
@@ -8845,6 +9269,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               onSaveToGig={saveSetlistsToGig}
               onExportGigCSV={exportGigCSV}
               onImportCSVToGig={importCSVToGig}
+              onImportBandHelper={importBandHelperSetlist}
               setlists={setlists}
               bandName={activeBand?.name || 'Band'}
             />
