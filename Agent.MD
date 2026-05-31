@@ -455,6 +455,22 @@ RECENT WORK — MERGED PRs
     supper clubs, dives, country/honky-tonks, Summerlin). Same 10-col schema as
     las-vegas-henderson-venues.csv; deduped against the existing 57; all prospect.
 
+  BandHelper setlist import (PDF → saved gig):
+  • pdfExtractRows() — PDF.js text extraction preserving per-item X positions
+  • pdfParseBandHelperSets() — partitions rows under "Set N (...)" headers into
+    sets; maps cells to columns by X-position (survives blank Style cells and a
+    merged "Tempo Style" header that break tab-index parsing); cleans key /
+    duration (M:SS→decimal) / vocalist (ALL!→ALL). Helpers: bhDetectColumns,
+    bhAssignRow, bhClean{Duration,Key,Vocalist}, BH_SET_HEADER_RE.
+  • importBandHelperSetlist(file, addToLibrary) in App — builds setlist objects
+    (style inferred when blank), creates a STANDALONE saved gig named from the
+    file (stored in Gig Profiles / bandGigs), optionally adds new songs to the
+    library (deduped). Reuses existing gig storage — keeps song pool clean.
+  • GigProfileModal: "⬆ Import Setlist from PDF" button + "also add songs to my
+    library" checkbox (default off). onImportBandHelper prop App → GigProfileModal.
+  • Design choice: imported setlists are one-and-done storage in Gig Profiles,
+    loadable/annotatable/exportable; library untouched unless checkbox ticked.
+
   Features (the 3 roadmap items below, now shipped):
   • Venue CSV status normalisation — handleVenueCSV() now normalises the Status
     column against VENUE_STATUSES keys, display labels, and a synonym table
@@ -533,12 +549,13 @@ SUGGESTED NEXT STEPS
 ✅ DONE (PR #95) — Venue CSV import status normalisation
 ✅ DONE (PR #95) — Booking analytics / dashboard
 
-1. BandHelper setlist import (NEXT — planned with user)
-   Let users load setlists exported/screenshotted from the BandHelper app
-   directly into the generator, closing the gap so they no longer hand-condense
-   to CSV. Awaiting sample screenshots to determine format/parsing approach.
+✅ DONE (PR #95) — BandHelper setlist import (PDF → saved gig)
+   NOTE: parser unit-tested against the DSJ "Roadkill Grill" sheet structure,
+   but real BandHelper PDF extraction (X-position column detection, the merged
+   "Tempo Style" header) still needs validation against an actual exported PDF.
+   If columns misalign, tune bhDetectColumns / bhAssignRow against real output.
 
-2. Per-role CSV columns — Import+Normalize column mapping UI
+1. Per-role CSV columns — Import+Normalize column mapping UI
    Expose the 6 per-role arr columns in the manual column-mapping dropdowns of
    the Import+Normalize modal so users can hand-assign them when header names
    don't match the synonym table.
