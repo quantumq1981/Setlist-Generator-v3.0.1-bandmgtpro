@@ -7111,7 +7111,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', secondaryLabel = '', secondaryAction = null, onConfirm, onCancel }) {
       if (!open) return null;
       return (
-        <div className="modal-backdrop" onClick={onCancel}>
+        <div className="modal-backdrop" onClick={onCancel} style={{ zIndex: 1600 }}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3 style={{ marginBottom: '.5rem' }}>{title}</h3>
             <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>{message}</p>
