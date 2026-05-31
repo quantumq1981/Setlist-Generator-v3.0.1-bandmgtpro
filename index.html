@@ -2569,6 +2569,175 @@
       return lines.join('\n');
     }
 
+    /******************* BANDHELPER SETLIST (SET-AWARE) PARSER *******************/
+    // BandHelper exports a setlist PDF as a table grouped under "Set N (time-time)"
+    // headers. Songs carry: Title, Artist, Key, Tempo, Style, Duration, Vocalist —
+    // but Style is often blank and the "Tempo Style" header can render merged, so we
+    // map cells to columns by their X-position (fixed in the PDF) rather than by
+    // collapsing tab-index, which misaligns whenever a cell is empty.
+
+    // Extract rows preserving each text item's X position, grouped into visual rows
+    // by Y. Returns [{ page, rows:[{ y, items:[{str,x}] }] }].
+    async function pdfExtractRows(arrayBuffer) {
+      if (!window.pdfjsLib) throw new Error('PDF.js not loaded');
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const pages = [];
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        const items = content.items
+          .filter(it => it.str && it.str.trim())
+          .map(it => ({ str: it.str.replace(/\s+$/, ''), x: it.transform[4], y: it.transform[5] }))
+          .sort((a, b) => (Math.abs(b.y - a.y) > 3 ? b.y - a.y : a.x - b.x));
+        const rows = [];
+        let cur = null;
+        for (const it of items) {
+          if (!cur || Math.abs(it.y - cur.y) > 3) {
+            cur = { y: it.y, items: [it] };
+            rows.push(cur);
+          } else {
+            cur.items.push(it);
+          }
+        }
+        pages.push({ page: p, rows });
+      }
+      return pages;
+    }
+
+    const BH_SET_HEADER_RE = /^Set\s+(\d+)\b\s*(?:\(([^)]*)\))?/i;
+
+    function bhFieldOfHeader(label) {
+      const p = String(label).trim().toLowerCase();
+      if (/^(title|song|song\s*title|tune)$/.test(p)) return 'title';
+      if (/^(artist|band|performer)$/.test(p)) return 'artist';
+      if (/^(duration|dur|time|length)$/.test(p)) return 'duration';
+      if (/^(style|genre|type|feel)$/.test(p)) return 'style';
+      if (/^(key|tonality|pitch)$/.test(p)) return 'key';
+      if (/^(bpm|tempo|speed)$/.test(p)) return 'bpm';
+      if (/^(vocalist|singer|vox|vocal|vocals|lead)$/.test(p)) return 'vocalist';
+      return null;
+    }
+
+    // Detect the column layout from a header row. Each header item may itself contain
+    // several field words (e.g. a merged "Tempo Style"); we split and estimate an X for
+    // each token so empty data cells can still be assigned correctly. Returns a sorted
+    // array of { field, x } or null when the row isn't a recognisable header.
+    function bhDetectColumns(row) {
+      const cols = [];
+      for (const it of row.items) {
+        const tokens = it.str.trim().split(/\s+/);
+        const fields = tokens.map(bhFieldOfHeader);
+        const known = fields.filter(Boolean);
+        if (known.length === 1 && tokens.length === 1) {
+          cols.push({ field: known[0], x: it.x });
+        } else if (known.length >= 1) {
+          // Spread merged header tokens across the item's width estimate.
+          const per = (it.str.length || 1);
+          let off = 0;
+          for (let i = 0; i < tokens.length; i++) {
+            if (fields[i]) cols.push({ field: fields[i], x: it.x + (off / per) * Math.max(per * 3, 12) });
+            off += tokens[i].length + 1;
+          }
+        }
+      }
+      const fieldsFound = new Set(cols.map(c => c.field));
+      if (!fieldsFound.has('title') || cols.length < 3) return null;
+      cols.sort((a, b) => a.x - b.x);
+      return cols;
+    }
+
+    // Assign a data row's items to columns by nearest X boundary (midpoints between
+    // adjacent column anchors). Items in the same column are concatenated in X order.
+    function bhAssignRow(row, cols) {
+      const bounds = [];
+      for (let i = 0; i < cols.length; i++) {
+        const left = i === 0 ? -Infinity : (cols[i - 1].x + cols[i].x) / 2;
+        const right = i === cols.length - 1 ? Infinity : (cols[i].x + cols[i + 1].x) / 2;
+        bounds.push({ field: cols[i].field, left, right });
+      }
+      const out = {};
+      for (const it of [...row.items].sort((a, b) => a.x - b.x)) {
+        const b = bounds.find(b => it.x >= b.left && it.x < b.right) || bounds[bounds.length - 1];
+        out[b.field] = out[b.field] ? out[b.field] + ' ' + it.str.trim() : it.str.trim();
+      }
+      return out;
+    }
+
+    function bhCleanDuration(raw) {
+      const r = String(raw || '').trim();
+      if (/^\d{1,2}:\d{2}$/.test(r)) {
+        const [m, s] = r.split(':').map(Number);
+        return String(Math.round((m + s / 60) * 100) / 100);
+      }
+      const n = parseFloat(r);
+      return n > 0 ? String(n) : '';
+    }
+
+    function bhCleanKey(raw) {
+      let k = String(raw || '').trim();
+      if (!k) return '';
+      if (/^[A-G][b#]?\s*\/\s*[A-G]/.test(k)) return k.replace(/\s*\/\s*/g, '/');
+      k = k.replace(/maj(or)?$/i, '');
+      if (/^[A-Ga-g][b#]?m?$/.test(k)) return k.charAt(0).toUpperCase() + k.slice(1);
+      return String(raw).trim();
+    }
+
+    function bhCleanVocalist(raw) {
+      const v = String(raw || '').trim();
+      return /^all!?$/i.test(v) ? 'ALL' : v;
+    }
+
+    // Parse a BandHelper setlist document (rows from pdfExtractRows) into sets.
+    // Returns { sets:[{ name, songs:[{title,artist,key,bpm,style,duration,vocalist}] }],
+    //           songCount } — songs before any "Set N" header fall into "Set 1".
+    function pdfParseBandHelperSets(pages) {
+      const allRows = pages.flatMap(pg => pg.rows);
+      let cols = null;
+      const sets = [];
+      let cur = null;
+      const ensureSet = (name) => { cur = { name: name || `Set ${sets.length + 1}`, songs: [] }; sets.push(cur); };
+
+      for (const row of allRows) {
+        const text = row.items.map(it => it.str).join(' ').replace(/\s+/g, ' ').trim();
+        if (!text) continue;
+
+        const setMatch = text.match(BH_SET_HEADER_RE);
+        if (setMatch) { ensureSet(`Set ${setMatch[1]}`); continue; }
+
+        // Skip band-title / date / summary lines (e.g. "Down South Jukers (1 of 3)",
+        // "35 songs, 3:35", "3/21/26, 12:00pm to 4:00pm").
+        if (/^\d+\s+songs?\b/i.test(text)) continue;
+        if (/\bsongs?,\s*\d+:\d{2}\b/i.test(text)) continue;
+        if (/^\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(text)) continue;
+        if (/\(\d+\s+of\s+\d+\)/i.test(text)) continue;
+
+        // Header row?
+        if (!cols) { const c = bhDetectColumns(row); if (c) { cols = c; continue; } }
+        else if (bhDetectColumns(row)) { continue; } // repeated header on a later page
+
+        if (!cols) continue; // no columns detected yet — can't parse data rows
+        const cells = bhAssignRow(row, cols);
+        const title = (cells.title || '').trim();
+        if (!title || /^title$/i.test(title)) continue;
+
+        if (!cur) ensureSet('Set 1');
+        cur.songs.push({
+          title,
+          artist: (cells.artist || '').trim(),
+          key: bhCleanKey(cells.key),
+          bpm: (String(cells.bpm || '').match(/\d+/) || [''])[0],
+          style: (cells.style || '').trim().toLowerCase(),
+          duration: bhCleanDuration(cells.duration),
+          vocalist: bhCleanVocalist(cells.vocalist),
+        });
+      }
+
+      const filtered = sets.filter(s => s.songs.length);
+      return { sets: filtered, songCount: filtered.reduce((n, s) => n + s.songs.length, 0) };
+    }
+
+    /******************* END BANDHELPER SETLIST PARSER *******************/
+
     /******************* END PDF IMPORT ENGINE *******************/
 
 
