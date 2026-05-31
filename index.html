@@ -616,6 +616,20 @@
     .repeat-venue-guard-setname { color: var(--accent); font-weight: 600; }
     .repeat-venue-guard-songs { margin-top: .4rem; padding-top: .4rem; border-top: 1px dashed var(--border); font-size: .72rem; line-height: 1.4; color: var(--text); }
     .repeat-venue-guard-songs-label { font-weight: 800; color: var(--warning); }
+    /* Booking analytics dashboard */
+    .analytics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: .5rem; margin-bottom: 1rem; }
+    .analytics-card { background: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: .6rem .65rem; }
+    .analytics-card-value { font-family: 'Space Mono', monospace; font-size: 1.35rem; font-weight: 700; color: var(--accent); line-height: 1.1; }
+    .analytics-card-label { font-size: .66rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text); margin-top: .2rem; }
+    .analytics-card-sub { font-size: .64rem; color: var(--text-muted); margin-top: .15rem; }
+    .analytics-section { margin-top: .5rem; }
+    .analytics-section-title { font-size: .7rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: .45rem; }
+    .analytics-bars { display: flex; flex-direction: column; gap: .35rem; }
+    .analytics-bar-row { display: flex; align-items: center; gap: .5rem; font-size: .76rem; }
+    .analytics-bar-name { flex: 0 0 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .analytics-bar-track { flex: 1; height: 10px; background: var(--secondary); border-radius: 5px; overflow: hidden; }
+    .analytics-bar-fill { display: block; height: 100%; background: var(--accent); border-radius: 5px; min-width: 3px; }
+    .analytics-bar-count { flex: 0 0 auto; font-family: 'Space Mono', monospace; font-weight: 700; color: var(--text-muted); }
     /* Media / YouTube clips */
     .media-clips-section { margin-top: .55rem; border-top: 1px solid var(--border); padding-top: .45rem; }
     .media-clips-label { font-size: .6rem; font-weight: 800; letter-spacing: .06em; color: var(--text-muted); text-transform: uppercase; margin-bottom: .35rem; }
@@ -6571,6 +6585,87 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         );
       };
 
+      const renderAnalyticsTab = () => {
+        const parseFee = (f) => Number(String(f || '').replace(/[^0-9.]/g, '')) || 0;
+        const today = new Date().toISOString().slice(0, 10);
+        const thisYear = String(new Date().getFullYear());
+        const fmtMoney = (n) => '$' + Math.round(n).toLocaleString();
+
+        const total = bookings.length;
+        const byStatus = { pending: 0, confirmed: 0, completed: 0, cancelled: 0 };
+        bookings.forEach(b => { if (byStatus[b.status] != null) byStatus[b.status]++; });
+        const active = bookings.filter(b => b.status !== 'cancelled');
+        const upcoming = bookings.filter(b => (b.status === 'confirmed' || b.status === 'pending') && b.date && b.date >= today);
+        const completed = bookings.filter(b => b.status === 'completed');
+
+        const totalValue = active.reduce((s, b) => s + parseFee(b.fee), 0);
+        const earned = completed.reduce((s, b) => s + parseFee(b.fee), 0);
+        const upcomingValue = upcoming.reduce((s, b) => s + parseFee(b.fee), 0);
+        const feeGigs = active.filter(b => parseFee(b.fee) > 0);
+        const avgFee = feeGigs.length ? totalValue / feeGigs.length : 0;
+
+        const thisYearGigs = active.filter(b => (b.date || '').startsWith(thisYear));
+        const thisYearValue = thisYearGigs.reduce((s, b) => s + parseFee(b.fee), 0);
+
+        // Most-played venues (by non-cancelled booking count)
+        const venueCounts = {};
+        active.forEach(b => { const n = b.venueName || 'Unknown'; venueCounts[n] = (venueCounts[n] || 0) + 1; });
+        const topVenues = Object.entries(venueCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+        // Songs-per-gig average across bookings with a resolvable linked setlist
+        const linkedCounts = active
+          .map(b => (b.setlistId && setlists ? setlists.find(sl => sl.id === b.setlistId) : null))
+          .filter(sl => sl && sl.songs)
+          .map(sl => sl.songs.length);
+        const avgSongs = linkedCounts.length ? linkedCounts.reduce((s, n) => s + n, 0) / linkedCounts.length : 0;
+
+        const stat = (label, value, sub) => (
+          <div className="analytics-card">
+            <div className="analytics-card-value">{value}</div>
+            <div className="analytics-card-label">{label}</div>
+            {sub && <div className="analytics-card-sub">{sub}</div>}
+          </div>
+        );
+
+        if (!total) {
+          return <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2.5rem 1rem' }}>No bookings yet. Add bookings to see your analytics.</div>;
+        }
+
+        return (
+          <div>
+            <div className="analytics-grid">
+              {stat('Total Gigs', total, `${byStatus.completed} completed · ${upcoming.length} upcoming`)}
+              {stat('Upcoming', upcoming.length, fmtMoney(upcomingValue) + ' booked')}
+              {stat('Total Value', fmtMoney(totalValue), 'excludes cancelled')}
+              {stat('Earned', fmtMoney(earned), `${byStatus.completed} completed gig${byStatus.completed !== 1 ? 's' : ''}`)}
+              {stat('Avg Fee', fmtMoney(avgFee), `across ${feeGigs.length} priced gig${feeGigs.length !== 1 ? 's' : ''}`)}
+              {stat(thisYear + ' Gigs', thisYearGigs.length, fmtMoney(thisYearValue))}
+              {stat('Avg Songs/Gig', avgSongs ? avgSongs.toFixed(1) : '—', linkedCounts.length ? `${linkedCounts.length} with setlist` : 'link setlists to track')}
+              {stat('Pipeline', `${byStatus.confirmed}✓ ${byStatus.pending}⏳`, `${byStatus.cancelled} cancelled`)}
+            </div>
+
+            <div className="analytics-section">
+              <div className="analytics-section-title">Most-Played Venues</div>
+              {topVenues.length === 0 ? (
+                <div style={{ color: 'var(--text-muted)', fontSize: '.78rem' }}>No venue data yet.</div>
+              ) : (
+                <div className="analytics-bars">
+                  {topVenues.map(([name, count]) => (
+                    <div key={name} className="analytics-bar-row">
+                      <span className="analytics-bar-name" title={name}>{name}</span>
+                      <span className="analytics-bar-track">
+                        <span className="analytics-bar-fill" style={{ width: `${(count / topVenues[0][1]) * 100}%` }} />
+                      </span>
+                      <span className="analytics-bar-count">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      };
+
       const renderBookingsTab = () => {
         const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
         const dim = new Date(calYear, calMon + 1, 0).getDate();
@@ -6797,11 +6892,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             <div className="import-tabs" style={{ marginBottom: '.65rem' }}>
               <button className={`import-tab${vTab === 'venues' ? ' active' : ''}`} onClick={() => setVTab('venues')}>Venues ({venues.length})</button>
               <button className={`import-tab${vTab === 'bookings' ? ' active' : ''}`} onClick={() => setVTab('bookings')}>Bookings ({bookings.length})</button>
+              <button className={`import-tab${vTab === 'analytics' ? ' active' : ''}`} onClick={() => setVTab('analytics')}>📊 Analytics</button>
               <button className={`import-tab${vTab === 'settings' ? ' active' : ''}`} onClick={() => setVTab('settings')}>EPK &amp; Templates</button>
             </div>
             <div className="venue-modal-body">
               {vTab === 'venues' && renderVenuesTab()}
               {vTab === 'bookings' && renderBookingsTab()}
+              {vTab === 'analytics' && renderAnalyticsTab()}
               {vTab === 'settings' && renderSettingsTab()}
             </div>
           </div>
