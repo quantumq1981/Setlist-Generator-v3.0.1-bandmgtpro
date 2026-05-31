@@ -5960,7 +5960,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     }
 
     /******************* GIG PROFILES *******************/
-    function GigProfileModal({ open, onClose, gigs, onCreateGig, onDeleteGig, onLoadGig, onSaveToGig, onExportGigCSV, onImportCSVToGig, setlists, bandName }) {
+    function GigProfileModal({ open, onClose, gigs, onCreateGig, onDeleteGig, onLoadGig, onSaveToGig, onExportGigCSV, onImportCSVToGig, onImportBandHelper, setlists, bandName }) {
+      const bhRef = React.useRef(null);
+      const [bhAddLib, setBhAddLib] = useState(false);
       const [form, setForm] = useState({
         name: '', venue: '', date: '', notes: '',
         // Venue info fields (common across GigSalad, Sonicbids, Bands in Town, Gigmit, etc.)
@@ -6003,6 +6005,22 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
             <div style={{ marginBottom: '1rem', fontSize: '.85rem', color: 'var(--text-muted)' }}>
               Create gig profiles for specific venues and dates. Save and load setlists for each gig. Export gig setlists as CSV.
+            </div>
+
+            {/* Import a pre-made setlist (e.g. BandHelper PDF export) as a standalone saved gig */}
+            <div style={{ marginBottom: '1rem', padding: '.6rem .7rem', border: '1px dashed var(--accent)', borderRadius: '8px', background: 'rgba(255,107,53,.06)' }}>
+              <input ref={bhRef} type="file" accept=".pdf" style={{ display: 'none' }}
+                onChange={e => { const f = e.target.files[0]; if (f) onImportBandHelper(f, bhAddLib); e.target.value = ''; }} />
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '.6rem' }}>
+                <button className="btn btn-small btn-primary" onClick={() => bhRef.current?.click()}>⬆ Import Setlist from PDF</button>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '.35rem', cursor: 'pointer', fontSize: '.78rem', color: 'var(--text-muted)', textTransform: 'none' }}>
+                  <input type="checkbox" checked={bhAddLib} onChange={e => setBhAddLib(e.target.checked)} style={{ width: 'auto' }} />
+                  also add songs to my library
+                </label>
+              </div>
+              <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', marginTop: '.4rem' }}>
+                Upload a BandHelper setlist PDF — its Set 1/2/3 are reconstructed and saved here as a gig you can load, annotate, and export. Your song library stays untouched unless you tick the box.
+              </div>
             </div>
 
             {setlists.length === 0 && gigs.length > 0 && (
@@ -8760,6 +8778,69 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         showToast('Setlists saved to gig profile', 'success');
       };
 
+      // Import a pre-made BandHelper setlist PDF as a standalone saved gig.
+      // Parses Set N (...) sections into setlists; optionally adds new songs to library.
+      const importBandHelperSetlist = async (file, addToLibrary) => {
+        if (!file) return;
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const pages = await pdfExtractRows(arrayBuffer);
+          const parsed = pdfParseBandHelperSets(pages);
+          if (!parsed.sets.length) { showToast('No setlist data found in PDF — is this a BandHelper setlist export?', 'error'); return; }
+
+          const existingNorms = songs.map(s => normTitle(s.title));
+          const libAdds = [];
+          let addedToLib = 0;
+
+          const builtSetlists = parsed.sets.map((set, i) => {
+            const setSongs = set.songs.map(s => {
+              const dur = parseDuration(s.duration);
+              let style = (s.style && PDF_KNOWN_STYLES.has(s.style)) ? s.style : '';
+              let inferred = false;
+              if (!style) {
+                const inf = inferStyleFromArtistBpm(s.artist, s.bpm);
+                if (inf) { style = inf.style; inferred = true; } else style = 'midtempo';
+              }
+              const songObj = {
+                id: genId(), status: 'active',
+                title: sanitizeInput(s.title), artist: sanitizeInput(s.artist),
+                duration: dur, style, key: s.key || '', bpm: s.bpm || '',
+                vocalist: s.vocalist || '', arrangement: '',
+                ...(inferred ? { styleInferred: true } : {})
+              };
+              if (addToLibrary && songObj.title && !isTitleDupe(songObj.title, existingNorms)) {
+                existingNorms.push(normTitle(songObj.title));
+                libAdds.push(songObj);
+                addedToLib++;
+              }
+              return songObj;
+            });
+            return {
+              id: genId(), name: set.name || `Set ${i + 1}`, songs: setSongs,
+              totalTime: setSongs.reduce((a, x) => a + (Number(x.duration) || 0), 0)
+            };
+          });
+
+          const gigName = file.name.replace(/\.pdf$/i, '').trim() || 'Imported Setlist';
+          const newGig = {
+            id: genId(), name: gigName, venue: '', date: '', notes: 'Imported from BandHelper PDF',
+            setlists: JSON.parse(JSON.stringify(builtSetlists)),
+            savedAt: Date.now(), createdAt: Date.now(), importedFrom: 'bandhelper'
+          };
+          const updatedGigs = [...gigs, newGig];
+          setGigs(updatedGigs);
+          LS.set(LS_KEYS.bandGigs(activeBandId), updatedGigs);
+          if (addToLibrary && libAdds.length) setSongs(prev => [...prev, ...libAdds]);
+
+          let msg = `Imported "${gigName}" — ${builtSetlists.length} set${builtSetlists.length !== 1 ? 's' : ''}, ${parsed.songCount} songs (saved to Gig Profiles)`;
+          if (addToLibrary) msg += ` — ${addedToLib} new song${addedToLib !== 1 ? 's' : ''} added to library`;
+          showToast(msg, 'success');
+        } catch (err) {
+          console.error('BandHelper import error:', err);
+          showToast('Failed to parse PDF: ' + (err.message || 'unknown error'), 'error');
+        }
+      };
+
       const exportGigCSV = (gigId) => {
         const gig = gigs.find(g => g.id === gigId);
         if (!gig || !gig.setlists || gig.setlists.length === 0) return showToast('No setlists saved for this gig', 'warning');
@@ -9188,6 +9269,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               onSaveToGig={saveSetlistsToGig}
               onExportGigCSV={exportGigCSV}
               onImportCSVToGig={importCSVToGig}
+              onImportBandHelper={importBandHelperSetlist}
               setlists={setlists}
               bandName={activeBand?.name || 'Band'}
             />
