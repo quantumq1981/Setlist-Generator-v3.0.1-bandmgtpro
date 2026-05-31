@@ -1,6 +1,6 @@
 
 AGENT.MD — Setlist Generator Pro v3.8+ Handoff Document
-Last updated: 2026-05-30 (PR #90)
+Last updated: 2026-05-31 (branch claude/agent-roadmap-venue-csv-VXJra)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PROJECT OVERVIEW
@@ -63,15 +63,20 @@ App (line ~6110)
 │     Clicking opens VenueModal; hidden when no upcoming bookings
 ├── UnusedSongsPanel (line ~4600)
 ├── EmailShareModal (line ~4680)    — email-ready text modal
-├── VenueModal (line ~5840)         — Venues CRM + Booking Calendar + EPK
-│     Tab 1 — Venues: pipeline list, add/edit/delete, CSV import, per-venue mailto: send
+├── VenueModal (line ~5840)         — Venues CRM + Booking Calendar + Analytics + EPK
+│     Tab 1 — Venues: pipeline list, add/edit/delete, CSV import (status-normalised),
+│             per-venue mailto: send
 │     Tab 2 — Bookings: month-view calendar + booking CRUD
 │             Booking fields: venue, date, start/end time, fee, status, setlistId, notes
 │             Status options: pending | confirmed | completed | cancelled
 │             ✉ button on rows with a venue email → fires bookingConfirmation template
 │             Setlist dropdown links a saved setlist to the gig; name shown in list row
 │             📄 button on every row → downloadGigSheet() generates jsPDF gig sheet
-│     Tab 3 — EPK & Templates: links + 4 editable email templates
+│             Repeat-venue guard: selecting a venue with prior bookings shows those
+│             bookings + the last linked setlist's songs (avoid repeats)
+│     Tab 3 — 📊 Analytics: stat cards (gigs, fees, avg songs/gig, pipeline) +
+│             most-played-venues bar chart; computed from bookings + setlists
+│     Tab 4 — EPK & Templates: links + 4 editable email templates
 ├── BandModal
 ├── ImportSongsModal (line ~4600)
 ├── GigProfileModal
@@ -441,6 +446,27 @@ RECENT WORK — MERGED PRs
     .stage-overlay-song.stage-current, .stage-overlay-song.stage-dimmed,
     .stage-current-badge added; .stage-overlay-song:hover rule added
 
+── branch claude/agent-roadmap-venue-csv-VXJra (PR #95) ──
+  In progress: 2026-05-31
+
+  Data:
+  • las-vegas-venues-expansion.csv — 30 net-new live-music bars & clubs across
+    the Vegas metro (locals-casino lounges, Fremont East/Arts District, jazz &
+    supper clubs, dives, country/honky-tonks, Summerlin). Same 10-col schema as
+    las-vegas-henderson-venues.csv; deduped against the existing 57; all prospect.
+
+  Features (the 3 roadmap items below, now shipped):
+  • Venue CSV status normalisation — handleVenueCSV() now normalises the Status
+    column against VENUE_STATUSES keys, display labels, and a synonym table
+    (STATUS_SYNONYMS). Unrecognised values default to prospect with a toast count.
+  • Repeat-venue guard — renderBookingsTab() computes venueHistory when a venue is
+    selected in the booking form: lists prior bookings (date/status/setlist) and the
+    most recent linked setlist's song titles. CSS: .repeat-venue-guard*.
+  • Booking analytics dashboard — new renderAnalyticsTab() (📊 Analytics tab, 4th in
+    VenueModal). Stat cards + most-played-venues bar chart. parseFee() reads numbers
+    from free-text fee strings; cancelled bookings excluded from value totals.
+    CSS: .analytics-*.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KEY FUNCTIONS & LINE NUMBERS (approximate — verify on read)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -503,24 +529,20 @@ EARLIER FIXES (pre-PR #56, documented in previous Agent.MD)
 SUGGESTED NEXT STEPS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. Gig history / repeat-venue guard
-   When adding a booking for a venue you've played before, surface a warning
-   showing the last setlist used there so you can avoid repeat songs.
+✅ DONE (PR #95) — Gig history / repeat-venue guard
+✅ DONE (PR #95) — Venue CSV import status normalisation
+✅ DONE (PR #95) — Booking analytics / dashboard
 
-2. Venue CSV import — status normalisation
-   Validate and normalise the 'status' column on import against VENUE_STATUSES
-   key list (currently imported verbatim; invalid values silently default to
-   BLANK_VENUE.status = 'prospect').
+1. BandHelper setlist import (NEXT — planned with user)
+   Let users load setlists exported/screenshotted from the BandHelper app
+   directly into the generator, closing the gap so they no longer hand-condense
+   to CSV. Awaiting sample screenshots to determine format/parsing approach.
 
-3. Per-role CSV columns — Import+Normalize column mapping UI
+2. Per-role CSV columns — Import+Normalize column mapping UI
    Expose the 6 per-role arr columns in the manual column-mapping dropdowns of
    the Import+Normalize modal so users can hand-assign them when header names
    don't match the synonym table.
 
-4. Song media/audio linking — extend mediaLinks to support direct audio uploads
+3. Song media/audio linking — extend mediaLinks to support direct audio uploads
    (MP3/WAV stored as base64 or object URL) in addition to YouTube links;
    playlist-level reference view.
-
-5. Booking analytics / dashboard
-   Summary view: total gigs, total fees, most-played venues, songs-per-gig
-   averages — useful for end-of-year or grant reporting.
