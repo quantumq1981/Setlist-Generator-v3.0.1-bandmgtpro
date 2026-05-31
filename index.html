@@ -607,6 +607,15 @@
     .next-gig-status { font-size: .58rem; font-weight: 800; padding: .1rem .28rem; border-radius: 3px; white-space: nowrap; }
     .next-gig-status.confirmed { background: var(--success); color: #111; }
     .next-gig-status.pending { background: var(--warning); color: #111; }
+    /* Repeat-venue guard (booking form) */
+    .repeat-venue-guard { margin: .4rem 0 .55rem; padding: .5rem .6rem; border: 1px solid var(--warning); border-left: 3px solid var(--warning); border-radius: 6px; background: rgba(251,191,36,.08); }
+    .repeat-venue-guard-head { font-size: .76rem; font-weight: 800; color: var(--warning); margin-bottom: .35rem; }
+    .repeat-venue-guard-list { display: flex; flex-direction: column; gap: .2rem; }
+    .repeat-venue-guard-row { display: flex; align-items: center; gap: .5rem; font-size: .72rem; color: var(--text-muted); }
+    .repeat-venue-guard-status { text-transform: capitalize; font-weight: 700; }
+    .repeat-venue-guard-setname { color: var(--accent); font-weight: 600; }
+    .repeat-venue-guard-songs { margin-top: .4rem; padding-top: .4rem; border-top: 1px dashed var(--border); font-size: .72rem; line-height: 1.4; color: var(--text); }
+    .repeat-venue-guard-songs-label { font-weight: 800; color: var(--warning); }
     /* Media / YouTube clips */
     .media-clips-section { margin-top: .55rem; border-top: 1px solid var(--border); padding-top: .45rem; }
     .media-clips-label { font-size: .6rem; font-weight: 800; letter-spacing: .06em; color: var(--text-muted); text-transform: uppercase; margin-bottom: .35rem; }
@@ -6582,6 +6591,20 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         });
         const todayStr = new Date().toISOString().slice(0, 10);
 
+        // Repeat-venue guard: when a venue is picked in the booking form, surface
+        // prior bookings at that venue and the most recent linked setlist so the
+        // user can avoid repeating songs at the same room.
+        const venueHistory = (() => {
+          if (!bookingForm || !bookingForm.venueId) return null;
+          const prior = bookings
+            .filter(b => b.venueId === bookingForm.venueId && b.id !== editBookingId)
+            .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          if (!prior.length) return null;
+          const withSet = prior.find(b => b.setlistId && setlists && setlists.some(sl => sl.id === b.setlistId));
+          const lastSetlist = withSet ? setlists.find(sl => sl.id === withSet.setlistId) : null;
+          return { prior, withSet: withSet || null, lastSetlist };
+        })();
+
         return (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.5rem' }}>
@@ -6640,6 +6663,31 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       </div>
                     )}
                   </div>
+                  {venueHistory && (
+                    <div className="repeat-venue-guard">
+                      <div className="repeat-venue-guard-head">
+                        🔁 You've booked {bookingForm.venueName || 'this venue'} before — {venueHistory.prior.length} prior booking{venueHistory.prior.length !== 1 ? 's' : ''}
+                      </div>
+                      <div className="repeat-venue-guard-list">
+                        {venueHistory.prior.slice(0, 5).map(b => {
+                          const sl = b.setlistId && setlists ? setlists.find(x => x.id === b.setlistId) : null;
+                          return (
+                            <div key={b.id} className="repeat-venue-guard-row">
+                              <span>{b.date || 'no date'}</span>
+                              <span className="repeat-venue-guard-status">{b.status}</span>
+                              {sl && <span className="repeat-venue-guard-setname">🎵 {sl.name}</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {venueHistory.lastSetlist && venueHistory.lastSetlist.songs && venueHistory.lastSetlist.songs.length > 0 && (
+                        <div className="repeat-venue-guard-songs">
+                          <span className="repeat-venue-guard-songs-label">Last setlist played here ({venueHistory.withSet.date || 'no date'}) — avoid repeats:</span>
+                          {' '}{venueHistory.lastSetlist.songs.map(s => s.title).filter(Boolean).join(' · ')}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="input-group"><label>Notes</label><textarea value={bookingForm.notes} onChange={e => setBookingForm({...bookingForm, notes: e.target.value})} rows={2} style={{ resize: 'vertical' }} /></div>
                   <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
                     <button className="btn" onClick={() => { setBookingForm(null); setEditBookingId(null); }}>Cancel</button>
