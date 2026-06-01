@@ -776,7 +776,9 @@
       .setlist-song{ grid-template-columns: 18px 26px 1fr 46px 50px; }
     }
     @media (pointer: coarse) {
-      .drag-handle { display: none; }
+      .reorder-controls { flex-direction: column; gap: .4rem; }
+      .drag-handle { min-width: 44px; min-height: 38px; font-size: 1.5rem; border: 1px solid var(--border); border-radius: 8px; background: var(--primary); justify-content: center; }
+      .drag-handle:active, .drag-handle.touch-active { background: var(--accent); color: #fff; border-color: var(--accent); }
       .mobile-updown { display: inline-flex; flex-direction: column; gap: .35rem; }
       .setlist-song { grid-template-columns: 52px 26px 1fr 46px 50px; }
     }
@@ -2717,6 +2719,21 @@
 
         if (!cols) continue; // no columns detected yet — can't parse data rows
         const cells = bhAssignRow(row, cols);
+
+        // Wrapped-cell continuation: BandHelper wraps a long Title/Artist onto a
+        // second line that carries no Key/BPM/Duration. Stitch it onto the prior
+        // song's matching field instead of dropping it or making a phantom row.
+        const hasMeta = !!(cells.key || cells.bpm || cells.duration);
+        if (!hasMeta) {
+          if (cur && cur.songs.length) {
+            const last = cur.songs[cur.songs.length - 1];
+            if (cells.title) last.title = (last.title + ' ' + cells.title).replace(/\s+/g, ' ').trim();
+            if (cells.artist) last.artist = (last.artist + ' ' + cells.artist).replace(/\s+/g, ' ').trim();
+            if (cells.vocalist) last.vocalist = ((last.vocalist ? last.vocalist + ' ' : '') + cells.vocalist).replace(/\s+/g, ' ').trim();
+          }
+          continue;
+        }
+
         const title = (cells.title || '').trim();
         if (!title || /^title$/i.test(title)) continue;
 
@@ -5175,7 +5192,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onMoveSong, onRemoveSong, onLockEntireSet, onDragStart, onDragEnd, onDragOverSong, onDragOverSet, onDropOnSong, onDropOnSet, onMoveToSet, dragState, totalSets, isReorderMode, touchFallbackEnabled, touchDrag, setTouchDrag, viewMode, advanceRoleFilter }) {
+    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onMoveSong, onRemoveSong, onLockEntireSet, onDragStart, onDragEnd, onDragOverSong, onDragOverSet, onDropOnSong, onDropOnSet, onMoveToSet, onTouchDragStart, onTouchDragOver, onTouchDrop, dragState, totalSets, isReorderMode, touchFallbackEnabled, touchDrag, setTouchDrag, viewMode, advanceRoleFilter }) {
       let runningTime = 0;
       const allLocked = setlist.songs.length > 0 && setlist.songs.every(s => locked.has(`${setIdx}:${s.id}`));
       const isSetDragTarget = dragState && dragState.active && dragState.overSetIdx === setIdx && dragState.fromSetIdx !== setIdx;
@@ -5183,6 +5200,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       return (
         <div
           className={`setlist${isSetDragTarget ? ' drag-target' : ''}`}
+          data-set-idx={setIdx}
           onDragOver={(e) => onDragOverSet(e, setIdx)}
           onDragEnter={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
           onDrop={(e) => onDropOnSet(e, setIdx)}
@@ -5221,27 +5239,36 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               <div
                 key={`${song.id}-${songIdx}`}
                 className={`setlist-song ${isLocked ? 'locked' : ''} ${dragClass}`}
-                draggable={!isLocked && isReorderMode && !touchFallbackEnabled}
+                data-set-idx={setIdx}
+                data-song-idx={songIdx}
+                draggable={!isLocked && isReorderMode}
                 onDragStart={(e) => onDragStart(e, song, setIdx, songIdx)}
                 onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 onDragOver={(e) => onDragOverSong(e, setIdx, songIdx)}
                 onDrop={(e) => onDropOnSong(e, setIdx, songIdx)}
                 onDragEnd={onDragEnd}
-                onTouchStart={() => {
-                  if (!touchFallbackEnabled || !isReorderMode || isLocked) return;
-                  setTouchDrag({ active: true, fromSetIdx: setIdx, fromSongIdx: songIdx });
-                }}
-                onTouchEnd={() => {
-                  if (!touchFallbackEnabled || !touchDrag.active || isLocked) return;
-                  if (touchDrag.fromSetIdx === setIdx) onMoveSong(setIdx, touchDrag.fromSongIdx, songIdx);
-                  else onMoveToSet(touchDrag.fromSetIdx, touchDrag.fromSongIdx, setIdx);
-                  setTouchDrag({ active: false, fromSetIdx: null, fromSongIdx: null });
-                }}
               >
                 <div className="reorder-controls">
-                  <div className="drag-handle" title={!isReorderMode ? 'Enable Reorder Mode to drag' : isLocked ? 'Locked - cannot drag' : 'Drag to reorder or move to another set'}>
-                    {isReorderMode && !isLocked ? '⠿' : ''}
-                  </div>
+                  {isReorderMode && !isLocked && (
+                    <div
+                      className="drag-handle"
+                      title="Drag to reorder or move to another set"
+                      onTouchStart={() => onTouchDragStart(setIdx, songIdx, song)}
+                      onTouchMove={(e) => {
+                        if (!dragState || !dragState.active) return;
+                        const t = e.touches[0];
+                        if (!t) return;
+                        const el = document.elementFromPoint(t.clientX, t.clientY);
+                        if (!el) return;
+                        const row = el.closest('[data-song-idx]');
+                        if (row) { onTouchDragOver(Number(row.dataset.setIdx), Number(row.dataset.songIdx)); return; }
+                        const setEl = el.closest('[data-set-idx]');
+                        if (setEl) onTouchDragOver(Number(setEl.dataset.setIdx), null);
+                      }}
+                      onTouchEnd={() => onTouchDrop()}
+                      onTouchCancel={() => onTouchDrop()}
+                    >⠿</div>
+                  )}
                   <div className="mobile-updown" role="group" aria-label={`Reorder ${song.title}`}>
                     <button
                       type="button"
@@ -5963,6 +5990,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     function GigProfileModal({ open, onClose, gigs, onCreateGig, onDeleteGig, onLoadGig, onSaveToGig, onExportGigCSV, onImportCSVToGig, onImportBandHelper, setlists, bandName }) {
       const bhRef = React.useRef(null);
       const [bhAddLib, setBhAddLib] = useState(false);
+      const [pendingImport, setPendingImport] = useState(null);
       const [form, setForm] = useState({
         name: '', venue: '', date: '', notes: '',
         // Venue info fields (common across GigSalad, Sonicbids, Bands in Town, Gigmit, etc.)
@@ -6010,14 +6038,35 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             {/* Import a pre-made setlist (e.g. BandHelper PDF export) as a standalone saved gig */}
             <div style={{ marginBottom: '1rem', padding: '.6rem .7rem', border: '1px dashed var(--accent)', borderRadius: '8px', background: 'rgba(255,107,53,.06)' }}>
               <input ref={bhRef} type="file" accept=".pdf" style={{ display: 'none' }}
-                onChange={e => { const f = e.target.files[0]; if (f) onImportBandHelper(f, bhAddLib); e.target.value = ''; }} />
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '.6rem' }}>
-                <button className="btn btn-small btn-primary" onClick={() => bhRef.current?.click()}>⬆ Import Setlist from PDF</button>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '.35rem', cursor: 'pointer', fontSize: '.78rem', color: 'var(--text-muted)', textTransform: 'none' }}>
-                  <input type="checkbox" checked={bhAddLib} onChange={e => setBhAddLib(e.target.checked)} style={{ width: 'auto' }} />
-                  also add songs to my library
-                </label>
-              </div>
+                onChange={e => { const f = e.target.files[0]; if (f) setPendingImport({ file: f, name: f.name.replace(/\.pdf$/i, '').trim() }); e.target.value = ''; }} />
+              {!pendingImport ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '.6rem' }}>
+                  <button className="btn btn-small btn-primary" onClick={() => bhRef.current?.click()}>⬆ Import Setlist from PDF</button>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '.35rem', cursor: 'pointer', fontSize: '.78rem', color: 'var(--text-muted)', textTransform: 'none' }}>
+                    <input type="checkbox" checked={bhAddLib} onChange={e => setBhAddLib(e.target.checked)} style={{ width: 'auto' }} />
+                    also add songs to my library
+                  </label>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
+                  <div className="input-group" style={{ margin: 0 }}>
+                    <label>Name this setlist</label>
+                    <input autoFocus value={pendingImport.name}
+                      onChange={e => setPendingImport(p => ({ ...p, name: e.target.value }))}
+                      onKeyDown={e => { if (e.key === 'Enter' && pendingImport.name.trim()) { onImportBandHelper(pendingImport.file, bhAddLib, pendingImport.name); setPendingImport(null); } }}
+                      placeholder="e.g. DSJ at Roadkill Grill 3.21" />
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '.6rem' }}>
+                    <button className="btn btn-small btn-primary" disabled={!pendingImport.name.trim()}
+                      onClick={() => { onImportBandHelper(pendingImport.file, bhAddLib, pendingImport.name); setPendingImport(null); }}>Import</button>
+                    <button className="btn btn-small" onClick={() => setPendingImport(null)}>Cancel</button>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '.35rem', cursor: 'pointer', fontSize: '.78rem', color: 'var(--text-muted)', textTransform: 'none' }}>
+                      <input type="checkbox" checked={bhAddLib} onChange={e => setBhAddLib(e.target.checked)} style={{ width: 'auto' }} />
+                      also add songs to my library
+                    </label>
+                  </div>
+                </div>
+              )}
               <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', marginTop: '.4rem' }}>
                 Upload a BandHelper setlist PDF — its Set 1/2/3 are reconstructed and saved here as a gig you can load, annotate, and export. Your song library stays untouched unless you tick the box.
               </div>
@@ -7096,7 +7145,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', secondaryLabel = '', secondaryAction = null, onConfirm, onCancel }) {
       if (!open) return null;
       return (
-        <div className="modal-backdrop" onClick={onCancel}>
+        <div className="modal-backdrop" onClick={onCancel} style={{ zIndex: 1600 }}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3 style={{ marginBottom: '.5rem' }}>{title}</h3>
             <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>{message}</p>
@@ -8524,6 +8573,26 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         handleDragEnd();
       };
 
+      // Touch drag (mobile): the ⠿ handle drives these. They reuse the same
+      // dragState + reorder/move helpers as the desktop HTML5 drag path, so locks
+      // and cross-set moves behave identically.
+      const handleTouchDragStart = (setIdx, songIdx, song) => {
+        setDragState({ active: true, song, fromSetIdx: setIdx, fromSongIdx: songIdx, overSetIdx: setIdx, overSongIdx: songIdx });
+      };
+      const handleTouchDragOver = (setIdx, songIdx) => {
+        setDragState(prev => prev.active ? { ...prev, overSetIdx: setIdx, overSongIdx: songIdx } : prev);
+      };
+      const handleTouchDrop = () => {
+        if (!dragState.active) return;
+        const { fromSetIdx, fromSongIdx, overSetIdx, overSongIdx } = dragState;
+        const sameSpot = overSetIdx === fromSetIdx && overSongIdx === fromSongIdx;
+        if (overSetIdx !== null && overSetIdx !== undefined && !sameSpot) {
+          if (overSetIdx === fromSetIdx) reorderSongWithinSet(fromSetIdx, fromSongIdx, overSongIdx);
+          else moveSongBetweenSets(fromSetIdx, overSetIdx, fromSongIdx, overSongIdx);
+        }
+        handleDragEnd();
+      };
+
       const moveToSetDropdown = (fromSetIdx, songIdx, toSetIdx) => {
         if (fromSetIdx === toSetIdx) return;
         if (!originalSetlists) {
@@ -8780,7 +8849,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       // Import a pre-made BandHelper setlist PDF as a standalone saved gig.
       // Parses Set N (...) sections into setlists; optionally adds new songs to library.
-      const importBandHelperSetlist = async (file, addToLibrary) => {
+      const importBandHelperSetlist = async (file, addToLibrary, customName) => {
         if (!file) return;
         try {
           const arrayBuffer = await file.arrayBuffer();
@@ -8821,7 +8890,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             };
           });
 
-          const gigName = file.name.replace(/\.pdf$/i, '').trim() || 'Imported Setlist';
+          const gigName = (customName && customName.trim()) || file.name.replace(/\.pdf$/i, '').trim() || 'Imported Setlist';
           const newGig = {
             id: genId(), name: gigName, venue: '', date: '', notes: 'Imported from BandHelper PDF',
             setlists: JSON.parse(JSON.stringify(builtSetlists)),
@@ -9213,6 +9282,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       onDropOnSong={handleDropOnSong}
                       onDropOnSet={handleDropOnSet}
                       onMoveToSet={moveToSetDropdown}
+                      onTouchDragStart={handleTouchDragStart}
+                      onTouchDragOver={handleTouchDragOver}
+                      onTouchDrop={handleTouchDrop}
                       dragState={dragState}
                       totalSets={setlists.length}
                       isReorderMode={isReorderMode}

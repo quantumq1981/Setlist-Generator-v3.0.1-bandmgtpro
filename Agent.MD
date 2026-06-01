@@ -555,6 +555,13 @@ SUGGESTED NEXT STEPS
    "Tempo Style" header) still needs validation against an actual exported PDF.
    If columns misalign, tune bhDetectColumns / bhAssignRow against real output.
 
+✅ DONE — Rename-on-import: BandHelper PDF import now has a "Name this setlist"
+   step (pre-filled from filename) before creating the gig.
+✅ DONE — Mobile touch drag-and-drop: ⠿ handle shown in Reorder mode on touch
+   devices drives a real touch drag (touch-action:none on handle, elementFromPoint
+   hit-testing, reuses desktop dragState + reorder/move helpers). Locks + Swap/
+   Balance + up/down arrows unchanged. TODO: edge auto-scroll for very long sets.
+
 1. Per-role CSV columns — Import+Normalize column mapping UI
    Expose the 6 per-role arr columns in the manual column-mapping dropdowns of
    the Import+Normalize modal so users can hand-assign them when header names
