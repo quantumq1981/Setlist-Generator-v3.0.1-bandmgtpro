@@ -776,7 +776,9 @@
       .setlist-song{ grid-template-columns: 18px 26px 1fr 46px 50px; }
     }
     @media (pointer: coarse) {
-      .drag-handle { display: none; }
+      .reorder-controls { flex-direction: column; gap: .4rem; }
+      .drag-handle { min-width: 44px; min-height: 38px; font-size: 1.5rem; border: 1px solid var(--border); border-radius: 8px; background: var(--primary); justify-content: center; }
+      .drag-handle:active, .drag-handle.touch-active { background: var(--accent); color: #fff; border-color: var(--accent); }
       .mobile-updown { display: inline-flex; flex-direction: column; gap: .35rem; }
       .setlist-song { grid-template-columns: 52px 26px 1fr 46px 50px; }
     }
@@ -5190,7 +5192,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onMoveSong, onRemoveSong, onLockEntireSet, onDragStart, onDragEnd, onDragOverSong, onDragOverSet, onDropOnSong, onDropOnSet, onMoveToSet, dragState, totalSets, isReorderMode, touchFallbackEnabled, touchDrag, setTouchDrag, viewMode, advanceRoleFilter }) {
+    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onMoveSong, onRemoveSong, onLockEntireSet, onDragStart, onDragEnd, onDragOverSong, onDragOverSet, onDropOnSong, onDropOnSet, onMoveToSet, onTouchDragStart, onTouchDragOver, onTouchDrop, dragState, totalSets, isReorderMode, touchFallbackEnabled, touchDrag, setTouchDrag, viewMode, advanceRoleFilter }) {
       let runningTime = 0;
       const allLocked = setlist.songs.length > 0 && setlist.songs.every(s => locked.has(`${setIdx}:${s.id}`));
       const isSetDragTarget = dragState && dragState.active && dragState.overSetIdx === setIdx && dragState.fromSetIdx !== setIdx;
@@ -5198,6 +5200,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       return (
         <div
           className={`setlist${isSetDragTarget ? ' drag-target' : ''}`}
+          data-set-idx={setIdx}
           onDragOver={(e) => onDragOverSet(e, setIdx)}
           onDragEnter={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
           onDrop={(e) => onDropOnSet(e, setIdx)}
@@ -5236,27 +5239,36 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               <div
                 key={`${song.id}-${songIdx}`}
                 className={`setlist-song ${isLocked ? 'locked' : ''} ${dragClass}`}
-                draggable={!isLocked && isReorderMode && !touchFallbackEnabled}
+                data-set-idx={setIdx}
+                data-song-idx={songIdx}
+                draggable={!isLocked && isReorderMode}
                 onDragStart={(e) => onDragStart(e, song, setIdx, songIdx)}
                 onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 onDragOver={(e) => onDragOverSong(e, setIdx, songIdx)}
                 onDrop={(e) => onDropOnSong(e, setIdx, songIdx)}
                 onDragEnd={onDragEnd}
-                onTouchStart={() => {
-                  if (!touchFallbackEnabled || !isReorderMode || isLocked) return;
-                  setTouchDrag({ active: true, fromSetIdx: setIdx, fromSongIdx: songIdx });
-                }}
-                onTouchEnd={() => {
-                  if (!touchFallbackEnabled || !touchDrag.active || isLocked) return;
-                  if (touchDrag.fromSetIdx === setIdx) onMoveSong(setIdx, touchDrag.fromSongIdx, songIdx);
-                  else onMoveToSet(touchDrag.fromSetIdx, touchDrag.fromSongIdx, setIdx);
-                  setTouchDrag({ active: false, fromSetIdx: null, fromSongIdx: null });
-                }}
               >
                 <div className="reorder-controls">
-                  <div className="drag-handle" title={!isReorderMode ? 'Enable Reorder Mode to drag' : isLocked ? 'Locked - cannot drag' : 'Drag to reorder or move to another set'}>
-                    {isReorderMode && !isLocked ? '⠿' : ''}
-                  </div>
+                  {isReorderMode && !isLocked && (
+                    <div
+                      className="drag-handle"
+                      title="Drag to reorder or move to another set"
+                      onTouchStart={() => onTouchDragStart(setIdx, songIdx, song)}
+                      onTouchMove={(e) => {
+                        if (!dragState || !dragState.active) return;
+                        const t = e.touches[0];
+                        if (!t) return;
+                        const el = document.elementFromPoint(t.clientX, t.clientY);
+                        if (!el) return;
+                        const row = el.closest('[data-song-idx]');
+                        if (row) { onTouchDragOver(Number(row.dataset.setIdx), Number(row.dataset.songIdx)); return; }
+                        const setEl = el.closest('[data-set-idx]');
+                        if (setEl) onTouchDragOver(Number(setEl.dataset.setIdx), null);
+                      }}
+                      onTouchEnd={() => onTouchDrop()}
+                      onTouchCancel={() => onTouchDrop()}
+                    >⠿</div>
+                  )}
                   <div className="mobile-updown" role="group" aria-label={`Reorder ${song.title}`}>
                     <button
                       type="button"
@@ -8561,6 +8573,26 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         handleDragEnd();
       };
 
+      // Touch drag (mobile): the ⠿ handle drives these. They reuse the same
+      // dragState + reorder/move helpers as the desktop HTML5 drag path, so locks
+      // and cross-set moves behave identically.
+      const handleTouchDragStart = (setIdx, songIdx, song) => {
+        setDragState({ active: true, song, fromSetIdx: setIdx, fromSongIdx: songIdx, overSetIdx: setIdx, overSongIdx: songIdx });
+      };
+      const handleTouchDragOver = (setIdx, songIdx) => {
+        setDragState(prev => prev.active ? { ...prev, overSetIdx: setIdx, overSongIdx: songIdx } : prev);
+      };
+      const handleTouchDrop = () => {
+        if (!dragState.active) return;
+        const { fromSetIdx, fromSongIdx, overSetIdx, overSongIdx } = dragState;
+        const sameSpot = overSetIdx === fromSetIdx && overSongIdx === fromSongIdx;
+        if (overSetIdx !== null && overSetIdx !== undefined && !sameSpot) {
+          if (overSetIdx === fromSetIdx) reorderSongWithinSet(fromSetIdx, fromSongIdx, overSongIdx);
+          else moveSongBetweenSets(fromSetIdx, overSetIdx, fromSongIdx, overSongIdx);
+        }
+        handleDragEnd();
+      };
+
       const moveToSetDropdown = (fromSetIdx, songIdx, toSetIdx) => {
         if (fromSetIdx === toSetIdx) return;
         if (!originalSetlists) {
@@ -9250,6 +9282,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       onDropOnSong={handleDropOnSong}
                       onDropOnSet={handleDropOnSet}
                       onMoveToSet={moveToSetDropdown}
+                      onTouchDragStart={handleTouchDragStart}
+                      onTouchDragOver={handleTouchDragOver}
+                      onTouchDrop={handleTouchDrop}
                       dragState={dragState}
                       totalSets={setlists.length}
                       isReorderMode={isReorderMode}
