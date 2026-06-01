@@ -5978,6 +5978,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     function GigProfileModal({ open, onClose, gigs, onCreateGig, onDeleteGig, onLoadGig, onSaveToGig, onExportGigCSV, onImportCSVToGig, onImportBandHelper, setlists, bandName }) {
       const bhRef = React.useRef(null);
       const [bhAddLib, setBhAddLib] = useState(false);
+      const [pendingImport, setPendingImport] = useState(null);
       const [form, setForm] = useState({
         name: '', venue: '', date: '', notes: '',
         // Venue info fields (common across GigSalad, Sonicbids, Bands in Town, Gigmit, etc.)
@@ -6025,14 +6026,35 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             {/* Import a pre-made setlist (e.g. BandHelper PDF export) as a standalone saved gig */}
             <div style={{ marginBottom: '1rem', padding: '.6rem .7rem', border: '1px dashed var(--accent)', borderRadius: '8px', background: 'rgba(255,107,53,.06)' }}>
               <input ref={bhRef} type="file" accept=".pdf" style={{ display: 'none' }}
-                onChange={e => { const f = e.target.files[0]; if (f) onImportBandHelper(f, bhAddLib); e.target.value = ''; }} />
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '.6rem' }}>
-                <button className="btn btn-small btn-primary" onClick={() => bhRef.current?.click()}>⬆ Import Setlist from PDF</button>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '.35rem', cursor: 'pointer', fontSize: '.78rem', color: 'var(--text-muted)', textTransform: 'none' }}>
-                  <input type="checkbox" checked={bhAddLib} onChange={e => setBhAddLib(e.target.checked)} style={{ width: 'auto' }} />
-                  also add songs to my library
-                </label>
-              </div>
+                onChange={e => { const f = e.target.files[0]; if (f) setPendingImport({ file: f, name: f.name.replace(/\.pdf$/i, '').trim() }); e.target.value = ''; }} />
+              {!pendingImport ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '.6rem' }}>
+                  <button className="btn btn-small btn-primary" onClick={() => bhRef.current?.click()}>⬆ Import Setlist from PDF</button>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '.35rem', cursor: 'pointer', fontSize: '.78rem', color: 'var(--text-muted)', textTransform: 'none' }}>
+                    <input type="checkbox" checked={bhAddLib} onChange={e => setBhAddLib(e.target.checked)} style={{ width: 'auto' }} />
+                    also add songs to my library
+                  </label>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
+                  <div className="input-group" style={{ margin: 0 }}>
+                    <label>Name this setlist</label>
+                    <input autoFocus value={pendingImport.name}
+                      onChange={e => setPendingImport(p => ({ ...p, name: e.target.value }))}
+                      onKeyDown={e => { if (e.key === 'Enter' && pendingImport.name.trim()) { onImportBandHelper(pendingImport.file, bhAddLib, pendingImport.name); setPendingImport(null); } }}
+                      placeholder="e.g. DSJ at Roadkill Grill 3.21" />
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '.6rem' }}>
+                    <button className="btn btn-small btn-primary" disabled={!pendingImport.name.trim()}
+                      onClick={() => { onImportBandHelper(pendingImport.file, bhAddLib, pendingImport.name); setPendingImport(null); }}>Import</button>
+                    <button className="btn btn-small" onClick={() => setPendingImport(null)}>Cancel</button>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '.35rem', cursor: 'pointer', fontSize: '.78rem', color: 'var(--text-muted)', textTransform: 'none' }}>
+                      <input type="checkbox" checked={bhAddLib} onChange={e => setBhAddLib(e.target.checked)} style={{ width: 'auto' }} />
+                      also add songs to my library
+                    </label>
+                  </div>
+                </div>
+              )}
               <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', marginTop: '.4rem' }}>
                 Upload a BandHelper setlist PDF — its Set 1/2/3 are reconstructed and saved here as a gig you can load, annotate, and export. Your song library stays untouched unless you tick the box.
               </div>
@@ -8795,7 +8817,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       // Import a pre-made BandHelper setlist PDF as a standalone saved gig.
       // Parses Set N (...) sections into setlists; optionally adds new songs to library.
-      const importBandHelperSetlist = async (file, addToLibrary) => {
+      const importBandHelperSetlist = async (file, addToLibrary, customName) => {
         if (!file) return;
         try {
           const arrayBuffer = await file.arrayBuffer();
@@ -8836,7 +8858,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             };
           });
 
-          const gigName = file.name.replace(/\.pdf$/i, '').trim() || 'Imported Setlist';
+          const gigName = (customName && customName.trim()) || file.name.replace(/\.pdf$/i, '').trim() || 'Imported Setlist';
           const newGig = {
             id: genId(), name: gigName, venue: '', date: '', notes: 'Imported from BandHelper PDF',
             setlists: JSON.parse(JSON.stringify(builtSetlists)),
