@@ -777,7 +777,7 @@
     }
     @media (pointer: coarse) {
       .reorder-controls { flex-direction: column; gap: .4rem; }
-      .drag-handle { min-width: 44px; min-height: 38px; font-size: 1.5rem; border: 1px solid var(--border); border-radius: 8px; background: var(--primary); justify-content: center; }
+      .drag-handle { min-width: 46px; min-height: 52px; font-size: 1.7rem; border: 1px solid var(--accent); border-radius: 8px; background: rgba(255,107,53,.12); color: var(--accent); justify-content: center; }
       .drag-handle:active, .drag-handle.touch-active { background: var(--accent); color: #fff; border-color: var(--accent); }
       .mobile-updown { display: inline-flex; flex-direction: column; gap: .35rem; }
       .setlist-song { grid-template-columns: 52px 26px 1fr 46px 50px; }
@@ -5253,7 +5253,21 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     <div
                       className="drag-handle"
                       title="Drag to reorder or move to another set"
-                      onTouchStart={() => onTouchDragStart(setIdx, songIdx, song)}
+                      onTouchStart={() => {
+                        onTouchDragStart(setIdx, songIdx, song);
+                        // Block page scroll for the duration of this drag. React's own
+                        // touchmove listener is passive, so touch-action alone can't stop
+                        // iOS from scrolling — attach a non-passive blocker synchronously.
+                        const prevent = (ev) => ev.preventDefault();
+                        const cleanup = () => {
+                          document.removeEventListener('touchmove', prevent, { passive: false });
+                          document.removeEventListener('touchend', cleanup);
+                          document.removeEventListener('touchcancel', cleanup);
+                        };
+                        document.addEventListener('touchmove', prevent, { passive: false });
+                        document.addEventListener('touchend', cleanup);
+                        document.addEventListener('touchcancel', cleanup);
+                      }}
                       onTouchMove={(e) => {
                         if (!dragState || !dragState.active) return;
                         const t = e.touches[0];
