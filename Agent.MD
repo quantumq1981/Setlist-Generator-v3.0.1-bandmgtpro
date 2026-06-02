@@ -562,6 +562,18 @@ SUGGESTED NEXT STEPS
    hit-testing, reuses desktop dragState + reorder/move helpers). Locks + Swap/
    Balance + up/down arrows unchanged. TODO: edge auto-scroll for very long sets.
 
+✅ DONE — EPK generator: PDF (jsPDF) + designed Web EPK (HTML, dark/red/gold,
+   2-page buyer-facing layout) with logo, hero photo, self-contained QR, and a
+   .html download to host as {{epk_link}}. Editor in Venue modal → EPK & Templates.
+✅ DONE — Outreach wiring: 'Venue-Tailored Pitch' template + suggestForVenue()
+   (VENUE_TUNING maps venue type → vibe + genre keywords, scores the library by
+   keyword/energy fit). fillAndSend resolves {{tailored_pitch}}, {{suggested_songs}},
+   {{venue_type}}, {{epk_link}}, {{demo_link}}, {{linktree}}, {{genres}}, {{best_for}}.
+
+✅ DONE — Vegas sub/dep roster (🎸 Roster, RosterModal): per-band roster with
+   instruments, availability, rate, vocals, known songs; coverage matching shows
+   'covers X/N' of the current setlists per sub. LS key bandRoster.
+
 1. Per-role CSV columns — Import+Normalize column mapping UI
    Expose the 6 per-role arr columns in the manual column-mapping dropdowns of
    the Import+Normalize modal so users can hand-assign them when header names
