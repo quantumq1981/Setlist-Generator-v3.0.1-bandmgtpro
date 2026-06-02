@@ -995,8 +995,9 @@
     };
 
     const EPK_SETTINGS_DEFAULT = {
-      epkUrl: '', demoVideoUrl: '', pressPhotoUrl: '',
+      epkUrl: '', demoVideoUrl: '', pressPhotoUrl: '', pressPhotoData: '',
       website: '', contactEmail: '', contactPhone: '',
+      tagline: '', bio: '', members: '', genres: '', formats: '', location: '', linktree: '',
       templates: EMAIL_TEMPLATES_DEFAULT
     };
 
@@ -6497,7 +6498,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     /******************* VENUE MODAL *******************/
     function VenueModal({ open, onClose, venues, bookings, setlists, epkSettings,
       onSaveEpkSettings, onAddVenue, onUpdateVenue, onDeleteVenue,
-      onAddBooking, onUpdateBooking, onDeleteBooking, bandName, showToast, onBulkAddVenues }) {
+      onAddBooking, onUpdateBooking, onDeleteBooking, bandName, showToast, onBulkAddVenues, onGenerateEPK }) {
       const [vTab, setVTab] = useState('venues');
       const [venueForm, setVenueForm] = useState(null);
       const [editVenueId, setEditVenueId] = useState(null);
@@ -6510,6 +6511,28 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [tplKey, setTplKey] = useState('outreach');
       const [epkDirty, setEpkDirty] = useState(false);
       const venueCsvRef = React.useRef(null);
+      const epkPhotoRef = React.useRef(null);
+
+      // Downscale an uploaded press photo to a localStorage-friendly JPEG data URL.
+      const handleEpkPhotoUpload = (file) => {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          const img = new Image();
+          img.onload = () => {
+            const max = 600;
+            let w = img.width, h = img.height;
+            if (w > max) { h = Math.round(h * max / w); w = max; }
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            setLocalEpk(prev => ({ ...prev, pressPhotoData: canvas.toDataURL('image/jpeg', 0.85) }));
+            setEpkDirty(true);
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      };
 
       useEffect(() => { setLocalEpk(epkSettings); setEpkDirty(false); }, [open]);
       if (!open) return null;
@@ -7099,6 +7122,35 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         return (
           <div>
             <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: '.75rem', marginBottom: '.75rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.5rem' }}>
+                <div style={{ fontWeight: 700, fontSize: '.85rem' }}>EPK Profile</div>
+                <button className="btn btn-small btn-primary" onClick={() => onGenerateEPK(localEpk)} title="Generate a PDF press kit from this profile + your repertoire">📄 Generate EPK PDF</button>
+              </div>
+              <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', marginBottom: '.6rem' }}>
+                Fills a one-click press kit (PDF) with your bio, members, repertoire and a sample set. Generate uses your current edits — hit Save Settings to keep them.
+              </div>
+              <div className="input-group"><label>Tagline</label><input value={localEpk.tagline || ''} onChange={e => upd('tagline', e.target.value)} placeholder="e.g. Las Vegas' premier classic rock & soul show band" /></div>
+              <div className="input-group"><label>Bio</label><textarea value={localEpk.bio || ''} onChange={e => upd('bio', e.target.value)} rows={4} placeholder="Short artist bio for venues and press..." style={{ resize: 'vertical' }} /></div>
+              <div className="input-group"><label>Members (one per line, e.g. "Chris Zemba — Guitar/Vocals")</label><textarea value={localEpk.members || ''} onChange={e => upd('members', e.target.value)} rows={3} style={{ resize: 'vertical' }} /></div>
+              <div className="set-config">
+                <div className="input-group"><label>Genres</label><input value={localEpk.genres || ''} onChange={e => upd('genres', e.target.value)} placeholder="Classic Rock, Blues, Soul, R&B, Funk, Country" /></div>
+                <div className="input-group"><label>Formats</label><input value={localEpk.formats || ''} onChange={e => upd('formats', e.target.value)} placeholder="Solo acoustic, Duo, Trio, Full band" /></div>
+              </div>
+              <div className="set-config">
+                <div className="input-group"><label>Location</label><input value={localEpk.location || ''} onChange={e => upd('location', e.target.value)} placeholder="Las Vegas, NV" /></div>
+                <div className="input-group"><label>Linktree / Hub</label><input value={localEpk.linktree || ''} onChange={e => upd('linktree', e.target.value)} placeholder="linktr.ee/chriszemba" /></div>
+              </div>
+              <div className="input-group">
+                <label>Press Photo</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
+                  {localEpk.pressPhotoData && <img src={localEpk.pressPhotoData} alt="Press" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)' }} />}
+                  <input ref={epkPhotoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { handleEpkPhotoUpload(e.target.files[0]); e.target.value = ''; }} />
+                  <button className="btn btn-small" onClick={() => epkPhotoRef.current?.click()}>{localEpk.pressPhotoData ? 'Replace Photo' : 'Upload Photo'}</button>
+                  {localEpk.pressPhotoData && <button className="btn btn-small" onClick={() => { upd('pressPhotoData', ''); }}>Remove</button>}
+                </div>
+              </div>
+            </div>
+            <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: '.75rem', marginBottom: '.75rem' }}>
               <div style={{ fontWeight: 700, fontSize: '.85rem', marginBottom: '.5rem' }}>EPK &amp; Contact Links</div>
               <div className="set-config">
                 <div className="input-group"><label>EPK URL</label><input value={localEpk.epkUrl || ''} onChange={e => upd('epkUrl', e.target.value)} placeholder="https://your-epk.com" /></div>
@@ -7433,6 +7485,99 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const updateBooking = (b) => { setBookings(prev => prev.map(x => x.id === b.id ? b : x)); showToast('Booking updated', 'success'); };
       const deleteBooking = (id) => { setBookings(prev => prev.filter(x => x.id !== id)); showToast('Booking removed', 'success'); };
       const saveEpkSettings = (s) => { setEpkSettingsState(s); LS.set(LS_KEYS.epkSettings, s); };
+
+      // Generate a polished EPK (electronic press kit) PDF from band data + EPK settings.
+      const generateEPKPDF = (epk) => {
+        const e = epk || epkSettings;
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
+        const margin = 48;
+        const contentW = pageW - margin * 2;
+        const ACCENT = [61, 79, 95], MUTED = [120, 120, 120], TEXT = [30, 30, 30];
+        const bn = (activeBand?.name || 'Band');
+        let y = margin;
+
+        // Optional press photo, top-right
+        let headerW = contentW;
+        const photo = e.pressPhotoData && /^data:image\//.test(e.pressPhotoData) ? e.pressPhotoData : '';
+        if (photo) {
+          try {
+            const fmt = /image\/png/.test(photo) ? 'PNG' : 'JPEG';
+            doc.addImage(photo, fmt, margin + contentW - 120, y, 120, 120);
+            headerW = contentW - 134;
+          } catch (_) {}
+        }
+
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(28); doc.setTextColor(...TEXT);
+        const nameLines = doc.splitTextToSize(bn.toUpperCase(), headerW);
+        doc.text(nameLines, margin, y + 22);
+        let hy = y + 22 + (nameLines.length - 1) * 26;
+        if (e.tagline) { doc.setFont('helvetica', 'italic'); doc.setFontSize(11); doc.setTextColor(...ACCENT); const tl = doc.splitTextToSize(e.tagline, headerW); doc.text(tl, margin, hy + 18); hy += 18 + (tl.length - 1) * 14; }
+        if (e.location) { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...MUTED); doc.text(e.location, margin, hy + 16); hy += 16; }
+        y = Math.max(hy, photo ? margin + 120 : 0) + 16;
+
+        doc.setDrawColor(...ACCENT); doc.setLineWidth(2); doc.line(margin, y, margin + contentW, y); y += 18;
+
+        const ensure = (h) => { if (y > pageH - margin - h) { doc.addPage(); y = margin; } };
+        const sectionHeader = (label) => { ensure(46); doc.setFillColor(...ACCENT); doc.rect(margin, y, contentW, 20, 'F'); doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(255, 255, 255); doc.text(label, margin + 8, y + 13); y += 26; doc.setTextColor(...TEXT); };
+        const paragraph = (text) => { doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...TEXT); doc.splitTextToSize(String(text), contentW).forEach(ln => { ensure(14); doc.text(ln, margin, y); y += 14; }); };
+        const kv = (label, val) => { if (!val) return; ensure(15); doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...MUTED); doc.text(label.toUpperCase(), margin, y); doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...TEXT); const lines = doc.splitTextToSize(String(val), contentW - 84); doc.text(lines, margin + 84, y); y += Math.max(lines.length * 13, 15); };
+
+        if (e.bio) { sectionHeader('ABOUT'); paragraph(e.bio); y += 8; }
+
+        if (e.members && e.members.trim()) {
+          sectionHeader('THE BAND');
+          e.members.split(/\n+/).map(s => s.trim()).filter(Boolean).forEach(m => { ensure(15); doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...TEXT); doc.text('•  ' + m, margin, y); y += 15; });
+          y += 8;
+        }
+
+        if (e.genres || e.formats) { sectionHeader('MUSIC'); kv('Genres', e.genres); kv('Formats', e.formats); y += 8; }
+
+        // Repertoire — two-column song list with page flow
+        const active = (songs || []).filter(s => s.status !== 'inactive' && s.title);
+        if (active.length) {
+          const totalMin = Math.round(active.reduce((s, x) => s + (Number(parseDuration(x.duration)) || 0), 0));
+          sectionHeader(`REPERTOIRE — ${active.length} SONGS · ~${totalMin} MIN`);
+          const sorted = [...active].sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+          const gap = 18, colW = (contentW - gap) / 2, colX = [margin, margin + colW + gap], lineH = 12;
+          let col = 0, cy = y, colTop = y;
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...TEXT);
+          const bottom = pageH - margin;
+          sorted.forEach(s => {
+            if (cy + lineH > bottom) {
+              if (col === 0) { col = 1; cy = colTop; }
+              else { doc.addPage(); col = 0; colTop = margin; cy = margin; doc.setFontSize(8.5); doc.setTextColor(...TEXT); }
+            }
+            const label = (s.title || '') + (s.artist ? '  —  ' + s.artist : '');
+            doc.text(doc.splitTextToSize(label, colW)[0], colX[col], cy);
+            cy += lineH;
+          });
+          y = (col === 1 ? Math.max(cy, colTop) : cy) + 12;
+        }
+
+        // Sample set
+        const sampleSet = (setlists || []).find(st => st.songs && st.songs.length);
+        if (sampleSet) {
+          sectionHeader(`SAMPLE SET — ${(sampleSet.name || 'SET').toUpperCase()}`);
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...TEXT);
+          sampleSet.songs.forEach((s, i) => { ensure(13); doc.text(`${String(i + 1).padStart(2, ' ')}.  ${(s.title || '')}${s.artist ? '  —  ' + s.artist : ''}`, margin, y); y += 13; });
+          y += 8;
+        }
+
+        sectionHeader('BOOKING & LINKS');
+        kv('Email', e.contactEmail);
+        kv('Phone', e.contactPhone);
+        kv('Linktree', e.linktree);
+        kv('Website', e.website);
+        kv('Video', e.demoVideoUrl);
+        kv('EPK', e.epkUrl);
+
+        const slug = bn.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase().replace(/^-|-$/g, '') || 'band';
+        doc.save(`epk-${slug}.pdf`);
+        showToast('EPK PDF generated', 'success');
+      };
 
       // PHASE 2: Build lock plan from current setlists
       const buildLockPlanFromCurrentSetlists = () => {
@@ -9381,6 +9526,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               onUpdateBooking={updateBooking}
               onDeleteBooking={deleteBooking}
               onBulkAddVenues={bulkAddVenues}
+              onGenerateEPK={generateEPKPDF}
               bandName={activeBand?.name || 'Band'}
               showToast={showToast}
             />
