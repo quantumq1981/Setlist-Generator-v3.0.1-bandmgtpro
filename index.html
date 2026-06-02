@@ -6509,7 +6509,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     /******************* VENUE MODAL *******************/
     function VenueModal({ open, onClose, venues, bookings, setlists, epkSettings,
       onSaveEpkSettings, onAddVenue, onUpdateVenue, onDeleteVenue,
-      onAddBooking, onUpdateBooking, onDeleteBooking, bandName, showToast, onBulkAddVenues, onGenerateEPK }) {
+      onAddBooking, onUpdateBooking, onDeleteBooking, bandName, showToast, onBulkAddVenues, onGenerateEPK, onGenerateEPKHtml }) {
       const [vTab, setVTab] = useState('venues');
       const [venueForm, setVenueForm] = useState(null);
       const [editVenueId, setEditVenueId] = useState(null);
@@ -7139,7 +7139,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <div style={{ fontWeight: 700, fontSize: '.85rem' }}>EPK Profile</div>
                 <div style={{ display: 'flex', gap: '.4rem' }}>
                   {epkDirty && <button className="btn btn-small" onClick={() => { onSaveEpkSettings(localEpk); setEpkDirty(false); showToast('Settings saved', 'success'); }}>Save</button>}
-                  <button className="btn btn-small btn-primary" onClick={() => onGenerateEPK(localEpk)} title="Generate a press-kit PDF from this profile + your repertoire">📄 Generate EPK PDF</button>
+                  <button className="btn btn-small btn-primary" onClick={() => onGenerateEPKHtml(localEpk)} title="Open a designed web EPK — Print/Save as PDF, or host it as your shareable link">🌐 Web EPK</button>
+                  <button className="btn btn-small" onClick={() => onGenerateEPK(localEpk)} title="Quick one-click PDF press kit">📄 PDF</button>
                 </div>
               </div>
               <div style={hint}>A professional press kit (PDF) built from these fields + your live repertoire and a sample set. Generate uses current edits — Save to keep them.</div>
@@ -7699,6 +7700,135 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const slug = bn.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase().replace(/^-|-$/g, '') || 'band';
         doc.save(`epk-${slug}.pdf`);
         showToast('EPK PDF generated', 'success');
+      };
+
+      // Generate a designed, print-ready Web EPK (standalone HTML) matching the
+      // dark/crimson card layout. Opens in a new tab; Print -> Save as PDF for the
+      // pixel-perfect PDF, or host the .html for a live shareable link.
+      const generateEPKHtml = (epk) => {
+        const e = epk || epkSettings;
+        const bn = activeBand?.name || 'Band';
+        const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const href = (u) => /^https?:\/\//i.test(u) ? u : 'https://' + u;
+        const pairs = (t) => String(t || '').split(/\n+/).map(l => l.trim()).filter(Boolean).map(l => { const i = l.indexOf('|'); return i < 0 ? { a: l, b: '' } : { a: l.slice(0, i).trim(), b: l.slice(i + 1).trim() }; });
+        const paras = (t) => String(t || '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+
+        const active = (songs || []).filter(s => s.status !== 'inactive' && s.title).sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+        const totalMin = Math.round(active.reduce((s, x) => s + (Number(parseDuration(x.duration)) || 0), 0));
+        const sampleSet = (setlists || []).find(st => st.songs && st.songs.length);
+
+        const lineup = String(e.members || '').split(/\n+/).map(s => s.trim()).filter(Boolean).map(m => { const parts = m.split(/\s+[—\-|]\s+/); return parts.length > 1 ? `<strong>${esc(parts[0])}</strong> (${esc(parts.slice(1).join(' '))})` : `<strong>${esc(m)}</strong>`; }).join(', ');
+
+        const glance = [];
+        if (e.genres) glance.push(['Genres', esc(e.genres)]);
+        if (lineup) glance.push(['Lineup', lineup]);
+        if (e.formats) glance.push(['Formats', esc(e.formats)]);
+        if (e.targetAudience) glance.push(['Best For', esc(e.targetAudience)]);
+        if (e.milestone) glance.push(['Milestone', esc(e.milestone)]);
+
+        const media = [];
+        if (e.demoVideoUrl) media.push(`<a class="asset" href="${esc(href(e.demoVideoUrl))}" target="_blank"><span class="tag">[WATCH]</span> Live Video Reel</a>`);
+        if (e.galleryUrl) media.push(`<a class="asset" href="${esc(href(e.galleryUrl))}" target="_blank"><span class="tag">[DOWNLOAD]</span> Hi-Res Press Photos</a>`);
+        pairs(e.audioLinks).forEach(p => { if (p.b || p.a) media.push(`<a class="asset" href="${esc(href(p.b || p.a))}" target="_blank"><span class="tag">[LISTEN]</span> ${esc(p.a || 'Audio')}</a>`); });
+
+        const quotes = pairs(e.testimonials).map(p => `<div class="quote"><p>&ldquo;${esc(p.a)}&rdquo;</p>${p.b ? `<div class="cite">&mdash; ${esc(p.b)}</div>` : ''}</div>`).join('');
+
+        const tiles = pairs(e.stats).map(p => ({ num: p.b || p.a, lab: p.b ? p.a : '' }));
+        if (e.demographics) tiles.push({ num: e.demographics, lab: 'Core Demographics' });
+        const tilesHtml = tiles.map(t => `<div class="stat"><div class="num">${esc(t.num)}</div><div class="lab">${esc(t.lab)}</div></div>`).join('');
+
+        const rep = active.map(s => `<div class="song"><strong>${esc(s.title)}</strong>${s.artist ? ` <span>(${esc(s.artist)})</span>` : ''}</div>`).join('');
+        const sample = sampleSet ? sampleSet.songs.map(s => `<li><strong>${esc(s.title)}</strong>${s.artist ? ` <span>&mdash; ${esc(s.artist)}</span>` : ''}</li>`).join('') : '';
+
+        const logistics = [];
+        if (e.techRiderUrl) logistics.push(`<a class="asset" href="${esc(href(e.techRiderUrl))}" target="_blank"><span class="tag">[DOWNLOAD]</span> Tech Rider &amp; Stage Plot (PDF)</a>`);
+        if (e.hospitalityRiderUrl) logistics.push(`<a class="asset" href="${esc(href(e.hospitalityRiderUrl))}" target="_blank"><span class="tag">[DOWNLOAD]</span> Hospitality Guidelines (PDF)</a>`);
+        const socialLinks = pairs(e.socials).map(p => `<a href="${esc(href(p.b || p.a))}" target="_blank">${esc(p.a)}</a>`).join(' &nbsp;·&nbsp; ');
+
+        const metaLine = [e.actType ? `Formats: <span>${esc(e.actType)}</span>` : '', e.location ? `Base: <span>${esc(e.location)}</span>` : ''].filter(Boolean).join(' &nbsp;|&nbsp; ');
+        const photo = e.pressPhotoData && /^data:image\//.test(e.pressPhotoData) ? e.pressPhotoData : '';
+
+        const css = `:root{--bg:#121418;--card:#1b1e26;--bd:rgba(255,255,255,.08);--accent:#ff4a5a;--tx:#f3f4f7;--mut:#9aa0ab;}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.page{max-width:8.5in;margin:0 auto;padding:.55in .6in;}
+.break{page-break-before:always;}
+h1{font-size:46px;font-weight:800;letter-spacing:-1px;margin:0;line-height:1.02;}
+.tagline{color:var(--accent);text-transform:uppercase;letter-spacing:2px;font-weight:700;font-size:16px;margin-top:8px;}
+.meta{color:var(--mut);font-size:13px;margin-top:8px;}.meta span{color:var(--tx);}
+.hero{width:100%;max-height:230px;object-fit:cover;border-radius:10px;border:1px solid var(--bd);margin-top:16px;}
+.rule{height:2px;background:var(--accent);margin:16px 0 22px;border-radius:2px;}
+h2{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;margin:0 0 12px;color:#fff;}
+.bar{display:inline-block;width:4px;height:20px;background:var(--accent);border-radius:2px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-bottom:26px;}
+section p{font-size:12.5px;line-height:1.6;color:#d7dade;margin:0 0 10px;}
+p.lead{color:#fff;font-weight:600;}
+.muted{color:var(--mut);font-size:12px;}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px 16px;}
+.glance .grow{display:grid;grid-template-columns:92px 1fr;gap:10px;padding:9px 0;border-bottom:1px solid var(--bd);font-size:12px;}
+.glance .grow:last-child{border-bottom:none;}
+.glance .gl{color:var(--mut);text-transform:uppercase;font-weight:700;letter-spacing:.5px;font-size:11px;}
+.glance .gv{color:#e9eaee;}.glance .gv strong{color:#fff;}
+.asset{display:block;background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:11px 14px;margin-bottom:9px;color:#e9eaee;text-decoration:none;font-size:12.5px;}
+.asset .tag{color:var(--accent);font-weight:800;margin-right:6px;letter-spacing:.5px;}
+.quote{border-left:3px solid var(--accent);background:var(--card);border-radius:0 8px 8px 0;padding:12px 14px;margin-bottom:12px;}
+.quote p{font-style:italic;color:#e9eaee;margin:0;font-size:12.5px;line-height:1.5;}
+.quote .cite{color:var(--accent);font-style:italic;text-transform:uppercase;font-size:11px;font-weight:700;text-align:right;margin-top:6px;}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:6px;}
+.stat{background:var(--card);border:1px solid var(--bd);border-top:2px solid var(--accent);border-radius:8px;padding:14px;text-align:center;}
+.stat .num{font-size:23px;font-weight:800;color:#fff;}
+.stat .lab{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin-top:4px;}
+.sub{color:var(--mut);font-size:12px;margin:-4px 0 12px;}
+.reps{column-count:2;column-gap:30px;}
+.song{break-inside:avoid;font-size:12px;padding:5px 0;color:var(--mut);}
+.song strong{color:#fff;font-weight:600;}
+.setlist{margin:0;padding-left:20px;}.setlist li{font-size:12.5px;padding:4px 0;color:var(--mut);}.setlist strong{color:#fff;}
+.booking{border:1px solid var(--accent);text-align:center;margin-top:12px;}
+.booking .bh{color:var(--accent);font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;font-size:13px;}
+.booking div{font-size:12.5px;margin:3px 0;color:#e9eaee;}.booking a{color:var(--accent);text-decoration:none;}.booking b{color:#fff;}
+.soc{margin-top:6px;}
+.news{font-size:12px;color:var(--mut);font-style:italic;margin-top:8px;}
+footer{color:#6a6f79;font-size:10px;text-align:right;margin-top:20px;}
+.printbtn{position:fixed;right:18px;bottom:18px;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.5);}
+@media print{.no-print{display:none!important;}.page{padding:.4in .5in;max-width:none;}@page{size:letter;margin:0;}}`;
+
+        const body = `<div class="page">
+<header>
+<h1>${esc(bn)}</h1>
+${e.tagline ? `<div class="tagline">${esc(e.tagline)}</div>` : ''}
+${metaLine ? `<div class="meta">${metaLine}</div>` : ''}
+${photo ? `<img class="hero" src="${photo}" alt="">` : ''}
+<div class="rule"></div>
+</header>
+<div class="grid2">
+<section><h2><span class="bar"></span>⚡ THE ACT</h2>${e.elevatorPitch ? `<p class="lead">${esc(e.elevatorPitch)}</p>` : ''}${paras(e.bio).map(p => `<p>${esc(p)}</p>`).join('')}</section>
+<section><h2><span class="bar"></span>📊 AT A GLANCE</h2><div class="card glance">${glance.map(g => `<div class="grow"><div class="gl">${g[0]}</div><div class="gv">${g[1]}</div></div>`).join('') || '<div class="muted">—</div>'}</div></section>
+</div>
+<div class="grid2">
+<section><h2><span class="bar"></span>🎵 MEDIA &amp; PROMO ASSETS</h2>${media.join('') || '<div class="muted">—</div>'}</section>
+<section><h2><span class="bar"></span>📈 MARKET PROOF &amp; PRESS</h2>${quotes || '<div class="muted">—</div>'}</section>
+</div>
+${tilesHtml ? `<div class="stats">${tilesHtml}</div>` : ''}
+<footer>${esc(bn)} &middot; Electronic Press Kit</footer>
+</div>
+<div class="page break">
+<section><h2><span class="bar"></span>🎸 REPERTOIRE MASTERLIST (${active.length} SONGS &middot; ${totalMin} MINS)</h2><div class="sub">A high-density, multi-genre catalog optimized for continuous room retention and dance-floor momentum.</div><div class="card reps">${rep || '<div class="muted">No songs in library.</div>'}</div></section>
+<div class="grid2">
+<section><h2><span class="bar"></span>📋 SAMPLE SHOWCASE SET${sampleSet ? ` (${esc(sampleSet.name)})` : ''}</h2>${sample ? `<ol class="setlist">${sample}</ol>` : '<div class="muted">Generate a setlist to feature one here.</div>'}</section>
+<section><h2><span class="bar"></span>🛠 TECHNICAL SPECS &amp; LOGISTICS</h2>${logistics.join('') || '<div class="muted">Tech &amp; hospitality riders available on request.</div>'}${e.pressNews ? `<p class="news">${esc(e.pressNews)}</p>` : ''}
+<div class="card booking"><div class="bh">📅 BOOKING &amp; RELATIONS</div>${e.contactEmail ? `<div><b>Direct:</b> <a href="mailto:${esc(e.contactEmail)}">${esc(e.contactEmail)}</a></div>` : ''}${e.contactPhone ? `<div><b>Phone:</b> ${esc(e.contactPhone)}</div>` : ''}${e.pressEmail ? `<div><b>Press/PR:</b> <a href="mailto:${esc(e.pressEmail)}">${esc(e.pressEmail)}</a></div>` : ''}${(e.website || e.linktree) ? `<div><b>Web:</b> ${[e.website, e.linktree].filter(Boolean).map(u => `<a href="${esc(href(u))}" target="_blank">${esc(u)}</a>`).join(' &nbsp;|&nbsp; ')}</div>` : ''}${socialLinks ? `<div class="soc">${socialLinks}</div>` : ''}</div>
+</section>
+</div>
+<footer>${esc(bn)} &middot; Page 2</footer>
+</div>
+<button class="printbtn no-print" onclick="window.print()">🖨 Print / Save as PDF</button>`;
+
+        const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(bn)} — EPK</title><style>${css}</style></head><body>${body}</body></html>`;
+
+        const w = window.open('', '_blank');
+        if (!w) { showToast('Allow pop-ups to open the Web EPK', 'warning'); return; }
+        w.document.open(); w.document.write(html); w.document.close();
+        showToast('Web EPK opened — use Print / Save as PDF', 'success');
       };
 
       // PHASE 2: Build lock plan from current setlists
@@ -9649,6 +9779,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               onDeleteBooking={deleteBooking}
               onBulkAddVenues={bulkAddVenues}
               onGenerateEPK={generateEPKPDF}
+              onGenerateEPKHtml={generateEPKHtml}
               bandName={activeBand?.name || 'Band'}
               showToast={showToast}
             />
