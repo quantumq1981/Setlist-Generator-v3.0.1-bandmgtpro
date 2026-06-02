@@ -999,7 +999,7 @@
       tagline: '', actType: '', elevatorPitch: '', bio: '',
       location: '', targetAudience: '', milestone: '', showFeel: '', buyerConfidence: '',
       members: '', genres: '', formats: '',
-      pressPhotoData: '', pressPhotoUrl: '',
+      pressPhotoData: '', pressPhotoUrl: '', logoData: '',
       // 2 — Media assets
       demoVideoUrl: '', audioLinks: '', galleryUrl: '',
       // 3 — Social proof & numbers
@@ -6509,7 +6509,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     /******************* VENUE MODAL *******************/
     function VenueModal({ open, onClose, venues, bookings, setlists, epkSettings,
       onSaveEpkSettings, onAddVenue, onUpdateVenue, onDeleteVenue,
-      onAddBooking, onUpdateBooking, onDeleteBooking, bandName, showToast, onBulkAddVenues, onGenerateEPK, onGenerateEPKHtml }) {
+      onAddBooking, onUpdateBooking, onDeleteBooking, bandName, showToast, onBulkAddVenues, onGenerateEPK, onGenerateEPKHtml, onDownloadEPKHtml }) {
       const [vTab, setVTab] = useState('venues');
       const [venueForm, setVenueForm] = useState(null);
       const [editVenueId, setEditVenueId] = useState(null);
@@ -6538,6 +6538,29 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             canvas.width = w; canvas.height = h;
             canvas.getContext('2d').drawImage(img, 0, 0, w, h);
             setLocalEpk(prev => ({ ...prev, pressPhotoData: canvas.toDataURL('image/jpeg', 0.82) }));
+            setEpkDirty(true);
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      };
+
+      const epkLogoRef = React.useRef(null);
+      // Logo: keep PNG (preserve transparency), capped small for localStorage.
+      const handleEpkLogoUpload = (file) => {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          const img = new Image();
+          img.onload = () => {
+            const max = 320;
+            let w = img.width, h = img.height;
+            if (w > max) { h = Math.round(h * max / w); w = max; }
+            if (h > max) { w = Math.round(w * max / h); h = max; }
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            setLocalEpk(prev => ({ ...prev, logoData: canvas.toDataURL('image/png') }));
             setEpkDirty(true);
           };
           img.src = ev.target.result;
@@ -7140,10 +7163,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <div style={{ display: 'flex', gap: '.4rem' }}>
                   {epkDirty && <button className="btn btn-small" onClick={() => { onSaveEpkSettings(localEpk); setEpkDirty(false); showToast('Settings saved', 'success'); }}>Save</button>}
                   <button className="btn btn-small btn-primary" onClick={() => onGenerateEPKHtml(localEpk)} title="Open a designed web EPK — Print/Save as PDF, or host it as your shareable link">🌐 Web EPK</button>
+                  <button className="btn btn-small" onClick={() => onDownloadEPKHtml(localEpk)} title="Download the self-contained .html to host as your shareable EPK link">⬇ .html</button>
                   <button className="btn btn-small" onClick={() => onGenerateEPK(localEpk)} title="Quick one-click PDF press kit">📄 PDF</button>
                 </div>
               </div>
-              <div style={hint}>A professional press kit (PDF) built from these fields + your live repertoire and a sample set. Generate uses current edits — Save to keep them.</div>
+              <div style={hint}>🌐 Web EPK opens the designed page (Print → Save as PDF). ⬇ .html downloads a self-contained file you can host as your shareable link. Generate uses current edits — Save to keep them.</div>
 
               <div style={subHead}>1 · Branding &amp; Bio</div>
               <div className="set-config">
@@ -7165,6 +7189,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   <input ref={epkPhotoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { handleEpkPhotoUpload(e.target.files[0]); e.target.value = ''; }} />
                   <button className="btn btn-small" onClick={() => epkPhotoRef.current?.click()}>{localEpk.pressPhotoData ? 'Replace Photo' : 'Upload Photo'}</button>
                   {localEpk.pressPhotoData && <button className="btn btn-small" onClick={() => { upd('pressPhotoData', ''); }}>Remove</button>}
+                </div>
+              </div>
+              <div className="input-group">
+                <label>Band Logo (PNG with transparency works best)</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
+                  {localEpk.logoData && <img src={localEpk.logoData} alt="Logo" style={{ width: 56, height: 48, objectFit: 'contain', borderRadius: 6, border: '1px solid var(--border)', background: 'rgba(255,255,255,.04)' }} />}
+                  <input ref={epkLogoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { handleEpkLogoUpload(e.target.files[0]); e.target.value = ''; }} />
+                  <button className="btn btn-small" onClick={() => epkLogoRef.current?.click()}>{localEpk.logoData ? 'Replace Logo' : 'Upload Logo'}</button>
+                  {localEpk.logoData && <button className="btn btn-small" onClick={() => { upd('logoData', ''); }}>Remove</button>}
                 </div>
               </div>
 
@@ -7705,10 +7738,21 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         showToast('EPK PDF generated', 'success');
       };
 
-      // Generate a designed, print-ready Web EPK (standalone HTML) matching the
-      // dark/crimson card layout. Opens in a new tab; Print -> Save as PDF for the
-      // pixel-perfect PDF, or host the .html for a live shareable link.
-      const generateEPKHtml = (epk) => {
+      // Fetch a QR PNG and inline it as a base64 data URL so the exported EPK is
+      // self-contained (QR works offline). Returns '' on any failure.
+      const fetchQrDataUrl = async (url) => {
+        try {
+          const api = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=0&bgcolor=191c24&color=f3f4f7&data=${encodeURIComponent(url)}`;
+          const r = await fetch(api);
+          if (!r.ok) return '';
+          const blob = await r.blob();
+          return await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => res(''); fr.readAsDataURL(blob); });
+        } catch (_) { return ''; }
+      };
+
+      // Build the designed, print-ready Web EPK (standalone HTML) matching the
+      // dark/crimson card layout. Returns the full HTML string (async for inline QR).
+      const buildEPKHtml = async (epk) => {
         const e = epk || epkSettings;
         const bn = activeBand?.name || 'Band';
         const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -7761,8 +7805,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const metaLine = [e.location, e.actType, e.targetAudience].filter(Boolean).join(' &nbsp;|&nbsp; ');
         const tagline = e.tagline || e.actType || '';
         const photo = e.pressPhotoData && /^data:image\//.test(e.pressPhotoData) ? e.pressPhotoData : '';
+        const logo = e.logoData && /^data:image\//.test(e.logoData) ? e.logoData : '';
         const hub = e.linktree || e.epkUrl || e.website || '';
-        const qr = hub ? `<img class="qrimg" src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&margin=0&bgcolor=191c24&color=f3f4f7&data=${encodeURIComponent(href(hub))}" alt="Scan for links">` : `<div class="qr">QR</div>`;
+        const liveApi = hub ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=0&bgcolor=191c24&color=f3f4f7&data=${encodeURIComponent(href(hub))}` : '';
+        const qrData = hub ? await fetchQrDataUrl(href(hub)) : '';
+        const qr = qrData ? `<img class="qrimg" src="${qrData}" alt="Scan for links">` : (hub ? `<img class="qrimg" src="${esc(liveApi)}" alt="Scan for links">` : `<div class="qr">QR</div>`);
         let actPs = [];
         if (e.elevatorPitch) actPs.push(e.elevatorPitch);
         paras(e.bio).forEach(p => actPs.push(p));
@@ -7780,6 +7827,8 @@ body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,Bli
 .d2{top:98px;right:-48px;width:118px;background:var(--gold);transform:rotate(-42deg);}
 .d3{bottom:118px;left:-28px;width:118px;background:var(--accent);transform:rotate(-42deg);}
 .d4{bottom:90px;left:-46px;width:88px;background:var(--gold);transform:rotate(-42deg);}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;}
+.logo{max-height:74px;max-width:200px;object-fit:contain;flex:none;}
 h1{font-size:44px;font-weight:800;letter-spacing:-1px;margin:0;line-height:1.02;}
 .tagline{color:var(--accent);text-transform:uppercase;letter-spacing:1.5px;font-weight:800;font-size:15px;margin-top:10px;}
 .meta{color:var(--mut);font-size:12.5px;margin-top:10px;}
@@ -7821,7 +7870,7 @@ footer{color:#6a6f79;font-size:10px;text-align:right;margin-top:18px;}
 .printbtn{position:fixed;right:18px;bottom:18px;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.5);z-index:99;}
 @media print{.no-print{display:none!important;}.page{padding:.45in .5in;max-width:none;}@page{size:letter;margin:0;}}`;
 
-        const headerHtml = `<header><h1>${esc(bn)}</h1>${tagline ? `<div class="tagline">${esc(tagline)}</div>` : ''}${metaLine ? `<div class="meta">${metaLine}</div>` : ''}<div class="rule"></div></header>`;
+        const headerHtml = `<header class="hdr"><div class="hdr-l"><h1>${esc(bn)}</h1>${tagline ? `<div class="tagline">${esc(tagline)}</div>` : ''}${metaLine ? `<div class="meta">${metaLine}</div>` : ''}</div>${logo ? `<img class="logo" src="${logo}" alt="">` : ''}</header><div class="rule"></div>`;
         const deco = `<div class="deco d1"></div><div class="deco d2"></div><div class="deco d3"></div><div class="deco d4"></div>`;
 
         const body = `<div class="page">${deco}
@@ -7852,12 +7901,30 @@ ${headerHtml}
 </div>
 <button class="printbtn no-print" onclick="window.print()">🖨 Print / Save as PDF</button>`;
 
-        const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(bn)} — EPK</title><style>${css}</style></head><body>${body}</body></html>`;
+        return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(bn)} — EPK</title><style>${css}</style></head><body>${body}</body></html>`;
+      };
 
+      // Open the Web EPK in a new tab (Print -> Save as PDF for the PDF).
+      const generateEPKHtml = async (epk) => {
         const w = window.open('', '_blank');
         if (!w) { showToast('Allow pop-ups to open the Web EPK', 'warning'); return; }
+        w.document.write('<!doctype html><title>Generating EPK…</title><body style="background:#101216;color:#9aa0ab;font-family:sans-serif;padding:40px">Generating EPK…</body>');
+        const html = await buildEPKHtml(epk);
         w.document.open(); w.document.write(html); w.document.close();
         showToast('Web EPK opened — use Print / Save as PDF', 'success');
+      };
+
+      // Download the Web EPK as a self-contained .html file (host it for {{epk_link}}).
+      const downloadEPKHtml = async (epk) => {
+        const html = await buildEPKHtml(epk);
+        const slug = (activeBand?.name || 'band').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase().replace(/^-|-$/g, '') || 'band';
+        const blob = new Blob([html], { type: 'text/html' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `epk-${slug}.html`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+        showToast('EPK .html downloaded — host it as your shareable link', 'success');
       };
 
       // PHASE 2: Build lock plan from current setlists
@@ -9809,6 +9876,7 @@ ${headerHtml}
               onBulkAddVenues={bulkAddVenues}
               onGenerateEPK={generateEPKPDF}
               onGenerateEPKHtml={generateEPKHtml}
+              onDownloadEPKHtml={downloadEPKHtml}
               bandName={activeBand?.name || 'Band'}
               showToast={showToast}
             />
