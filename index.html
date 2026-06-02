@@ -1156,6 +1156,7 @@
       bandSnapshots: (id) => `setlist_band_snapshots_v3_${id}`,
       bandVenues: (id) => `setlist_band_venues_v3_${id}`,
       bandBookings: (id) => `setlist_band_bookings_v3_${id}`,
+      bandRoster: (id) => `setlist_band_roster_v3_${id}`,
       epkSettings: 'setlist_epk_settings_v3'
     };
 
@@ -7353,6 +7354,112 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
+    const BLANK_SUB = { name: '', instruments: '', email: '', phone: '', availability: '', rate: '', vocals: '', knownSongs: '', notes: '' };
+    function RosterModal({ open, onClose, roster, onAddSub, onUpdateSub, onDeleteSub, setlists, bandName }) {
+      const [form, setForm] = useState(BLANK_SUB);
+      const [editId, setEditId] = useState(null);
+      const [showForm, setShowForm] = useState(false);
+      const [filter, setFilter] = useState('');
+      if (!open) return null;
+
+      const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const setSongSet = new Set((setlists || []).flatMap(st => st.songs || []).map(s => norm(s.title)).filter(Boolean));
+      const setCount = setSongSet.size;
+      const coverage = (sub) => {
+        const known = new Set((sub.knownSongs || '').split(/\n|,/).map(norm).filter(Boolean));
+        let hit = 0; setSongSet.forEach(t => { if (known.has(t)) hit++; });
+        return { hit, knownCount: known.size };
+      };
+
+      const startAdd = () => { setForm(BLANK_SUB); setEditId(null); setShowForm(true); };
+      const startEdit = (sub) => { setForm({ ...BLANK_SUB, ...sub }); setEditId(sub.id); setShowForm(true); };
+      const submit = () => {
+        if (!form.name.trim()) return;
+        if (editId) onUpdateSub(editId, form); else onAddSub(form);
+        setForm(BLANK_SUB); setEditId(null); setShowForm(false);
+      };
+
+      const fl = filter.trim().toLowerCase();
+      const shown = roster.filter(r => !fl || `${r.name} ${r.instruments} ${r.vocals}`.toLowerCase().includes(fl))
+        .sort((a, b) => coverage(b).hit - coverage(a).hit || (a.name || '').localeCompare(b.name || ''));
+
+      const F = (label, key, ph, type) => (
+        <div className="input-group"><label>{label}</label><input type={type || 'text'} value={form[key] || ''} onChange={e => setForm({ ...form, [key]: e.target.value })} placeholder={ph} /></div>
+      );
+
+      return (
+        <div className="modal-backdrop" onClick={onClose}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(760px, 95vw)', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className="panel-header">
+              <h3 className="panel-title">🎸 Sub / Dep Roster — {bandName}</h3>
+              <button className="btn btn-small" onClick={onClose}>Close</button>
+            </div>
+            <div style={{ marginBottom: '.75rem', fontSize: '.85rem', color: 'var(--text-muted)' }}>
+              Keep a roster of subs with their instruments, availability, and the songs they know. {setCount > 0
+                ? <span> Coverage is matched against your current setlists (<strong>{setCount}</strong> songs).</span>
+                : <span> Generate or load setlists to see who can cover the book.</span>}
+            </div>
+
+            <div style={{ display: 'flex', gap: '.5rem', marginBottom: '.75rem', flexWrap: 'wrap' }}>
+              <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Filter by name or instrument…" style={{ flex: 1, minWidth: 180 }} />
+              <button className="btn btn-small btn-primary" onClick={startAdd}>+ Add Sub</button>
+            </div>
+
+            {showForm && (
+              <div className="card" style={{ border: '1px solid var(--accent)', borderRadius: 8, padding: '.85rem', marginBottom: '1rem' }}>
+                <div className="set-config">{F('Name*', 'name', 'Jane Doe')}{F('Instruments', 'instruments', 'Guitar, Bass, Keys')}</div>
+                <div className="set-config">{F('Email', 'email', 'name@email.com', 'email')}{F('Phone', 'phone', '(702) 555-0123')}</div>
+                <div className="set-config">{F('Availability', 'availability', 'Weeknights, weekends after 9')}{F('Rate', 'rate', '$150/gig')}</div>
+                {F('Vocals (lead/harmony, range, keys)', 'vocals', 'Strong harmonies; leads in A–D')}
+                <div className="input-group"><label>Known Songs (one per line — matched to your setlists)</label><textarea value={form.knownSongs || ''} onChange={e => setForm({ ...form, knownSongs: e.target.value })} rows={4} placeholder={"Pick Up the Pieces\nHonky Tonk Women\nCold Shot"} style={{ resize: 'vertical' }} /></div>
+                <div className="input-group"><label>Notes</label><textarea value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} placeholder="Reads charts, brings own PA, etc." style={{ resize: 'vertical' }} /></div>
+                <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
+                  <button className="btn btn-small" onClick={() => { setShowForm(false); setEditId(null); }}>Cancel</button>
+                  <button className="btn btn-small btn-primary" disabled={!form.name.trim()} onClick={submit}>{editId ? 'Save Sub' : 'Add Sub'}</button>
+                </div>
+              </div>
+            )}
+
+            {roster.length === 0 ? (
+              <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>No subs yet. Add your first above.</div>
+            ) : (
+              shown.map(sub => {
+                const cov = coverage(sub);
+                return (
+                  <div key={sub.id} className="band-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '.4rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '.5rem' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700 }}>{sub.name} {sub.instruments && <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '.85rem' }}>· {sub.instruments}</span>}</div>
+                        <div style={{ fontSize: '.8rem', color: 'var(--text-muted)' }}>
+                          {sub.availability && <span>🗓 {sub.availability}</span>}
+                          {sub.rate && <span> · 💵 {sub.rate}</span>}
+                          {(sub.email || sub.phone) && <span> · {[sub.email, sub.phone].filter(Boolean).join(' · ')}</span>}
+                        </div>
+                        {sub.vocals && <div style={{ fontSize: '.78rem', color: 'var(--text-muted)' }}>🎤 {sub.vocals}</div>}
+                      </div>
+                      <div style={{ textAlign: 'right', flex: 'none' }}>
+                        {setCount > 0 && (
+                          <div title="Songs this sub knows from your current setlists" style={{ fontWeight: 700, fontSize: '.85rem', color: cov.hit === setCount ? 'var(--success)' : cov.hit > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>
+                            covers {cov.hit}/{setCount}
+                          </div>
+                        )}
+                        <div style={{ fontSize: '.72rem', color: 'var(--text-muted)' }}>{cov.knownCount} songs listed</div>
+                      </div>
+                    </div>
+                    {sub.notes && <div style={{ fontSize: '.78rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>{sub.notes}</div>}
+                    <div style={{ display: 'flex', gap: '.4rem', justifyContent: 'flex-end' }}>
+                      <button className="btn btn-small" onClick={() => startEdit(sub)}>Edit</button>
+                      <button className="btn btn-small" onClick={() => onDeleteSub(sub.id)} style={{ color: 'var(--error)' }}>Remove</button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      );
+    }
+
     function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', secondaryLabel = '', secondaryAction = null, onConfirm, onCancel }) {
       if (!open) return null;
       return (
@@ -7406,6 +7513,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [touchDrag, setTouchDrag] = useState({ active: false, fromSetIdx: null, fromSongIdx: null });
       const [imports, setImports] = useState([]);
       const [gigs, setGigs] = useState([]);
+      const [roster, setRoster] = useState([]);
+      const [rosterModal, setRosterModal] = useState(false);
       const [watermarkImg, setWatermarkImg] = useState(null);
 
       // PHASE 3A: active/cold library tab
@@ -7565,11 +7674,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const storedWatermark = LS.get(LS_KEYS.bandWatermark(activeBandId)) || null;
         const storedVenues = LS.get(LS_KEYS.bandVenues(activeBandId)) || [];
         const storedBookings = LS.get(LS_KEYS.bandBookings(activeBandId)) || [];
+        const storedRoster = LS.get(LS_KEYS.bandRoster(activeBandId)) || [];
 
         setSongs(normalizedSongs);
         setSettings(storedSettings);
         setImports(storedImports);
         setGigs(storedGigs);
+        setRoster(storedRoster);
         setWatermarkImg(storedWatermark);
         setVenues(storedVenues);
         setBookings(storedBookings);
@@ -9316,6 +9427,7 @@ ${headerHtml}
             LS.remove(LS_KEYS.bandHistory(band.id));
             LS.remove(LS_KEYS.bandImports(band.id));
             LS.remove(LS_KEYS.bandGigs(band.id));
+            LS.remove(LS_KEYS.bandRoster(band.id));
             if (activeBandId === band.id && next.length) {
               setActiveBandId(next[0].id);
               LS.set(LS_KEYS.active, next[0].id);
@@ -9338,6 +9450,7 @@ ${headerHtml}
         const srcSongs = LS.get(LS_KEYS.bandSongs(band.id));
         const srcSettings = LS.get(LS_KEYS.bandSettings(band.id));
         const srcGigs = LS.get(LS_KEYS.bandGigs(band.id));
+        const srcRoster = LS.get(LS_KEYS.bandRoster(band.id));
         const srcImports = LS.get(LS_KEYS.bandImports(band.id));
         const srcWatermark = LS.get(LS_KEYS.bandWatermark(band.id));
         if (srcSongs) {
@@ -9347,12 +9460,31 @@ ${headerHtml}
         }
         if (srcSettings) LS.set(LS_KEYS.bandSettings(newBand.id), srcSettings);
         if (srcGigs) LS.set(LS_KEYS.bandGigs(newBand.id), srcGigs);
+        if (srcRoster) LS.set(LS_KEYS.bandRoster(newBand.id), srcRoster);
         if (srcImports) LS.set(LS_KEYS.bandImports(newBand.id), srcImports);
         if (srcWatermark) LS.set(LS_KEYS.bandWatermark(newBand.id), srcWatermark);
         showToast('Band duplicated with songs & settings', 'success');
       };
 
       // Gig Profile functions
+      // ── Sub / dep roster ──
+      const persistRoster = (next) => { setRoster(next); LS.set(LS_KEYS.bandRoster(activeBandId), next); };
+      const addSub = (form) => {
+        const next = [...roster, { id: genId(), createdAt: Date.now(), ...form }];
+        persistRoster(next);
+        showToast('Sub added to roster', 'success');
+      };
+      const updateSub = (id, form) => {
+        persistRoster(roster.map(r => r.id === id ? { ...r, ...form } : r));
+        showToast('Sub updated', 'success');
+      };
+      const deleteSub = (id) => {
+        setConfirmDialog({
+          open: true, title: 'Remove this sub?', message: 'This removes them from your roster.', confirmLabel: 'Remove',
+          onConfirm: () => { persistRoster(roster.filter(r => r.id !== id)); showToast('Sub removed', 'warning'); setConfirmDialog(prev => ({ ...prev, open: false })); }
+        });
+      };
+
       const createGig = (form) => {
         // Store all venue/gig fields from the form
         const newGig = {
@@ -9630,6 +9762,7 @@ ${headerHtml}
                 <button className="btn btn-small" onClick={() => setBandModal(true)}>Manage Bands</button>
                 <button className="btn btn-small" onClick={() => setGigModal(true)} style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>Gig Profiles</button>
                 <button className="btn btn-small" onClick={() => setVenueModal(true)} style={{ borderColor: '#60a5fa', color: '#60a5fa' }}>📍 Venues</button>
+                <button className="btn btn-small" onClick={() => setRosterModal(true)} style={{ borderColor: '#a78bfa', color: '#a78bfa' }}>🎸 Roster</button>
               </div>
               <div className="toolbar">
                 <select value={activeBandId || ''} onChange={(e) => switchBand(e.target.value)}>
@@ -9894,6 +10027,17 @@ ${headerHtml}
               onImport={importCanonicalRows}
               existingSongs={songs}
               onRiskyAction={promptBackupBeforeRiskyAction}
+            />
+
+            <RosterModal
+              open={rosterModal}
+              onClose={() => setRosterModal(false)}
+              roster={roster}
+              onAddSub={addSub}
+              onUpdateSub={updateSub}
+              onDeleteSub={deleteSub}
+              setlists={setlists}
+              bandName={activeBand?.name || 'Band'}
             />
 
             <GigProfileModal
