@@ -997,7 +997,7 @@
     const EPK_SETTINGS_DEFAULT = {
       // 1 — Branding & bio
       tagline: '', actType: '', elevatorPitch: '', bio: '',
-      location: '', targetAudience: '', milestone: '',
+      location: '', targetAudience: '', milestone: '', showFeel: '', buyerConfidence: '',
       members: '', genres: '', formats: '',
       pressPhotoData: '', pressPhotoUrl: '',
       // 2 — Media assets
@@ -1005,7 +1005,7 @@
       // 3 — Social proof & numbers
       testimonials: '', demographics: '', stats: '',
       // 4 — Booking essentials & logistics
-      techRiderUrl: '', hospitalityRiderUrl: '', pressNews: '',
+      techRiderUrl: '', hospitalityRiderUrl: '', pressNews: '', techAdvance: '',
       // 5 — Contact & official links
       contactEmail: '', contactPhone: '', pressEmail: '',
       website: '', linktree: '', socials: '', epkUrl: '',
@@ -7157,6 +7157,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <div className="input-group"><label>Best For (target buyers)</label><input value={localEpk.targetAudience || ''} onChange={e => upd('targetAudience', e.target.value)} placeholder="Casino lounges, corporate events, festivals" /></div>
               </div>
               <div className="input-group"><label>Current Milestone</label><input value={localEpk.milestone || ''} onChange={e => upd('milestone', e.target.value)} placeholder="Recent residency, sold-out show, streaming milestone..." /></div>
+              <div className="input-group"><label>Buyer Confidence (one per line — defaults shown if blank)</label><textarea value={localEpk.buyerConfidence || ''} onChange={e => upd('buyerConfidence', e.target.value)} rows={4} placeholder={"Flexible lineup and clean advance\nVegas hospitality experience\n3-set pacing and crowd retention\nPro communication and stagecraft"} style={{ resize: 'vertical' }} /></div>
               <div className="input-group">
                 <label>Press Photo (landscape, hi-res)</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
@@ -7173,6 +7174,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <div className="input-group"><label>Genres</label><input value={localEpk.genres || ''} onChange={e => upd('genres', e.target.value)} placeholder="Classic Rock, Blues, Soul, R&B, Funk, Country" /></div>
                 <div className="input-group"><label>Formats</label><input value={localEpk.formats || ''} onChange={e => upd('formats', e.target.value)} placeholder="Solo acoustic, Duo, Trio, Full band" /></div>
               </div>
+              <div className="input-group"><label>Show Feel</label><input value={localEpk.showFeel || ''} onChange={e => upd('showFeel', e.target.value)} placeholder="High-energy, vocal-driven, groove-heavy, crowd-focused" /></div>
 
               <div style={subHead}>2 · Media</div>
               <div className="input-group"><label>Video Reel URL</label><input value={localEpk.demoVideoUrl || ''} onChange={e => upd('demoVideoUrl', e.target.value)} placeholder="https://youtu.be/your-live-reel" /></div>
@@ -7193,6 +7195,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <div className="input-group"><label>Hospitality Rider (link)</label><input value={localEpk.hospitalityRiderUrl || ''} onChange={e => upd('hospitalityRiderUrl', e.target.value)} placeholder="Link to hospitality rider PDF" /></div>
               </div>
               <div className="input-group"><label>Press / News</label><textarea value={localEpk.pressNews || ''} onChange={e => upd('pressNews', e.target.value)} rows={2} placeholder="Recent milestones, upcoming dates, releases..." style={{ resize: 'vertical' }} /></div>
+              <div className="input-group"><label>Tech Advance bullets (one per line — defaults shown if blank)</label><textarea value={localEpk.techAdvance || ''} onChange={e => upd('techAdvance', e.target.value)} rows={4} placeholder={"Tech rider and stage plot available\nHospitality guidelines available\nPA/backline needs confirmed by format\nPromo photos, logo, and copy ready"} style={{ resize: 'vertical' }} /></div>
 
               <div style={subHead}>5 · Booking &amp; Contact</div>
               <div className="set-config">
@@ -7717,108 +7720,134 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const totalMin = Math.round(active.reduce((s, x) => s + (Number(parseDuration(x.duration)) || 0), 0));
         const sampleSet = (setlists || []).find(st => st.songs && st.songs.length);
 
-        const lineup = String(e.members || '').split(/\n+/).map(s => s.trim()).filter(Boolean).map(m => { const parts = m.split(/\s+[—\-|]\s+/); return parts.length > 1 ? `<strong>${esc(parts[0])}</strong> (${esc(parts.slice(1).join(' '))})` : `<strong>${esc(m)}</strong>`; }).join(', ');
+        const bullets = (t, def) => { const a = String(t || '').split(/\n+/).map(s => s.replace(/^[-•]\s*/, '').trim()).filter(Boolean); return a.length ? a : def; };
+        const DEF_BC = ['Flexible lineup and clean advance', 'Vegas hospitality experience', '3-set pacing and crowd retention', 'Pro communication and stagecraft'];
+        const DEF_TECH = ['Tech rider and stage plot available', 'Hospitality guidelines available', 'PA/backline needs confirmed by format', 'Promo photos, logo, and copy ready', 'Professional day-of communication'];
+        const repCount = active.length;
+        const repGlance = `${repCount || 35}+ core titles; expandable catalog`;
+        const showFeelV = e.showFeel || 'High-energy, vocal-driven, groove-heavy, crowd-focused';
 
-        const glance = [];
-        if (e.genres) glance.push(['Genres', esc(e.genres)]);
-        if (lineup) glance.push(['Lineup', lineup]);
-        if (e.formats) glance.push(['Formats', esc(e.formats)]);
-        if (e.targetAudience) glance.push(['Best For', esc(e.targetAudience)]);
-        if (e.milestone) glance.push(['Milestone', esc(e.milestone)]);
+        const glanceItems = [
+          ['Genres', esc(e.genres || '—')],
+          ['Lineups', esc(e.formats || '—')],
+          ['Best For', esc(e.targetAudience || '—')],
+          ['Show Feel', esc(showFeelV)],
+          ['Repertoire', esc(repGlance)],
+          ['Home Base', esc(e.location || '—')],
+        ];
 
-        const media = [];
-        if (e.demoVideoUrl) media.push(`<a class="asset" href="${esc(href(e.demoVideoUrl))}" target="_blank"><span class="tag">[WATCH]</span> Live Video Reel</a>`);
-        if (e.galleryUrl) media.push(`<a class="asset" href="${esc(href(e.galleryUrl))}" target="_blank"><span class="tag">[DOWNLOAD]</span> Hi-Res Press Photos</a>`);
-        pairs(e.audioLinks).forEach(p => { if (p.b || p.a) media.push(`<a class="asset" href="${esc(href(p.b || p.a))}" target="_blank"><span class="tag">[LISTEN]</span> ${esc(p.a || 'Audio')}</a>`); });
+        const mediaLine = (tag, label, url) => `<div class="mline"><span class="tag">[${tag}]</span> ${esc(label)}${url ? ` <a href="${esc(href(url))}" target="_blank">${esc(url)}</a>` : ' — paste link'}</div>`;
+        const mediaItems = [mediaLine('WATCH', 'Live video reel', e.demoVideoUrl), mediaLine('DOWNLOAD', 'High-res promo photos', e.galleryUrl)];
+        const audio = pairs(e.audioLinks);
+        if (audio.length) audio.forEach(p => mediaItems.push(mediaLine('LISTEN', p.a || 'Audio', p.b)));
+        else { mediaItems.push(mediaLine('LISTEN', 'Opener showcase', '')); mediaItems.push(mediaLine('LISTEN', 'Soul Medley', '')); }
 
-        const quotes = pairs(e.testimonials).map(p => `<div class="quote"><p>&ldquo;${esc(p.a)}&rdquo;</p>${p.b ? `<div class="cite">&mdash; ${esc(p.b)}</div>` : ''}</div>`).join('');
+        let q = pairs(e.testimonials);
+        if (!q.length) q = [{ a: 'A tight, polished show with the exact energy our room needed.', b: 'Venue / Talent Buyer quote' }, { a: 'Reliable, professional, and easy to work with from advance to downbeat.', b: 'Lounge / Event Manager quote' }];
+        const quotes = q.map(p => `<div class="quote"><p>&ldquo;${esc(p.a)}&rdquo;</p>${p.b ? `<div class="cite">- ${esc(p.b)}</div>` : ''}</div>`).join('');
 
-        const tiles = pairs(e.stats).map(p => ({ num: p.b || p.a, lab: p.b ? p.a : '' }));
-        if (e.demographics) tiles.push({ num: e.demographics, lab: 'Core Demographics' });
-        const tilesHtml = tiles.map(t => `<div class="stat"><div class="num">${esc(t.num)}</div><div class="lab">${esc(t.lab)}</div></div>`).join('');
+        let st = pairs(e.stats);
+        if (!st.length) st = [{ a: 'Years Frontline Experience', b: '25+' }, { a: 'Weekly Residency / Rotation', b: '3x' }, { a: 'Core Showcase Songs', b: `${repCount || 35}+` }, { a: 'Scalable Lineup Options', b: '5' }];
+        const tilesHtml = st.slice(0, 4).map(p => `<div class="stat"><div class="num">${esc(p.b || p.a)}</div><div class="lab">${esc(p.b ? p.a : '')}</div></div>`).join('');
 
-        const rep = active.map(s => `<div class="song"><strong>${esc(s.title)}</strong>${s.artist ? ` <span>(${esc(s.artist)})</span>` : ''}</div>`).join('');
-        const sample = sampleSet ? sampleSet.songs.map(s => `<li><strong>${esc(s.title)}</strong>${s.artist ? ` <span>&mdash; ${esc(s.artist)}</span>` : ''}</li>`).join('') : '';
+        const rep = active.map(s => `<div class="song"><div class="t">${esc(s.title)}</div>${s.artist ? `<div class="a">${esc(s.artist)}</div>` : ''}</div>`).join('');
+        const sampleSongs = sampleSet ? sampleSet.songs : active.slice(0, 10);
+        const sample = sampleSongs.map(s => `<li>${esc(s.title)}</li>`).join('');
 
-        const logistics = [];
-        if (e.techRiderUrl) logistics.push(`<a class="asset" href="${esc(href(e.techRiderUrl))}" target="_blank"><span class="tag">[DOWNLOAD]</span> Tech Rider &amp; Stage Plot (PDF)</a>`);
-        if (e.hospitalityRiderUrl) logistics.push(`<a class="asset" href="${esc(href(e.hospitalityRiderUrl))}" target="_blank"><span class="tag">[DOWNLOAD]</span> Hospitality Guidelines (PDF)</a>`);
-        const socialLinks = pairs(e.socials).map(p => `<a href="${esc(href(p.b || p.a))}" target="_blank">${esc(p.a)}</a>`).join(' &nbsp;·&nbsp; ');
+        const formatBullets = e.formats ? e.formats.split(/[,;]/).map(s => s.trim()).filter(Boolean) : ['Solo acoustic / vocal feature', 'Duo or trio lounge format', '4-piece rhythm section', '5-piece full show band', 'Custom set lengths available'];
+        const techBullets = bullets(e.techAdvance, DEF_TECH);
+        const bcBullets = bullets(e.buyerConfidence, DEF_BC);
 
-        const metaLine = [e.actType ? `Formats: <span>${esc(e.actType)}</span>` : '', e.location ? `Base: <span>${esc(e.location)}</span>` : ''].filter(Boolean).join(' &nbsp;|&nbsp; ');
+        const metaLine = [e.location, e.actType, e.targetAudience].filter(Boolean).join(' &nbsp;|&nbsp; ');
+        const tagline = e.tagline || e.actType || '';
         const photo = e.pressPhotoData && /^data:image\//.test(e.pressPhotoData) ? e.pressPhotoData : '';
+        const hub = e.linktree || e.epkUrl || e.website || '';
+        const qr = hub ? `<img class="qrimg" src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&margin=0&bgcolor=191c24&color=f3f4f7&data=${encodeURIComponent(href(hub))}" alt="Scan for links">` : `<div class="qr">QR</div>`;
+        let actPs = [];
+        if (e.elevatorPitch) actPs.push(e.elevatorPitch);
+        paras(e.bio).forEach(p => actPs.push(p));
+        if (!actPs.length) actPs = ['Add your buyer-facing elevator pitch and bio in the EPK Profile editor to fill this section.'];
+        const actParas = actPs.map(p => `<p>${esc(p)}</p>`).join('');
+        const bookbar = `<div class="bookbar"><b>BOOKING:</b> &nbsp;${[e.contactEmail ? esc(e.contactEmail) : 'EMAIL', e.contactPhone ? esc(e.contactPhone) : 'PHONE', e.website ? esc(e.website) : 'SITE', (e.epkUrl || e.linktree) ? esc(e.epkUrl || e.linktree) : 'EPK LINK'].join(' &nbsp;|&nbsp; ')}</div>`;
 
-        const css = `:root{--bg:#121418;--card:#1b1e26;--bd:rgba(255,255,255,.08);--accent:#ff4a5a;--tx:#f3f4f7;--mut:#9aa0ab;}
+        const css = `:root{--bg:#101216;--card:#191c24;--bd:rgba(255,255,255,.07);--accent:#ff4a5a;--gold:#e8b84b;--tx:#f3f4f7;--mut:#9aa0ab;}
 *{box-sizing:border-box;}
 body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-.page{max-width:8.5in;margin:0 auto;padding:.55in .6in;}
+.page{position:relative;overflow:hidden;max-width:8.5in;margin:0 auto;padding:.6in .62in;}
 .break{page-break-before:always;}
-h1{font-size:46px;font-weight:800;letter-spacing:-1px;margin:0;line-height:1.02;}
-.tagline{color:var(--accent);text-transform:uppercase;letter-spacing:2px;font-weight:700;font-size:16px;margin-top:8px;}
-.meta{color:var(--mut);font-size:13px;margin-top:8px;}.meta span{color:var(--tx);}
-.hero{width:100%;max-height:230px;object-fit:cover;border-radius:10px;border:1px solid var(--bd);margin-top:16px;}
-.rule{height:2px;background:var(--accent);margin:16px 0 22px;border-radius:2px;}
-h2{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;margin:0 0 12px;color:#fff;}
-.bar{display:inline-block;width:4px;height:20px;background:var(--accent);border-radius:2px;}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-bottom:26px;}
-section p{font-size:12.5px;line-height:1.6;color:#d7dade;margin:0 0 10px;}
-p.lead{color:#fff;font-weight:600;}
+.deco{position:absolute;height:2px;border-radius:2px;opacity:.85;pointer-events:none;}
+.d1{top:64px;right:-24px;width:150px;background:var(--accent);transform:rotate(-42deg);}
+.d2{top:98px;right:-48px;width:118px;background:var(--gold);transform:rotate(-42deg);}
+.d3{bottom:118px;left:-28px;width:118px;background:var(--accent);transform:rotate(-42deg);}
+.d4{bottom:90px;left:-46px;width:88px;background:var(--gold);transform:rotate(-42deg);}
+h1{font-size:44px;font-weight:800;letter-spacing:-1px;margin:0;line-height:1.02;}
+.tagline{color:var(--accent);text-transform:uppercase;letter-spacing:1.5px;font-weight:800;font-size:15px;margin-top:10px;}
+.meta{color:var(--mut);font-size:12.5px;margin-top:10px;}
+.rule{height:2px;background:linear-gradient(90deg,var(--accent) 78%,var(--gold));margin:16px 0 26px;border-radius:2px;}
+h2{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:0 0 14px;color:#fff;}
+.bar{display:inline-block;width:4px;height:22px;background:var(--accent);border-radius:2px;}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:22px 24px;}
+.grid21{display:grid;grid-template-columns:1.7fr 1fr;gap:22px;margin-bottom:30px;align-items:stretch;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-bottom:28px;}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:24px;}
 .muted{color:var(--mut);font-size:12px;}
-.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px 16px;}
-.glance .grow{display:grid;grid-template-columns:92px 1fr;gap:10px;padding:9px 0;border-bottom:1px solid var(--bd);font-size:12px;}
-.glance .grow:last-child{border-bottom:none;}
-.glance .gl{color:var(--mut);text-transform:uppercase;font-weight:700;letter-spacing:.5px;font-size:11px;}
-.glance .gv{color:#e9eaee;}.glance .gv strong{color:#fff;}
-.asset{display:block;background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:11px 14px;margin-bottom:9px;color:#e9eaee;text-decoration:none;font-size:12.5px;}
-.asset .tag{color:var(--accent);font-weight:800;margin-right:6px;letter-spacing:.5px;}
-.quote{border-left:3px solid var(--accent);background:var(--card);border-radius:0 8px 8px 0;padding:12px 14px;margin-bottom:12px;}
-.quote p{font-style:italic;color:#e9eaee;margin:0;font-size:12.5px;line-height:1.5;}
-.quote .cite{color:var(--accent);font-style:italic;text-transform:uppercase;font-size:11px;font-weight:700;text-align:right;margin-top:6px;}
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:6px;}
-.stat{background:var(--card);border:1px solid var(--bd);border-top:2px solid var(--accent);border-radius:8px;padding:14px;text-align:center;}
-.stat .num{font-size:23px;font-weight:800;color:#fff;}
-.stat .lab{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin-top:4px;}
-.sub{color:var(--mut);font-size:12px;margin:-4px 0 12px;}
-.reps{column-count:2;column-gap:30px;}
-.song{break-inside:avoid;font-size:12px;padding:5px 0;color:var(--mut);}
-.song strong{color:#fff;font-weight:600;}
-.setlist{margin:0;padding-left:20px;}.setlist li{font-size:12.5px;padding:4px 0;color:var(--mut);}.setlist strong{color:#fff;}
-.booking{border:1px solid var(--accent);text-align:center;margin-top:12px;}
-.booking .bh{color:var(--accent);font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;font-size:13px;}
-.booking div{font-size:12.5px;margin:3px 0;color:#e9eaee;}.booking a{color:var(--accent);text-decoration:none;}.booking b{color:#fff;}
-.soc{margin-top:6px;}
-.news{font-size:12px;color:var(--mut);font-style:italic;margin-top:8px;}
-footer{color:#6a6f79;font-size:10px;text-align:right;margin-top:20px;}
-.printbtn{position:fixed;right:18px;bottom:18px;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.5);}
-@media print{.no-print{display:none!important;}.page{padding:.4in .5in;max-width:none;}@page{size:letter;margin:0;}}`;
+.actcard p{font-size:13px;line-height:1.65;color:#cfd3da;margin:0 0 14px;}.actcard p:last-child{margin-bottom:0;}
+.bc-photo{border:1px solid var(--bd);border-radius:8px;height:150px;display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:11px;letter-spacing:1.5px;overflow:hidden;}
+.bc-photo img{width:100%;height:100%;object-fit:cover;}
+.bc-title{color:var(--accent);text-align:center;font-weight:800;text-transform:uppercase;letter-spacing:1px;font-size:14px;margin:18px 0 10px;}
+.bullets{list-style:none;margin:0;padding:0;}
+.bullets li{font-size:12px;color:#cfd3da;padding:3px 0;}.bullets li:before{content:"- ";color:var(--mut);}
+.qr{border:1px solid var(--accent);border-radius:6px;width:80px;height:50px;display:flex;align-items:center;justify-content:center;margin:16px auto 0;color:var(--mut);font-size:11px;letter-spacing:1px;}
+.qrimg{display:block;width:80px;height:80px;margin:16px auto 0;border-radius:6px;border:1px solid var(--accent);}
+.glance-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px 30px;}
+.gitem .gl{color:var(--accent);text-transform:uppercase;font-weight:800;letter-spacing:.6px;font-size:11px;margin-bottom:5px;}
+.gitem .gv{color:#dfe2e7;font-size:12.5px;line-height:1.45;}
+.mline{font-size:12.5px;color:#dfe2e7;padding:5px 0;}.mline .tag{color:var(--accent);font-weight:800;margin-right:6px;}.mline a{color:var(--gold);text-decoration:none;word-break:break-all;}
+.quote{margin-bottom:14px;}.quote p{font-style:italic;color:#dfe2e7;margin:0;font-size:12.5px;line-height:1.5;}.quote .cite{color:var(--mut);font-size:11px;margin-top:3px;}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:6px 0 24px;}
+.stat{background:var(--card);border:1px solid var(--bd);border-top:2px solid var(--accent);border-radius:8px;padding:18px 12px;text-align:center;}
+.stat .num{font-size:30px;font-weight:800;color:#fff;line-height:1;}
+.stat .lab{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin-top:8px;}
+.bookbar{border:1px solid var(--accent);border-radius:8px;padding:15px;text-align:center;font-size:12.5px;color:#dfe2e7;letter-spacing:.3px;}.bookbar b{color:#fff;}
+.sub{color:var(--mut);font-size:12.5px;margin:-8px 0 16px;}
+.reps{column-count:3;column-gap:26px;}
+.song{break-inside:avoid;padding:6px 0;}.song .t{color:#fff;font-weight:700;font-size:12.5px;}.song .a{color:var(--mut);font-size:11px;margin-top:1px;}
+.setlist{margin:0;padding-left:18px;}.setlist li{font-size:12.5px;padding:3px 0;color:#dfe2e7;}
+.note{font-size:11px;color:var(--mut);font-style:italic;margin-top:14px;line-height:1.4;}
+.booking2{border:1px solid var(--accent);border-radius:10px;padding:18px 22px;}
+.booking2 .bh{color:var(--accent);font-weight:800;text-transform:uppercase;letter-spacing:.6px;font-size:13px;margin-bottom:10px;}
+.brow{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12.5px;color:#dfe2e7;}.booking2 b{color:#fff;}.booking2 a{color:var(--gold);text-decoration:none;}.tnote{color:var(--mut);font-size:10.5px;margin-top:10px;}
+footer{color:#6a6f79;font-size:10px;text-align:right;margin-top:18px;}
+.printbtn{position:fixed;right:18px;bottom:18px;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.5);z-index:99;}
+@media print{.no-print{display:none!important;}.page{padding:.45in .5in;max-width:none;}@page{size:letter;margin:0;}}`;
 
-        const body = `<div class="page">
-<header>
-<h1>${esc(bn)}</h1>
-${e.tagline ? `<div class="tagline">${esc(e.tagline)}</div>` : ''}
-${metaLine ? `<div class="meta">${metaLine}</div>` : ''}
-${photo ? `<img class="hero" src="${photo}" alt="">` : ''}
-<div class="rule"></div>
-</header>
-<div class="grid2">
-<section><h2><span class="bar"></span>⚡ THE ACT</h2>${e.elevatorPitch ? `<p class="lead">${esc(e.elevatorPitch)}</p>` : ''}${paras(e.bio).map(p => `<p>${esc(p)}</p>`).join('')}</section>
-<section><h2><span class="bar"></span>📊 AT A GLANCE</h2><div class="card glance">${glance.map(g => `<div class="grow"><div class="gl">${g[0]}</div><div class="gv">${g[1]}</div></div>`).join('') || '<div class="muted">—</div>'}</div></section>
+        const headerHtml = `<header><h1>${esc(bn)}</h1>${tagline ? `<div class="tagline">${esc(tagline)}</div>` : ''}${metaLine ? `<div class="meta">${metaLine}</div>` : ''}<div class="rule"></div></header>`;
+        const deco = `<div class="deco d1"></div><div class="deco d2"></div><div class="deco d3"></div><div class="deco d4"></div>`;
+
+        const body = `<div class="page">${deco}
+${headerHtml}
+<div class="grid21">
+<div class="card actcard"><h2><span class="bar"></span>The Act</h2>${actParas}</div>
+<div class="card"><div class="bc-photo">${photo ? `<img src="${photo}" alt="">` : 'HERO PHOTO / LOGO'}</div><div class="bc-title">Buyer Confidence</div><ul class="bullets">${bcBullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>${qr}</div>
 </div>
+<section style="margin-bottom:28px"><h2><span class="bar"></span>At a Glance</h2><div class="card"><div class="glance-grid">${glanceItems.map(g => `<div class="gitem"><div class="gl">${g[0]}</div><div class="gv">${g[1]}</div></div>`).join('')}</div></div></section>
 <div class="grid2">
-<section><h2><span class="bar"></span>🎵 MEDIA &amp; PROMO ASSETS</h2>${media.join('') || '<div class="muted">—</div>'}</section>
-<section><h2><span class="bar"></span>📈 MARKET PROOF &amp; PRESS</h2>${quotes || '<div class="muted">—</div>'}</section>
+<div class="card"><h2><span class="bar"></span>Media Assets</h2>${mediaItems.join('')}</div>
+<div class="card"><h2><span class="bar"></span>Market Proof</h2>${quotes}</div>
 </div>
-${tilesHtml ? `<div class="stats">${tilesHtml}</div>` : ''}
+<div class="stats">${tilesHtml}</div>
+${bookbar}
 <footer>${esc(bn)} &middot; Electronic Press Kit</footer>
 </div>
-<div class="page break">
-<section><h2><span class="bar"></span>🎸 REPERTOIRE MASTERLIST (${active.length} SONGS &middot; ${totalMin} MINS)</h2><div class="sub">A high-density, multi-genre catalog optimized for continuous room retention and dance-floor momentum.</div><div class="card reps">${rep || '<div class="muted">No songs in library.</div>'}</div></section>
-<div class="grid2">
-<section><h2><span class="bar"></span>📋 SAMPLE SHOWCASE SET${sampleSet ? ` (${esc(sampleSet.name)})` : ''}</h2>${sample ? `<ol class="setlist">${sample}</ol>` : '<div class="muted">Generate a setlist to feature one here.</div>'}</section>
-<section><h2><span class="bar"></span>🛠 TECHNICAL SPECS &amp; LOGISTICS</h2>${logistics.join('') || '<div class="muted">Tech &amp; hospitality riders available on request.</div>'}${e.pressNews ? `<p class="news">${esc(e.pressNews)}</p>` : ''}
-<div class="card booking"><div class="bh">📅 BOOKING &amp; RELATIONS</div>${e.contactEmail ? `<div><b>Direct:</b> <a href="mailto:${esc(e.contactEmail)}">${esc(e.contactEmail)}</a></div>` : ''}${e.contactPhone ? `<div><b>Phone:</b> ${esc(e.contactPhone)}</div>` : ''}${e.pressEmail ? `<div><b>Press/PR:</b> <a href="mailto:${esc(e.pressEmail)}">${esc(e.pressEmail)}</a></div>` : ''}${(e.website || e.linktree) ? `<div><b>Web:</b> ${[e.website, e.linktree].filter(Boolean).map(u => `<a href="${esc(href(u))}" target="_blank">${esc(u)}</a>`).join(' &nbsp;|&nbsp; ')}</div>` : ''}${socialLinks ? `<div class="soc">${socialLinks}</div>` : ''}</div>
-</section>
+<div class="page break">${deco}
+${headerHtml}
+<section style="margin-bottom:26px"><h2><span class="bar"></span>Repertoire Highlights</h2><div class="sub">A multi-genre catalog designed for room retention, dance-floor momentum, and flexible set pacing &mdash; ${repCount} core titles &middot; ~${totalMin} min.</div><div class="card"><div class="reps">${rep || '<div class="muted">No songs in library.</div>'}</div></div></section>
+<div class="grid3">
+<div class="card"><h2><span class="bar"></span>Sample Set</h2><ol class="setlist">${sample}</ol></div>
+<div class="card"><h2><span class="bar"></span>Formats</h2><ul class="bullets">${formatBullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul><div class="note">Best when matched to room size, volume limits, and event flow.</div></div>
+<div class="card"><h2><span class="bar"></span>Tech Advance</h2><ul class="bullets">${techBullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul><div class="note">Advance early for production-heavy or corporate events.</div></div>
 </div>
+<div class="booking2"><div class="bh">Booking &amp; Relations</div><div class="brow"><div><b>Direct:</b> ${e.contactEmail ? `<a href="mailto:${esc(e.contactEmail)}">${esc(e.contactEmail)}</a>` : 'EMAIL'} &nbsp;|&nbsp; <b>Hotline:</b> ${e.contactPhone ? esc(e.contactPhone) : 'PHONE'}${e.pressEmail ? ` &nbsp;|&nbsp; <b>Press:</b> <a href="mailto:${esc(e.pressEmail)}">${esc(e.pressEmail)}</a>` : ''}</div><div><b>Web:</b> ${e.website ? `<a href="${esc(href(e.website))}" target="_blank">${esc(e.website)}</a>` : 'SITE'} &nbsp;|&nbsp; ${e.linktree ? `<a href="${esc(href(e.linktree))}" target="_blank">EPK Hub</a>` : 'EPK HUB'}</div></div>${e.pressNews ? `<div class="note">${esc(e.pressNews)}</div>` : '<div class="tnote">Tip: keep links, metrics, personnel, and venue-specific terms current.</div>'}</div>
 <footer>${esc(bn)} &middot; Page 2</footer>
 </div>
 <button class="printbtn no-print" onclick="window.print()">🖨 Print / Save as PDF</button>`;
