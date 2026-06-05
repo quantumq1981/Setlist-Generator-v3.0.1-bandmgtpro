@@ -322,6 +322,10 @@
 
     .modal-backdrop { position:fixed; inset:0; background: rgba(0,0,0,.5); display:flex; justify-content:center; align-items:center; z-index:1500; }
     .modal { width:min(520px, 92vw); background:var(--secondary); border:1px solid var(--border); border-radius:12px; padding:1rem; }
+    .pdf-settings-group { margin-bottom: 1rem; padding-bottom: .85rem; border-bottom: 1px solid var(--border); }
+    .pdf-settings-group:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .pdf-settings-heading { font-family: 'Space Mono', monospace; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); margin-bottom: .65rem; }
+    @media (max-width: 640px) { .modal > div[style*="grid-template-columns"] { grid-template-columns: 1fr !important; } }
 
     .band-row { display:flex; align-items:center; justify-content: space-between; padding:.5rem; border:1px solid var(--border);
       border-radius:8px; margin-bottom:.5rem; background: var(--primary); }
@@ -4563,7 +4567,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, onEmailShare, songCount, libraryTime, watermarkImg, onWatermarkUpload, onClearWatermark, activeSongs, onRecoverSnapshot }) {
+    function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, onOpenPdfSettings, onEmailShare, songCount, libraryTime, watermarkImg, onWatermarkUpload, onClearWatermark, activeSongs, onRecoverSnapshot }) {
       const [activeHelpKey, setActiveHelpKey] = useState(null);
       const activeHelp = activeHelpKey ? window.featureDefinitions?.[activeHelpKey] : null;
       const openHelp = (featureKey) => setActiveHelpKey(featureKey);
@@ -5064,7 +5068,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           <div className="toolbar" style={{ marginTop: '1rem' }}>
             <button className="btn btn-small" onClick={onCopy}>Copy Text</button>
             <button className="btn btn-small" onClick={onEmailShare} title="Format setlist for email or WhatsApp — respects Stage/Advance view" style={{ borderColor: '#60a5fa', color: '#60a5fa' }}>📧 Email / Share</button>
-            <button className="btn btn-small" onClick={onExportPDF}>Export PDF</button>
+            <button className="btn btn-small" onClick={onOpenPdfSettings} title="Customize page, typography & layout before exporting">⚙ Export PDF…</button>
             {FEATURE_FLAGS.phase1ReliabilityDataSafety && (
               <button className="btn btn-small" onClick={onRecoverSnapshot} style={{ borderColor: 'var(--warning)', color: 'var(--warning)' }}>
                 Recover previous snapshot
@@ -7479,6 +7483,260 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
+    /******************* PDF EXPORT SETTINGS *******************/
+    // Standard paper dimensions in PostScript points (1pt = 1/72in), used both
+    // by the jsPDF render engine (exportPDF) and the live HTML preview below.
+    const PDF_PAGE_SIZES = {
+      A4:        { w: 595.28, h: 841.89, label: 'A4 · 210 × 297 mm' },
+      Letter:    { w: 612,    h: 792,    label: 'Letter · 8.5 × 11 in' },
+      Legal:     { w: 612,    h: 1008,   label: 'Legal · 8.5 × 14 in' },
+      Executive: { w: 521.86, h: 756,    label: 'Executive · 7.25 × 10.5 in' },
+    };
+    // Margin presets expressed in points.
+    const PDF_MARGIN_PRESETS = { none: 14, small: 36, standard: 56 };
+    // Maps user-facing typefaces to a jsPDF built-in font (render engine only
+    // ships courier/helvetica/times) plus a CSS stack for the preview window.
+    // Inter is a registered Google Font in the UI; jsPDF lacks an embedded copy
+    // offline, so it renders with the Helvetica metrics as a graceful fallback.
+    const PDF_FONT_FAMILIES = {
+      Helvetica:     { jsFont: 'helvetica', css: 'Helvetica, Arial, sans-serif' },
+      Arial:         { jsFont: 'helvetica', css: 'Arial, Helvetica, sans-serif' },
+      'Times-Roman': { jsFont: 'times',     css: '"Times New Roman", Times, serif' },
+      Courier:       { jsFont: 'courier',   css: '"Courier New", Courier, monospace' },
+      Inter:         { jsFont: 'helvetica', css: '"Inter", system-ui, sans-serif' },
+    };
+    const PDF_FONT_BASE = 12; // px the render engine treats as the "1.0" scale
+    const DEFAULT_PDF_SETTINGS = {
+      pageSize: 'Letter',
+      orientation: 'portrait',
+      margin: 'small',
+      fontFamily: 'Helvetica',
+      fontSize: 12,
+      textAlign: 'left',
+      lineHeight: 1.5,
+      pageBreakPerSet: true,
+      includeSummaryPage: true,
+    };
+    const PDF_SETTINGS_STORAGE_KEY = 'setlist_pdf_settings_v3';
+
+    // React-based PDF export settings panel. State is held by the parent App and
+    // threaded straight into the jsPDF render utility (exportPDF), so every
+    // control here maps 1:1 onto the generated document.
+    function PdfSettingsModal({ open, onClose, settings, onChange, onExport, viewMode, sampleSet, bandName }) {
+      if (!open) return null;
+      const s = { ...DEFAULT_PDF_SETTINGS, ...settings };
+      const set = (field, value) => onChange(prev => ({ ...prev, [field]: value }));
+
+      const sizeDef = PDF_PAGE_SIZES[s.pageSize] || PDF_PAGE_SIZES.Letter;
+      const famDef = PDF_FONT_FAMILIES[s.fontFamily] || PDF_FONT_FAMILIES.Helvetica;
+      const landscape = s.orientation === 'landscape';
+      const pageW = landscape ? sizeDef.h : sizeDef.w;
+      const pageH = landscape ? sizeDef.w : sizeDef.h;
+
+      // --- Live preview geometry (reduced-scale thumbnail) ---
+      const PREVIEW_W = 230;
+      const scale = PREVIEW_W / pageW;
+      const previewH = pageH * scale;
+      const padPx = (PDF_MARGIN_PRESETS[s.margin] ?? 36) * scale;
+      const baseFontPx = Math.max(4, s.fontSize * scale * 1.15);
+
+      const sampleSongs = (sampleSet && sampleSet.songs && sampleSet.songs.length
+        ? sampleSet.songs
+        : [
+            { title: 'Sample Opener', artist: 'The Band', key: 'G', bpm: 120, style: 'uptempo' },
+            { title: 'Slow Burn', artist: 'The Band', key: 'Am', bpm: 76, style: 'ballad' },
+            { title: 'Closing Number', artist: 'The Band', key: 'E', bpm: 132, style: 'funk' },
+          ]).slice(0, 6);
+      const setTitle = (sampleSet && sampleSet.name) || 'Set 1';
+
+      const SegBtn = ({ active, onClick, children, title }) => (
+        <button
+          type="button"
+          title={title}
+          onClick={onClick}
+          className={`btn btn-small ${active ? 'btn-primary' : ''}`}
+          style={{ flex: 1, borderColor: active ? 'transparent' : 'var(--border)' }}
+        >{children}</button>
+      );
+
+      const fieldLabel = { margin: '0 0 .35rem', display: 'block' };
+
+      return (
+        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+          <div
+            className="modal"
+            onClick={e => e.stopPropagation()}
+            style={{ width: 'min(720px, 95vw)', maxHeight: '92vh', overflowY: 'auto' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.75rem' }}>
+              <h3 className="panel-title" style={{ margin: 0 }}>PDF Export Settings</h3>
+              <button className="btn btn-small" onClick={onClose} aria-label="Close">✕</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: '1.25rem' }}>
+              {/* ---------------- Controls ---------------- */}
+              <div className="pdf-settings-controls">
+
+                {/* Page Setup & Layout */}
+                <div className="pdf-settings-group">
+                  <div className="pdf-settings-heading">Page Setup &amp; Layout</div>
+
+                  <div className="input-group">
+                    <label style={fieldLabel}>Paper Size</label>
+                    <select value={s.pageSize} onChange={e => set('pageSize', e.target.value)}>
+                      {Object.entries(PDF_PAGE_SIZES).map(([k, v]) => (
+                        <option key={k} value={k}>{v.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="input-group">
+                    <label style={fieldLabel}>Orientation</label>
+                    <div style={{ display: 'flex', gap: '.5rem' }}>
+                      <SegBtn active={s.orientation === 'portrait'} onClick={() => set('orientation', 'portrait')}>⬆ Portrait</SegBtn>
+                      <SegBtn active={s.orientation === 'landscape'} onClick={() => set('orientation', 'landscape')}>➡ Landscape</SegBtn>
+                    </div>
+                  </div>
+
+                  <div className="input-group">
+                    <label style={fieldLabel}>Margins</label>
+                    <div style={{ display: 'flex', gap: '.5rem' }}>
+                      <SegBtn active={s.margin === 'none'} onClick={() => set('margin', 'none')}>None</SegBtn>
+                      <SegBtn active={s.margin === 'small'} onClick={() => set('margin', 'small')}>Small</SegBtn>
+                      <SegBtn active={s.margin === 'standard'} onClick={() => set('margin', 'standard')}>Standard</SegBtn>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Typography & Formatting */}
+                <div className="pdf-settings-group">
+                  <div className="pdf-settings-heading">Typography &amp; Formatting</div>
+
+                  <div className="input-group">
+                    <label style={fieldLabel}>Font Family</label>
+                    <select value={s.fontFamily} onChange={e => set('fontFamily', e.target.value)}>
+                      {Object.keys(PDF_FONT_FAMILIES).map(k => (
+                        <option key={k} value={k}>{k}{k === 'Inter' ? ' (Google Font)' : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="input-group">
+                    <label style={fieldLabel}>Base Font Size: {s.fontSize}px</label>
+                    <input
+                      type="range" min="10" max="24" step="1"
+                      value={s.fontSize}
+                      onChange={e => set('fontSize', parseInt(e.target.value, 10))}
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label style={fieldLabel}>Text Alignment</label>
+                    <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                      {['left', 'center', 'right', 'justify'].map(a => (
+                        <label key={a} style={{ display: 'flex', alignItems: 'center', gap: '.35rem', margin: 0, textTransform: 'capitalize', cursor: 'pointer' }}>
+                          <input
+                            type="radio" name="pdf-text-align" value={a}
+                            checked={s.textAlign === a}
+                            onChange={() => set('textAlign', a)}
+                            style={{ width: 'auto' }}
+                          />
+                          {a}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="input-group">
+                    <label style={fieldLabel}>Line Height</label>
+                    <div style={{ display: 'flex', gap: '.5rem' }}>
+                      {[1.2, 1.5, 2.0].map(lh => (
+                        <SegBtn key={lh} active={s.lineHeight === lh} onClick={() => set('lineHeight', lh)}>{lh.toFixed(1)}</SegBtn>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Page Breaks */}
+                <div className="pdf-settings-group">
+                  <div className="pdf-settings-heading">Page Breaks</div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '.5rem', margin: '0 0 .5rem', textTransform: 'none', letterSpacing: 0, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={s.pageBreakPerSet} onChange={e => set('pageBreakPerSet', e.target.checked)} style={{ width: 'auto' }} />
+                    Start each set on a new page
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '.5rem', margin: 0, textTransform: 'none', letterSpacing: 0, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={s.includeSummaryPage} onChange={e => set('includeSummaryPage', e.target.checked)} style={{ width: 'auto' }} />
+                    Append summary / arrangement-notes page
+                  </label>
+                </div>
+              </div>
+
+              {/* ---------------- Live Preview ---------------- */}
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '.7rem', textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-muted)', marginBottom: '.4rem' }}>
+                  Live Preview
+                </div>
+                <div
+                  aria-label="PDF page preview"
+                  style={{
+                    width: PREVIEW_W, height: previewH, margin: '0 auto',
+                    background: '#ffffff', color: '#161616',
+                    boxShadow: '0 6px 22px rgba(0,0,0,.45)', borderRadius: 2,
+                    boxSizing: 'border-box', padding: padPx,
+                    fontFamily: famDef.css, overflow: 'hidden', position: 'relative',
+                    transition: 'width .15s ease, height .15s ease',
+                  }}
+                >
+                  <div style={{
+                    fontWeight: 700, textAlign: 'center', textTransform: 'uppercase',
+                    fontSize: baseFontPx * 1.7, lineHeight: 1.1, marginBottom: baseFontPx * .25,
+                  }}>{setTitle}</div>
+                  <div style={{
+                    textAlign: 'center', color: '#6e6e76', fontSize: baseFontPx * .72,
+                    marginBottom: baseFontPx * .6,
+                  }}>{(bandName || 'Band')} · {sampleSongs.length} songs</div>
+
+                  {sampleSongs.map((song, i) => (
+                    <div key={i} style={{
+                      display: 'flex', alignItems: 'baseline', gap: baseFontPx * .4,
+                      padding: `${baseFontPx * (s.lineHeight - 0.6)}px 0`,
+                      borderTop: '1px solid #e2e2e2',
+                      lineHeight: s.lineHeight,
+                    }}>
+                      <span style={{
+                        flex: '0 0 auto', minWidth: baseFontPx * 1.1, textAlign: 'center',
+                        background: '#3d4f5f', color: '#fff', borderRadius: 2,
+                        fontSize: baseFontPx * .7, fontWeight: 700, padding: `0 ${baseFontPx * .15}px`,
+                      }}>{i + 1}</span>
+                      <span style={{
+                        flex: 1, fontWeight: 700, fontSize: baseFontPx,
+                        textAlign: s.textAlign === 'justify' ? 'left' : s.textAlign,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>{(song.title || '').toUpperCase()}</span>
+                      {song.key && <span style={{ flex: '0 0 auto', fontSize: baseFontPx * .85, color: '#161616' }}>{song.key}</span>}
+                      {song.bpm && <span style={{ flex: '0 0 auto', fontSize: baseFontPx * .85, color: '#6e6e76' }}>{song.bpm}</span>}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize: '.66rem', color: 'var(--text-muted)', marginTop: '.4rem' }}>
+                  {sizeDef.label.split(' · ')[0]} · {landscape ? 'Landscape' : 'Portrait'} · {viewMode === 'advance' ? 'Advance' : 'Stage'} view
+                </div>
+              </div>
+            </div>
+
+            {/* ---------------- Actions ---------------- */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '.5rem', marginTop: '1rem', borderTop: '1px solid var(--border)', paddingTop: '.85rem' }}>
+              <button className="btn btn-small" onClick={() => onChange(() => ({ ...DEFAULT_PDF_SETTINGS }))}>Reset to defaults</button>
+              <div style={{ display: 'flex', gap: '.5rem' }}>
+                <button className="btn btn-small" onClick={onClose}>Cancel</button>
+                <button className="btn btn-primary btn-small export-btn" onClick={onExport}>Export to PDF</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     /******************* MAIN APP *******************/
     function IDEBackground({ children }) {
       return (
@@ -7516,6 +7774,19 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [roster, setRoster] = useState([]);
       const [rosterModal, setRosterModal] = useState(false);
       const [watermarkImg, setWatermarkImg] = useState(null);
+
+      // PDF export settings panel (dimensions, typography, layout) — fed directly
+      // into the jsPDF render utility (exportPDF) and persisted per browser.
+      const [pdfSettings, setPdfSettings] = useState(() => {
+        try {
+          const raw = localStorage.getItem(PDF_SETTINGS_STORAGE_KEY);
+          return raw ? { ...DEFAULT_PDF_SETTINGS, ...JSON.parse(raw) } : { ...DEFAULT_PDF_SETTINGS };
+        } catch { return { ...DEFAULT_PDF_SETTINGS }; }
+      });
+      const [pdfSettingsModal, setPdfSettingsModal] = useState(false);
+      useEffect(() => {
+        try { localStorage.setItem(PDF_SETTINGS_STORAGE_KEY, JSON.stringify(pdfSettings)); } catch (e) { /* ignore quota */ }
+      }, [pdfSettings]);
 
       // PHASE 3A: active/cold library tab
       const [libraryTab, setLibraryTab] = useState('active');
@@ -8709,12 +8980,26 @@ ${headerHtml}
       const exportPDF = () => {
         const isAdvance = viewMode === 'advance';
         const { jsPDF } = window.jspdf;
-        const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
-        const pageW = doc.internal.pageSize.getWidth();   // 612pt
-        const pageH = doc.internal.pageSize.getHeight();  // 792pt
-        const margin = 36;
+
+        // --- Settings panel → render engine mapping ---
+        const ps = { ...DEFAULT_PDF_SETTINGS, ...pdfSettings };
+        const sizeDef = PDF_PAGE_SIZES[ps.pageSize] || PDF_PAGE_SIZES.Letter;
+        const famDef  = PDF_FONT_FAMILIES[ps.fontFamily] || PDF_FONT_FAMILIES.Helvetica;
+        const FONT    = famDef.jsFont;                       // jsPDF built-in font
+        const fScale  = ps.fontSize / PDF_FONT_BASE;          // typography scale
+        const lh      = ps.lineHeight || 1.5;                 // line-height factor
+        const alignField = (cellX, cellW, pad) => {           // title cell alignment
+          if (ps.textAlign === 'center') return { x: cellX + cellW / 2, align: 'center' };
+          if (ps.textAlign === 'right')  return { x: cellX + cellW - pad, align: 'right' };
+          return { x: cellX + pad, align: 'left' }; // left + justify (single line)
+        };
+
+        const doc = new jsPDF({ orientation: ps.orientation, unit: 'pt', format: [sizeDef.w, sizeDef.h] });
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
+        const margin = PDF_MARGIN_PRESETS[ps.margin] ?? 36;
         const tableX = margin;
-        const tableW = pageW - margin * 2;                // 540pt
+        const tableW = pageW - margin * 2;
 
         // Palette
         const ACCENT    = [61, 79, 95];
@@ -8738,14 +9023,15 @@ ${headerHtml}
           style: { x: tableX + NUM_W + TTL_W + KEY_W + BPM_W, w: STY_W },
         };
 
-        const ROW_H      = 52;
-        const HDR_H      = 28;
+        // Row height scales with line-height; type sizes scale with base font size.
+        const ROW_H      = Math.round(52 * (lh / 1.5));
+        const HDR_H      = Math.round(28 * fScale);
         const CELL_PAD   = 8;
-        const TITLE_SIZE = 26;
-        const HDR_FONT   = 10;
-        const TITLE_FONT = 13;
-        const ARTIST_FONT = 8;
-        const META_FONT  = 12;
+        const TITLE_SIZE = Math.round(26 * fScale);
+        const HDR_FONT   = Math.round(10 * fScale);
+        const TITLE_FONT = Math.round(13 * fScale);
+        const ARTIST_FONT = Math.max(6, Math.round(8 * fScale));
+        const META_FONT  = Math.round(12 * fScale);
 
         const addWatermark = () => {
           if (!watermarkImg) return;
@@ -8765,7 +9051,7 @@ ${headerHtml}
         const drawTableHeader = (y) => {
           doc.setFillColor(...ACCENT);
           doc.rect(tableX, y, tableW, HDR_H, 'F');
-          doc.setFont('helvetica', 'bold');
+          doc.setFont(FONT, 'bold');
           doc.setFontSize(HDR_FONT);
           doc.setTextColor(255, 255, 255);
           const ty = y + HDR_H / 2 + 3.5;
@@ -8789,38 +9075,41 @@ ${headerHtml}
           // Song number badge
           doc.setFillColor(...ACCENT);
           doc.roundedRect(cols.num.x + 4, y + 8, NUM_W - 8, ROW_H - 16, 3, 3, 'F');
-          doc.setFont('helvetica', 'bold');
+          doc.setFont(FONT, 'bold');
           doc.setFontSize(12);
           doc.setTextColor(255, 255, 255);
           doc.text(String(rowIdx + 1), cols.num.x + NUM_W / 2, y + ROW_H / 2 + 4.5, { align: 'center' });
 
           // Title
           const titleY = song.artist ? y + 20 : y + ROW_H / 2 + 5;
-          doc.setFont('helvetica', 'bold');
+          doc.setFont(FONT, 'bold');
           doc.setFontSize(TITLE_FONT);
           doc.setTextColor(...TEXT_C);
           const maxTitleW = cols.title.w - CELL_PAD - (fnNum ? 14 : 4);
           const titleTxt = truncate((song.title || '').toUpperCase(), maxTitleW);
-          doc.text(titleTxt, cols.title.x + CELL_PAD, titleY);
+          const ta = alignField(cols.title.x, cols.title.w, CELL_PAD);
+          doc.text(titleTxt, ta.x, titleY, { align: ta.align });
 
-          // Footnote superscript
+          // Footnote superscript — anchored to the end of the rendered title
           if (fnNum) {
             const tw = doc.getTextWidth(titleTxt);
+            const titleStart = ta.align === 'center' ? ta.x - tw / 2 : ta.align === 'right' ? ta.x - tw : ta.x;
             doc.setFontSize(7);
             doc.setTextColor(...ACCENT_FN);
-            doc.text(String(fnNum), cols.title.x + CELL_PAD + tw + 2, titleY - 5);
+            doc.text(String(fnNum), titleStart + tw + 2, titleY - 5);
           }
 
           // Artist sub-line
           if (song.artist) {
-            doc.setFont('helvetica', 'italic');
+            doc.setFont(FONT, 'italic');
             doc.setFontSize(ARTIST_FONT);
             doc.setTextColor(...MUTED_C);
-            doc.text(truncate(song.artist, cols.title.w - CELL_PAD * 2), cols.title.x + CELL_PAD, y + 35);
+            const aa = alignField(cols.title.x, cols.title.w, CELL_PAD);
+            doc.text(truncate(song.artist, cols.title.w - CELL_PAD * 2), aa.x, y + 35, { align: aa.align });
           }
 
           // Key / BPM / Style
-          doc.setFont('helvetica', 'bold');
+          doc.setFont(FONT, 'bold');
           doc.setFontSize(META_FONT);
           doc.setTextColor(...TEXT_C);
           const metaY = y + ROW_H / 2 + 4.5;
@@ -8844,18 +9133,33 @@ ${headerHtml}
         const footnotes = [];
 
         // --- Render each set ---
+        // yPos flows across sets so the "new page per set" toggle can either
+        // start every set on a fresh page or stack them continuously.
+        let yPos = margin + TITLE_SIZE;
+        addWatermark();
         setlists.forEach((set, setIdx) => {
-          if (setIdx > 0) doc.addPage();
-          addWatermark();
+          if (setIdx > 0) {
+            if (ps.pageBreakPerSet) {
+              doc.addPage();
+              addWatermark();
+              yPos = margin + TITLE_SIZE;
+            } else {
+              yPos += 30; // breathing room between stacked sets
+              if (yPos + TITLE_SIZE + 30 + HDR_H + ROW_H > pageH - margin) {
+                doc.addPage();
+                addWatermark();
+                yPos = margin + TITLE_SIZE;
+              }
+            }
+          }
 
           // Set title + band/duration sub-line
-          let yPos = margin + TITLE_SIZE;
-          doc.setFont('helvetica', 'bold');
+          doc.setFont(FONT, 'bold');
           doc.setFontSize(TITLE_SIZE);
           doc.setTextColor(0, 0, 0);
           doc.text((set.name || `Set ${setIdx + 1}`).toUpperCase(), pageW / 2, yPos, { align: 'center' });
           yPos += 8;
-          doc.setFont('helvetica', 'normal');
+          doc.setFont(FONT, 'normal');
           doc.setFontSize(9);
           doc.setTextColor(...MUTED_C);
           const subLine = `${activeBand?.name || ''}  ·  ${set.songs.length} songs  ·  ~${Math.round(set.totalTime)} min`;
@@ -8896,25 +9200,25 @@ ${headerHtml}
 
           // Set footer
           yPos += 6;
-          doc.setFont('helvetica', 'normal');
+          doc.setFont(FONT, 'normal');
           doc.setFontSize(8);
           doc.setTextColor(...MUTED_C);
           doc.text(`Total: ${set.songs.length} songs  ·  ${Math.round(set.totalTime)} min`, tableX + tableW, yPos, { align: 'right' });
         });
 
         // --- Summary / footnotes page ---
-        if (setlists.length > 0) {
+        if (setlists.length > 0 && ps.includeSummaryPage) {
           doc.addPage();
           addWatermark();
           let yPos = margin + 10;
 
-          doc.setFont('helvetica', 'bold');
+          doc.setFont(FONT, 'bold');
           doc.setFontSize(TITLE_SIZE);
           doc.setTextColor(0, 0, 0);
           doc.text('SETLIST SUMMARY', pageW / 2, yPos, { align: 'center' });
           yPos += TITLE_SIZE + 16;
 
-          doc.setFont('helvetica', 'normal');
+          doc.setFont(FONT, 'normal');
           doc.setFontSize(11);
           doc.setTextColor(...TEXT_C);
           doc.text(`Band: ${activeBand?.name || 'Unknown'}`, margin, yPos); yPos += 18;
@@ -8928,9 +9232,9 @@ ${headerHtml}
           // Quality scores
           const qScores = setlists.qualityScores;
           if (qScores && qScores.length > 0) {
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(...TEXT_C);
+            doc.setFont(FONT, 'bold'); doc.setFontSize(13); doc.setTextColor(...TEXT_C);
             doc.text('Quality Scores', margin, yPos); yPos += 18;
-            doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+            doc.setFont(FONT, 'normal'); doc.setFontSize(10);
             qScores.forEach((q, qi) => {
               const col = q.overall >= 75 ? [0, 120, 0] : q.overall >= 50 ? [130, 100, 0] : [170, 0, 0];
               doc.setTextColor(...col);
@@ -8940,13 +9244,13 @@ ${headerHtml}
             doc.setTextColor(...TEXT_C);
           }
 
-          if (setlists.anchorKey) { yPos += 6; doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.text(`Anchor Key: ${setlists.anchorKey}`, margin, yPos); yPos += 16; }
+          if (setlists.anchorKey) { yPos += 6; doc.setFont(FONT,'normal'); doc.setFontSize(10); doc.text(`Anchor Key: ${setlists.anchorKey}`, margin, yPos); yPos += 16; }
 
           if (setlists.diagnostics) {
             yPos += 10;
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(...TEXT_C);
+            doc.setFont(FONT, 'bold'); doc.setFontSize(13); doc.setTextColor(...TEXT_C);
             doc.text('Tonal Diagnostics', margin, yPos); yPos += 18;
-            doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...MUTED_C);
+            doc.setFont(FONT, 'normal'); doc.setFontSize(9); doc.setTextColor(...MUTED_C);
             setlists.diagnostics.forEach((diag, di) => {
               if (!diag) return;
               if (yPos + 28 > pageH - margin) { doc.addPage(); addWatermark(); yPos = margin + 20; }
@@ -8966,27 +9270,27 @@ ${headerHtml}
             if (yPos + 30 > pageH - margin) { doc.addPage(); addWatermark(); yPos = margin + 10; }
             doc.setFillColor(...ACCENT);
             doc.rect(margin, yPos, tableW, 24, 'F');
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
+            doc.setFont(FONT, 'bold'); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
             doc.text('ARRANGEMENT NOTES', margin + 8, yPos + 16);
             yPos += 30;
 
             const rf = advanceRoleFilter || new Set(ARR_ROLES);
             footnotes.forEach(fn => {
               if (yPos + 36 > pageH - margin) { doc.addPage(); addWatermark(); yPos = margin + 16; }
-              doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...ACCENT_FN);
+              doc.setFont(FONT, 'bold'); doc.setFontSize(10); doc.setTextColor(...ACCENT_FN);
               doc.text(String(fn.num), margin, yPos);
               doc.setTextColor(...TEXT_C);
               doc.text(fn.title.toUpperCase(), margin + 14, yPos);
-              doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...MUTED_C);
+              doc.setFont(FONT, 'normal'); doc.setFontSize(8); doc.setTextColor(...MUTED_C);
               const setLabelX = margin + 14 + doc.getTextWidth(fn.title.toUpperCase()) + 5;
               doc.text(`(${fn.setName})`, setLabelX, yPos);
               yPos += 14;
 
               ARR_ROLES.filter(r => fn.arr[r] && rf.has(r)).forEach(role => {
                 if (yPos + 16 > pageH - margin) { doc.addPage(); addWatermark(); yPos = margin + 16; }
-                doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(90, 90, 90);
+                doc.setFont(FONT, 'bold'); doc.setFontSize(8); doc.setTextColor(90, 90, 90);
                 doc.text(ARR_ROLE_LABELS[role].toUpperCase(), margin + 14, yPos);
-                doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...TEXT_C);
+                doc.setFont(FONT, 'normal'); doc.setFontSize(9); doc.setTextColor(...TEXT_C);
                 const noteLines = doc.splitTextToSize(fn.arr[role], tableW - 14 - 72);
                 doc.text(noteLines, margin + 86, yPos);
                 yPos += Math.max(noteLines.length * 11, 12);
@@ -9819,6 +10123,7 @@ ${headerHtml}
                 onGenerate={generate}
                 onCopy={copyToClipboard}
                 onExportPDF={exportPDF}
+                onOpenPdfSettings={() => setPdfSettingsModal(true)}
                 onEmailShare={openEmailShare}
                 songCount={activeSongs.length}
                 libraryTime={activeLibraryTime}
@@ -10010,6 +10315,17 @@ ${headerHtml}
               onClose={() => setEmailModal({ open: false, text: '' })}
               text={emailModal.text}
               viewMode={viewMode}
+            />
+
+            <PdfSettingsModal
+              open={pdfSettingsModal}
+              onClose={() => setPdfSettingsModal(false)}
+              settings={pdfSettings}
+              onChange={setPdfSettings}
+              onExport={() => { exportPDF(); setPdfSettingsModal(false); }}
+              viewMode={viewMode}
+              sampleSet={setlists[0] || null}
+              bandName={activeBand?.name || 'Band'}
             />
 
             <BandModal
