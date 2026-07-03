@@ -189,6 +189,14 @@
     .song-badge { padding: .15rem .4rem; border-radius: 4px; font-size: .7rem; font-weight:700; text-transform: uppercase; letter-spacing: .04em; }
     .song-energy { display:inline-flex; align-items:center; gap:.28rem; font-size:.72rem; font-weight:700; font-family:'Space Mono', monospace; white-space:nowrap; cursor:default; }
     .song-energy-dot { width:8px; height:8px; border-radius:50%; display:inline-block; box-shadow: 0 0 0 1px rgba(0,0,0,.15) inset; }
+    .energy-preview { background: var(--primary); border:1px solid var(--border); border-radius:8px; padding:.5rem .6rem; margin-bottom:.75rem; }
+    .energy-preview-head { display:flex; align-items:center; justify-content:space-between; gap:.5rem; margin-bottom:.25rem; flex-wrap:wrap; }
+    .energy-preview-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); }
+    .energy-preview-legend { display:flex; align-items:center; gap:.55rem; font-size:.68rem; color:var(--text-muted); flex-wrap:wrap; }
+    .energy-preview-legend .epl { display:inline-flex; align-items:center; gap:.28rem; }
+    .energy-preview-caption { font-style:italic; opacity:.85; }
+    .energy-preview-svg { width:100%; height:auto; display:block; overflow:visible; }
+    .energy-preview-svg .epx { fill: var(--text-muted); font-size:7px; font-family:'Space Mono', monospace; }
     .style-ballad{background:var(--ballad); color:#111;} .style-acoustic{background:var(--acoustic); color:#111;}
     .style-slow-blues{background:var(--slow-blues); color:#111;} .style-waltz{background:var(--waltz); color:#111;}
     .style-bossa{background:var(--bossa); color:#111;} .style-blues{background:var(--blues); color:#fff;}
@@ -5466,7 +5474,70 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onMoveSong, onRemoveSong, onLockEntireSet, onDragStart, onDragEnd, onDragOverSong, onDragOverSet, onDropOnSong, onDropOnSet, onMoveToSet, onTouchDragStart, onTouchDragOver, onTouchDrop, dragState, totalSets, isReorderMode, touchFallbackEnabled, touchDrag, setTouchDrag, viewMode, advanceRoleFilter }) {
+    // Compact per-set energy-curve preview: the target intensity arc (dashed, derived from
+    // the active Curve Preset + Set Template) against the set's actual per-song energy
+    // (solid accent line, dots tinted by energyColor). Renders only when Energy Curve
+    // Optimization is on and there are at least two songs.
+    function EnergyCurvePreview({ songs, settings }) {
+      const list = (songs || []).filter(Boolean);
+      if (!settings || !settings.useEnergyCurve || list.length < 2) return null;
+      const curveType = settings.energyCurveType || 'standard';
+      const template = settings.setTemplate || 'freeform';
+
+      const W = 300, H = 76, padL = 16, padR = 8, padT = 8, padB = 16;
+      const pw = W - padL - padR, ph = H - padT - padB;
+      const eToY = (e) => padT + (10 - Math.max(1, Math.min(10, e))) / 9 * ph;
+      const posToX = (p) => padL + p * pw;
+      const iToX = (i) => posToX(list.length <= 1 ? 0.5 : i / (list.length - 1));
+
+      const S = 48;
+      const targetPts = [];
+      for (let k = 0; k <= S; k++) {
+        const p = k / S;
+        targetPts.push(`${posToX(p).toFixed(1)},${eToY(targetEnergyCurve(p, curveType, template)).toFixed(1)}`);
+      }
+      const actual = list.map((s, i) => {
+        const e = getCompositeEnergy(s);
+        const p = list.length <= 1 ? 0.5 : i / (list.length - 1);
+        return { x: iToX(i), y: eToY(e), e, title: s.title || `Song ${i + 1}`, target: targetEnergyCurve(p, curveType, template) };
+      });
+      const actualPts = actual.map(a => `${a.x.toFixed(1)},${a.y.toFixed(1)}`).join(' ');
+
+      const presetLabel = (ENERGY_CURVE_PRESETS[curveType] || {}).label || curveType;
+      const templateLabel = (SET_STRUCTURE_TEMPLATES[template] || {}).label;
+      const caption = (templateLabel && template !== 'freeform') ? `${templateLabel} · ${presetLabel}` : presetLabel;
+
+      return (
+        <div className="energy-preview">
+          <div className="energy-preview-head">
+            <span className="energy-preview-title">Energy shape</span>
+            <span className="energy-preview-legend">
+              <span className="epl"><svg width="16" height="8" aria-hidden="true"><line x1="0" y1="4" x2="16" y2="4" stroke="var(--accent)" strokeWidth="2" /></svg>Actual</span>
+              <span className="epl"><svg width="16" height="8" aria-hidden="true"><line x1="0" y1="4" x2="16" y2="4" stroke="var(--text-muted)" strokeWidth="2" strokeDasharray="3 2" /></svg>Target</span>
+              <span className="energy-preview-caption">{caption}</span>
+            </span>
+          </div>
+          <svg viewBox={`0 0 ${W} ${H}`} className="energy-preview-svg" preserveAspectRatio="xMidYMid meet" role="img" aria-label={`Energy curve — target ${caption} versus this set's actual energy`}>
+            {[2, 4, 6, 8].map(g => (
+              <line key={g} x1={padL} y1={eToY(g)} x2={W - padR} y2={eToY(g)} stroke="var(--border)" strokeWidth="0.5" />
+            ))}
+            <text x="2" y={eToY(10) + 2.5} className="epx">10</text>
+            <text x="4" y={eToY(1) + 2.5} className="epx">1</text>
+            <polyline points={targetPts.join(' ')} fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeDasharray="3 2" strokeLinejoin="round" opacity="0.9">
+              <title>{`Target energy arc — ${caption}`}</title>
+            </polyline>
+            <polyline points={actualPts} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+            {actual.map((a, i) => (
+              <circle key={i} cx={a.x} cy={a.y} r="3" fill={energyColor(a.e)} stroke="var(--primary)" strokeWidth="1">
+                <title>{`${i + 1}. ${a.title}\nEnergy ${a.e.toFixed(1)} · target ${a.target.toFixed(1)}`}</title>
+              </circle>
+            ))}
+          </svg>
+        </div>
+      );
+    }
+
+    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onMoveSong, onRemoveSong, onLockEntireSet, onDragStart, onDragEnd, onDragOverSong, onDragOverSet, onDropOnSong, onDropOnSet, onMoveToSet, onTouchDragStart, onTouchDragOver, onTouchDrop, dragState, totalSets, isReorderMode, touchFallbackEnabled, touchDrag, setTouchDrag, viewMode, advanceRoleFilter, settings }) {
       let runningTime = 0;
       const allLocked = setlist.songs.length > 0 && setlist.songs.every(s => locked.has(`${setIdx}:${s.id}`));
       const isSetDragTarget = dragState && dragState.active && dragState.overSetIdx === setIdx && dragState.fromSetIdx !== setIdx;
@@ -5497,6 +5568,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               </button>
             </div>
           </div>
+
+          <EnergyCurvePreview songs={setlist.songs} settings={settings} />
 
           {setlist.songs.map((song, songIdx) => {
             const startTime = runningTime;
@@ -10542,6 +10615,7 @@ ${headerHtml}
                       setTouchDrag={setTouchDrag}
                       viewMode={viewMode}
                       advanceRoleFilter={advanceRoleFilter}
+                      settings={settings}
                     />
                   ))}
                 </div>
