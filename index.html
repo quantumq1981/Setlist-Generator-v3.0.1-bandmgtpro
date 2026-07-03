@@ -2646,6 +2646,7 @@
 
     function bhFieldOfHeader(label) {
       const p = String(label).trim().toLowerCase();
+      if (/^(#|#\.|no\.?|num\.?|nº|order)$/.test(p)) return 'num';
       if (/^(title|song|song\s*title|tune)$/.test(p)) return 'title';
       if (/^(artist|band|performer)$/.test(p)) return 'artist';
       if (/^(duration|dur|time|length)$/.test(p)) return 'duration';
@@ -2725,36 +2726,132 @@
       return /^all!?$/i.test(v) ? 'ALL' : v;
     }
 
+    // Ignore separator / summary sub-lines that aren't songs: the per-set band line
+    // ("Default Band · 16 songs · ~79 min"), set footers ("Total: 17 songs · 84 min"),
+    // summary rows ("Total Sets/Songs …"), dates, and "(1 of 3)" pagination. Kept
+    // conservative so real titles (e.g. "Total Eclipse of the Heart") survive.
+    function bhIsNoiseRow(text) {
+      if (/·/.test(text)) return true;                        // any middot separator line
+      if (/~\s*\d+\s*min\b/i.test(text)) return true;          // "~79 min" duration blurbs
+      if (/^\d+\s+songs?\b/i.test(text)) return true;
+      if (/\bsongs?,\s*\d+:\d{2}\b/i.test(text)) return true;
+      if (/^total\s+(sets|songs|time)\b/i.test(text)) return true;
+      if (/^total\s*:/i.test(text)) return true;
+      if (/^\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(text)) return true;
+      if (/\(\d+\s+of\s+\d+\)/i.test(text)) return true;
+      return false;
+    }
+
     // Parse a BandHelper setlist document (rows from pdfExtractRows) into sets.
     // Returns { sets:[{ name, songs:[{title,artist,key,bpm,style,duration,vocalist}] }],
     //           songCount } — songs before any "Set N" header fall into "Set 1".
+    //
+    // Two layouts are supported:
+    //  • Column layout (classic BandHelper): Title and Artist live in their own columns.
+    //  • Stacked layout (this app's own "Stage (minimal)" PDF export): there is NO Artist
+    //    column — instead each song spans three vertical lines inside the SONG TITLE
+    //    column: the TITLE (above), the row number + Key/BPM/Style (the "meta" line), and
+    //    the ARTIST (below). Grouping those by a tight Y-band shreds each song into three
+    //    rows, so we anchor on the meta line and pull the nearest title-only line above it
+    //    as the title and the nearest one below it as the artist.
     function pdfParseBandHelperSets(pages) {
       const allRows = pages.flatMap(pg => pg.rows);
       let cols = null;
+      let stacked = false;
       const sets = [];
       let cur = null;
       const ensureSet = (name) => { cur = { name: name || `Set ${sets.length + 1}`, songs: [] }; sets.push(cur); };
+
+      // Stacked-layout state.
+      let lastMetaY = null;   // Y of the current (most recent) song's meta line
+      let pending = [];       // title-only lines awaiting assignment: [{ y, text }]
+
+      // Split buffered title-only lines around an incoming meta line: lines nearer the
+      // previous song's meta line are that song's artist; the rest form the new song's
+      // title. Returns the assembled title for the incoming song.
+      const resolvePending = (curMetaY) => {
+        const titleLines = [];
+        for (const pl of pending) {
+          const nearPrev = lastMetaY != null && cur && cur.songs.length &&
+            Math.abs(pl.y - lastMetaY) <= Math.abs(pl.y - curMetaY);
+          if (nearPrev) {
+            const last = cur.songs[cur.songs.length - 1];
+            last.artist = ((last.artist ? last.artist + ' ' : '') + pl.text).replace(/\s+/g, ' ').trim();
+          } else {
+            titleLines.push(pl.text);
+          }
+        }
+        pending = [];
+        return titleLines.join(' ').replace(/\s+/g, ' ').trim();
+      };
+
+      // After the last song of a set/document there is no following meta line to trigger
+      // resolvePending, so any remaining title-only lines are that last song's artist.
+      const flushTail = () => {
+        if (cur && cur.songs.length && pending.length) {
+          const last = cur.songs[cur.songs.length - 1];
+          for (const pl of pending) {
+            last.artist = ((last.artist ? last.artist + ' ' : '') + pl.text).replace(/\s+/g, ' ').trim();
+          }
+        }
+        pending = [];
+        lastMetaY = null;
+      };
 
       for (const row of allRows) {
         const text = row.items.map(it => it.str).join(' ').replace(/\s+/g, ' ').trim();
         if (!text) continue;
 
-        const setMatch = text.match(BH_SET_HEADER_RE);
-        if (setMatch) { ensureSet(`Set ${setMatch[1]}`); continue; }
+        // The summary page (if present) follows all sets; stop before it so its lines
+        // never bleed into the final song.
+        if (/^setlist\s+summary\b/i.test(text)) break;
 
-        // Skip band-title / date / summary lines (e.g. "Down South Jukers (1 of 3)",
-        // "35 songs, 3:35", "3/21/26, 12:00pm to 4:00pm").
-        if (/^\d+\s+songs?\b/i.test(text)) continue;
-        if (/\bsongs?,\s*\d+:\d{2}\b/i.test(text)) continue;
-        if (/^\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(text)) continue;
-        if (/\(\d+\s+of\s+\d+\)/i.test(text)) continue;
+        const setMatch = text.match(BH_SET_HEADER_RE);
+        if (setMatch) { if (stacked) flushTail(); ensureSet(`Set ${setMatch[1]}`); continue; }
+
+        if (bhIsNoiseRow(text)) continue;
 
         // Header row?
-        if (!cols) { const c = bhDetectColumns(row); if (c) { cols = c; continue; } }
-        else if (bhDetectColumns(row)) { continue; } // repeated header on a later page
+        if (!cols) {
+          const c = bhDetectColumns(row);
+          if (c) {
+            cols = c;
+            const has = new Set(c.map(x => x.field));
+            // No Artist column but a numbered Title column ⇒ the stacked export layout.
+            stacked = has.has('num') && has.has('title') && !has.has('artist');
+            continue;
+          }
+        } else if (bhDetectColumns(row)) { continue; } // repeated header on a later page
 
         if (!cols) continue; // no columns detected yet — can't parse data rows
         const cells = bhAssignRow(row, cols);
+
+        if (stacked) {
+          // A row is a song's meta line when it carries the number or Key/BPM/Style.
+          const hasMeta = !!(cells.num || cells.key || cells.bpm || cells.duration);
+          if (!hasMeta) {
+            if (cells.title) pending.push({ y: row.y, text: cells.title.trim() });
+            continue;
+          }
+          const curMetaY = row.y;
+          const titleFromPending = resolvePending(curMetaY);
+          // A no-artist song keeps its title on the meta line itself, so include both.
+          const title = [titleFromPending, (cells.title || '').trim()]
+            .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+          if (!title || /^title$/i.test(title)) { lastMetaY = curMetaY; continue; }
+          if (!cur) ensureSet('Set 1');
+          cur.songs.push({
+            title,
+            artist: '',
+            key: bhCleanKey(cells.key),
+            bpm: (String(cells.bpm || '').match(/\d+/) || [''])[0],
+            style: (cells.style || '').trim().toLowerCase(),
+            duration: bhCleanDuration(cells.duration),
+            vocalist: bhCleanVocalist(cells.vocalist),
+          });
+          lastMetaY = curMetaY;
+          continue;
+        }
 
         // Wrapped-cell continuation: BandHelper wraps a long Title/Artist onto a
         // second line that carries no Key/BPM/Duration. Stitch it onto the prior
@@ -2784,6 +2881,8 @@
           vocalist: bhCleanVocalist(cells.vocalist),
         });
       }
+
+      if (stacked) flushTail();
 
       const filtered = sets.filter(s => s.songs.length);
       return { sets: filtered, songCount: filtered.reduce((n, s) => n + s.songs.length, 0) };
