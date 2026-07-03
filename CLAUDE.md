@@ -255,6 +255,11 @@ participate in tonal scoring with no extra wiring.
   `importNormalizeRow` out, `importCanonicalRows` new+dedup-merge, the robust
   multi-file importer, gig-setlist import, and the canonical-CSV header/row), so a
   library's per-song `Energy` survives import and feeds `getCompositeEnergy`.
+- **Song-meta UI surfaced** via shared `StyleBadge` + `EnergyMeta` components (used
+  in the library, setlist, and unused-songs rows). The style badge carries a
+  genre-aware tooltip (`styleBadgeTitle`: canonical name + description + energy/
+  friction/bias) and every row shows an effective-energy dot (`energyColor`) that
+  distinguishes a manual override from an auto style+BPM value.
 
 Verification for this pass: Babel compile clean; unit tests on the changed pure
 functions (energy override honored/clamped, arc contours assert 2 peaks for
