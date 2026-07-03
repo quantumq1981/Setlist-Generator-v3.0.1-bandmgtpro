@@ -1398,13 +1398,52 @@
       acoustic:    { amp: 0.8, freq: 1.0, phase: -0.4, base: 3.0, label: 'Acoustic / Coffeehouse' }
     };
 
-    function targetEnergyCurve(position, curveType) {
+    // Arc SHAPE functions, one per Set Structure template. Each maps a normalized set
+    // position (0=first song → 1=last) to a value in roughly [-1, 1] describing the desired
+    // intensity contour. This is what makes the documented curve presets — Classic Arc,
+    // Double Peak, Slow Burn, Freeform High — actually drive the energy target the optimizer
+    // aims at, not just the style placement. The venue "Curve Preset" (energyCurveType) then
+    // sets the baseline and amplitude the shape rides on.
+    const _clamp01 = (x) => Math.max(0, Math.min(1, x));
+    const ENERGY_ARC_SHAPES = {
+      // Single deliberate summit a little past the middle; controlled landing.
+      classic:    (p) => Math.sin(Math.PI * Math.pow(_clamp01(p), 1.15)),
+      // Two surges (~25% and ~74%) with a real valley between them.
+      doublePeak: (p) => {
+        const x = _clamp01(p);
+        const bump = (c, w) => Math.exp(-Math.pow((x - c) / w, 2));
+        return Math.min(1, 0.92 * bump(0.24, 0.16) + 1.0 * bump(0.74, 0.18)) - 0.12;
+      },
+      // Patient, near-monotonic build that saves the impact for late in the set.
+      slowBurn:   (p) => 2 * Math.pow(_clamp01(p), 1.35) - 1,
+      // Sustained high plateau with one strategic mid-set breather.
+      highEnergy: (p) => 1 - 1.4 * Math.exp(-Math.pow((_clamp01(p) - 0.5) / 0.13, 2)),
+    };
+
+    // Target energy (1–10) for a song at a normalized set position.
+    // When a structure template with a defined arc shape is supplied, the shape drives the
+    // contour and the venue preset supplies baseline/amplitude; otherwise (freeform or
+    // unspecified) we fall back to the original venue sine so default behaviour is unchanged.
+    function targetEnergyCurve(position, curveType, template) {
       const c = ENERGY_CURVE_PRESETS[curveType] || ENERGY_CURVE_PRESETS.standard;
+      const shapeFn = template && ENERGY_ARC_SHAPES[template];
+      if (shapeFn) {
+        // Give the shaped arcs a touch more amplitude so peaks/valleys read clearly.
+        return Math.max(1, Math.min(10, c.base + Math.max(c.amp, 1.6) * shapeFn(position)));
+      }
       return Math.max(1, Math.min(10, c.base + c.amp * Math.sin(Math.PI * position * c.freq + c.phase)));
     }
 
-    // Composite energy: blend style-based energy with BPM-derived energy when available.
+    // Composite energy for a song, on a 1–10 scale.
+    // Precedence:
+    //   1. Explicit per-song energy (song.energy) — the truest "song as a whole" signal.
+    //      When the user has rated the song, that rating wins outright, so two songs of the
+    //      same genre can sit at different points on the arc based on how they actually play
+    //      live (e.g. an intense slow-BPM blues vs. a laid-back one).
+    //   2. Otherwise blend style-based energy with BPM-derived energy when available.
     function getCompositeEnergy(song) {
+      const manual = parseFloat(song && song.energy);
+      if (Number.isFinite(manual) && manual > 0) return Math.min(10, Math.max(1, manual));
       const styleE = ENERGY_MAP[(song.style || '').toLowerCase()] || null;
       const bpm = parseFloat(song.bpm);
       const bpmE = (bpm && bpm > 0) ? Math.min(10, Math.max(1, (bpm - 60) / 20 + 2)) : null;
@@ -3307,8 +3346,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           const setDur = opts.setDuration || 45;
           const posA = Math.min(i, j) / len;
           const posB = Math.max(i, j) / len;
-          const targetA = targetEnergyCurve(posA, curveType);
-          const targetB = targetEnergyCurve(posB, curveType);
+          const targetA = targetEnergyCurve(posA, curveType, opts.setTemplate);
+          const targetB = targetEnergyCurve(posB, curveType, opts.setTemplate);
           const eA = getCompositeEnergy(curr);
           const eB = getCompositeEnergy(next);
 
@@ -3449,7 +3488,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       // PERF: Pre-cache energy curve targets for each position
       const targetEnergyCache = new Float64Array(len);
       for (let i = 0; i < len; i++) {
-        targetEnergyCache[i] = targetEnergyCurve(len > 1 ? i / (len - 1) : 0.5, curveType);
+        targetEnergyCache[i] = targetEnergyCurve(len > 1 ? i / (len - 1) : 0.5, curveType, opts.setTemplate);
       }
 
       // PERF: Pre-build affinity lookup maps (O(1) instead of O(k) per pair check)
@@ -3603,7 +3642,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         let maxDeviation = 0;
         for (let i = 0; i < songs.length; i++) {
           const pos = songs.length > 1 ? i / (songs.length - 1) : 0.5;
-          const target = targetEnergyCurve(pos, curveType);
+          const target = targetEnergyCurve(pos, curveType, opts.setTemplate);
           const actual = getCompositeEnergy(songs[i]);
           const dev = Math.abs(actual - target);
           totalDeviation += dev;
@@ -3671,41 +3710,41 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         label: 'Classic Arc',
         description: 'Opener → Build → Peak → Cool → Closer',
         zones: [
-          { start: 0,   end: 0.1,  preferStyles: ['straight-ahead rock', 'power pop', 'up-tempo funk', 'surf rock', 'uptempo', 'rock', 'funk'],                                   label: 'Opener' },
-          { start: 0.1, end: 0.35, preferStyles: ['pop-rock', 'indie pop', 'blues-rock', 'motown', 'swing', 'midtempo', 'groove', 'shuffle'],                                      label: 'Build' },
-          { start: 0.35,end: 0.7,  preferStyles: ['straight-ahead rock', 'hard rock', 'up-tempo funk', 'blues-rock', 'ska', 'uptempo', 'funk', 'rock', 'groove'],                  label: 'Peak' },
-          { start: 0.7, end: 0.9,  preferStyles: ['classic soul', 'r&b', 'yacht rock', 'neo-soul', 'smooth jazz', 'midtempo', 'swing', 'soul'],                                    label: 'Cool Down' },
-          { start: 0.9, end: 1.0,  preferStyles: ['soul ballad', 'pop ballad', 'bossa nova', 'acoustic folk', 'ballad', 'midtempo', 'swing'],                                      label: 'Closer' }
+          { start: 0,   end: 0.1,  preferStyles: ['straight-ahead rock', 'power pop', 'up-tempo funk', 'surf rock', 'gospel', 'up-tempo boogie', 'uptempo', 'rock', 'funk'],                       label: 'Opener' },
+          { start: 0.1, end: 0.35, preferStyles: ['pop-rock', 'indie pop', 'blues-rock', 'motown', 'funk shuffle', 'gospel', 'swing', 'midtempo', 'groove', 'shuffle'],                          label: 'Build' },
+          { start: 0.35,end: 0.7,  preferStyles: ['straight-ahead rock', 'hard rock', 'up-tempo funk', 'blues-rock', 'up-tempo boogie', 'funk shuffle', 'gospel', 'ska', 'uptempo', 'funk', 'rock', 'groove'], label: 'Peak' },
+          { start: 0.7, end: 0.9,  preferStyles: ['classic soul', 'r&b', 'yacht rock', 'neo-soul', 'smooth jazz', 'gospel jazz', 'minor blues', 'midtempo', 'swing', 'soul'],                     label: 'Cool Down' },
+          { start: 0.9, end: 1.0,  preferStyles: ['soul ballad', 'pop ballad', 'bossa nova', 'acoustic folk', 'minor blues', 'slow blues', 'ballad', 'midtempo', 'swing'],                        label: 'Closer' }
         ]
       },
       doublePeak: {
         label: 'Double Peak',
         description: 'Opener → Peak1 → Valley → Peak2 → Closer',
         zones: [
-          { start: 0,   end: 0.1,  preferStyles: ['straight-ahead rock', 'power pop', 'gospel up-tempo', 'uptempo', 'groove', 'funk'],                                             label: 'Opener' },
-          { start: 0.1, end: 0.35, preferStyles: ['hard rock', 'blues-rock', 'up-tempo funk', 'ska', 'uptempo', 'funk', 'rock'],                                                   label: 'Peak 1' },
-          { start: 0.35,end: 0.5,  preferStyles: ['soul ballad', 'bossa nova', 'smooth jazz', 'acoustic folk', 'ballad', 'midtempo', 'swing'],                                     label: 'Valley' },
-          { start: 0.5, end: 0.8,  preferStyles: ['straight-ahead rock', 'up-tempo funk', 'electronic dance music', 'disco', 'salsa', 'uptempo', 'funk', 'groove', 'rock'],        label: 'Peak 2' },
-          { start: 0.8, end: 1.0,  preferStyles: ['soul ballad', 'pop ballad', 'classic soul', 'ballad', 'midtempo'],                                                              label: 'Closer' }
+          { start: 0,   end: 0.1,  preferStyles: ['straight-ahead rock', 'power pop', 'gospel up-tempo', 'gospel', 'up-tempo boogie', 'uptempo', 'groove', 'funk'],                                label: 'Opener' },
+          { start: 0.1, end: 0.35, preferStyles: ['hard rock', 'blues-rock', 'up-tempo funk', 'up-tempo boogie', 'funk shuffle', 'ska', 'uptempo', 'funk', 'rock'],                              label: 'Peak 1' },
+          { start: 0.35,end: 0.5,  preferStyles: ['soul ballad', 'bossa nova', 'smooth jazz', 'gospel jazz', 'minor blues', 'acoustic folk', 'ballad', 'midtempo', 'swing'],                     label: 'Valley' },
+          { start: 0.5, end: 0.8,  preferStyles: ['straight-ahead rock', 'up-tempo funk', 'up-tempo boogie', 'funk shuffle', 'gospel', 'electronic dance music', 'disco', 'salsa', 'uptempo', 'funk', 'groove', 'rock'], label: 'Peak 2' },
+          { start: 0.8, end: 1.0,  preferStyles: ['soul ballad', 'pop ballad', 'classic soul', 'minor blues', 'ballad', 'midtempo'],                                                             label: 'Closer' }
         ]
       },
       slowBurn: {
         label: 'Slow Burn',
         description: 'Mellow start → Gradual build → Big finish',
         zones: [
-          { start: 0,   end: 0.3,  preferStyles: ['soul ballad', 'bossa nova', 'acoustic folk', 'smooth jazz', 'neo-soul', 'ballad', 'midtempo', 'swing', 'bossa'],                label: 'Mellow' },
-          { start: 0.3, end: 0.6,  preferStyles: ['classic soul', 'r&b', 'motown', 'swing', 'blues-rock', 'midtempo', 'groove', 'shuffle'],                                        label: 'Warming Up' },
-          { start: 0.6, end: 0.9,  preferStyles: ['straight-ahead rock', 'up-tempo funk', 'blues-rock', 'gospel up-tempo', 'uptempo', 'funk', 'rock', 'groove'],                   label: 'Peak' },
-          { start: 0.9, end: 1.0,  preferStyles: ['hard rock', 'straight-ahead rock', 'electronic dance music', 'uptempo', 'rock'],                                                label: 'Big Finish' }
+          { start: 0,   end: 0.3,  preferStyles: ['soul ballad', 'bossa nova', 'acoustic folk', 'smooth jazz', 'neo-soul', 'minor blues', 'slow blues', 'gospel jazz', 'ballad', 'midtempo', 'swing', 'bossa'], label: 'Mellow' },
+          { start: 0.3, end: 0.6,  preferStyles: ['classic soul', 'r&b', 'motown', 'swing', 'blues-rock', 'funk shuffle', 'gospel jazz', 'midtempo', 'groove', 'shuffle'],                        label: 'Warming Up' },
+          { start: 0.6, end: 0.9,  preferStyles: ['straight-ahead rock', 'up-tempo funk', 'blues-rock', 'gospel up-tempo', 'gospel', 'up-tempo boogie', 'funk shuffle', 'uptempo', 'funk', 'rock', 'groove'], label: 'Peak' },
+          { start: 0.9, end: 1.0,  preferStyles: ['hard rock', 'straight-ahead rock', 'electronic dance music', 'up-tempo boogie', 'gospel', 'uptempo', 'rock'],                                 label: 'Big Finish' }
         ]
       },
       highEnergy: {
         label: 'High Energy',
         description: 'Constant high energy with one mid-set breather',
         zones: [
-          { start: 0,    end: 0.45, preferStyles: ['straight-ahead rock', 'hard rock', 'up-tempo funk', 'electronic dance music', 'ska', 'salsa', 'uptempo', 'funk', 'rock', 'groove'], label: 'Full Throttle' },
-          { start: 0.45, end: 0.55, preferStyles: ['classic soul', 'r&b', 'swing', 'latin groove', 'midtempo', 'swing', 'shuffle'],                                                label: 'Breather' },
-          { start: 0.55, end: 1.0,  preferStyles: ['straight-ahead rock', 'up-tempo funk', 'blues-rock', 'gospel up-tempo', 'disco', 'uptempo', 'funk', 'rock', 'groove'],          label: 'Full Throttle' }
+          { start: 0,    end: 0.45, preferStyles: ['straight-ahead rock', 'hard rock', 'up-tempo funk', 'up-tempo boogie', 'funk shuffle', 'gospel', 'electronic dance music', 'ska', 'salsa', 'uptempo', 'funk', 'rock', 'groove'], label: 'Full Throttle' },
+          { start: 0.45, end: 0.55, preferStyles: ['classic soul', 'r&b', 'swing', 'latin groove', 'gospel jazz', 'minor blues', 'midtempo', 'swing', 'shuffle'],                                 label: 'Breather' },
+          { start: 0.55, end: 1.0,  preferStyles: ['straight-ahead rock', 'up-tempo funk', 'blues-rock', 'gospel up-tempo', 'gospel', 'up-tempo boogie', 'funk shuffle', 'disco', 'uptempo', 'funk', 'rock', 'groove'], label: 'Full Throttle' }
         ]
       },
       freeform: {
@@ -3724,14 +3763,17 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const zone = template.zones.find(z => position >= z.start && position < z.end);
       if (!zone) return 0;
       if (zone.preferStyles.includes(style)) return -0.8; // explicit style match: bonus
-      // gravityGroup fallback: avoid mismatch-penalizing songs that are harmonically appropriate
+      // Energy/gravity fallback: don't penalize a song that fits the zone's intensity even
+      // when it isn't named in preferStyles. This keeps any canonical style (including newly
+      // added sub-styles) placed sensibly by feel rather than by an exhaustive list.
       const gp = getGenreParams(style);
       if (gp) {
         const lbl = zone.label || '';
         const isHighZone = /opener|peak|throttle|finish/i.test(lbl);
         const isRestZone = /closer|valley|mellow|breather|cool/i.test(lbl);
-        if (isHighZone && (gp.gravityGroup <= 2) && gp.baseEnergy >= 7) return 0;  // high-energy anchor/modal: neutral
-        if (isRestZone && (gp.gravityGroup === 4 || gp.gravityGroup === 1) && gp.baseEnergy <= 5) return 0; // floaters/anchors: neutral
+        if (isHighZone && gp.baseEnergy >= 7) return 0;                              // any high-energy style fits a summit
+        if (isRestZone && gp.baseEnergy <= 5) return 0;                              // any low-energy style fits a rest
+        if (isRestZone && gp.baseEnergy <= 6 && gp.gravityGroup >= 3) return 0;      // sophisticated mid (gospel jazz, cool/modal) suits a rest
       }
       return 0.4; // default mismatch penalty
     }
@@ -4030,7 +4072,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             let energyPenalty = 0;
             if (useEnergyCurve) {
               const pos = (setDuration - remaining) / setDuration;
-              const targetE = targetEnergyCurve(pos, curveType);
+              const targetE = targetEnergyCurve(pos, curveType, opts.setTemplate);
               const actualE = cachedEnergy(s);
               energyPenalty = Math.abs(actualE - targetE) * energyWeight;
 
@@ -4325,7 +4367,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       onClearAll,
       latestImport
     }) {
-      const [form, setForm] = useState({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '', arrangement: '', mediaLinks: [] });
+      const [form, setForm] = useState({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '', energy: '', arrangement: '', mediaLinks: [] });
       const [editingId, setEditingId] = useState(null);
       const [editForm, setEditForm] = useState({});
       const [newClip, setNewClip] = useState({ url: '', ts: '', label: '' });
@@ -4333,8 +4375,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       const handleAdd = () => {
         if (!form.title || !form.artist || !form.duration) return;
-        onAddSong(form);
-        setForm({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '', arrangement: '', mediaLinks: [] });
+        onAddSong({ ...form, energy: form.energy === '' ? '' : String(form.energy).trim() });
+        setForm({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '', energy: '', arrangement: '', mediaLinks: [] });
         setNewClip({ url: '', ts: '', label: '' });
       };
 
@@ -4347,6 +4389,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           style: song.style || 'midtempo',
           key: song.key || '',
           bpm: song.bpm || '',
+          energy: song.energy ?? '',
           vocalist: song.vocalist || '',
           arrangement: song.arrangement || '',
           mediaLinks: song.mediaLinks || []
@@ -4424,6 +4467,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             <div className="input-group">
               <label>BPM</label>
               <input value={form.bpm} onChange={e => setForm({ ...form, bpm: e.target.value })} placeholder="120" />
+            </div>
+            <div className="input-group">
+              <label>Energy <span style={{ color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none' }}>(1–10, optional)</span></label>
+              <input type="number" min="1" max="10" step="0.1" value={form.energy}
+                onChange={e => setForm({ ...form, energy: e.target.value })} placeholder="auto" />
             </div>
           </div>
 
@@ -4565,6 +4613,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                         <div className="input-group">
                           <label style={{ fontSize: '.65rem' }}>BPM</label>
                           <input value={editForm.bpm} onChange={e => setEditForm({ ...editForm, bpm: e.target.value })} placeholder="120" style={{ fontSize: '.82rem', padding: '.3rem .5rem', width: '60px' }} />
+                        </div>
+                        <div className="input-group">
+                          <label style={{ fontSize: '.65rem' }}>Energy</label>
+                          <input type="number" min="1" max="10" step="0.1" value={editForm.energy ?? ''} onChange={e => setEditForm({ ...editForm, energy: e.target.value })} placeholder="auto" title="Manual energy 1–10 (blank = auto from style + BPM)" style={{ fontSize: '.82rem', padding: '.3rem .5rem', width: '60px' }} />
                         </div>
                         <div className="input-group" style={{ flex: 1 }}>
                           <label style={{ fontSize: '.65rem' }}>Vocalist</label>
