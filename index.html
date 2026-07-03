@@ -187,6 +187,8 @@
     .song-title { font-weight:700; margin-bottom: .2rem; }
     .song-meta { font-size: .8rem; color: var(--text-muted); display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
     .song-badge { padding: .15rem .4rem; border-radius: 4px; font-size: .7rem; font-weight:700; text-transform: uppercase; letter-spacing: .04em; }
+    .song-energy { display:inline-flex; align-items:center; gap:.28rem; font-size:.72rem; font-weight:700; font-family:'Space Mono', monospace; white-space:nowrap; cursor:default; }
+    .song-energy-dot { width:8px; height:8px; border-radius:50%; display:inline-block; box-shadow: 0 0 0 1px rgba(0,0,0,.15) inset; }
     .style-ballad{background:var(--ballad); color:#111;} .style-acoustic{background:var(--acoustic); color:#111;}
     .style-slow-blues{background:var(--slow-blues); color:#111;} .style-waltz{background:var(--waltz); color:#111;}
     .style-bossa{background:var(--bossa); color:#111;} .style-blues{background:var(--blues); color:#fff;}
@@ -1455,6 +1457,55 @@
 
     function getGenreParams(style) {
       return style ? (GENRE_PARAMS[style.toLowerCase()] || null) : null;
+    }
+
+    // ─── SHARED SONG-META UI: style badge + energy indicator ─────────────────
+    // Perceptual colour for an energy value (1–10): cool blue (low) → warm orange/red
+    // (high). Drives the per-song energy dot and the energy-curve preview.
+    function energyColor(v) {
+      const t = Math.max(0, Math.min(1, (v - 1) / 9));
+      return `hsl(${Math.round(210 - t * 198)}, 75%, 55%)`; // 210° blue → 12° red-orange
+    }
+
+    // Rich hover tooltip for a style badge: canonical genre name + description + the key
+    // params the algorithm actually uses, plus the inferred-style hint when applicable.
+    function styleBadgeTitle(song) {
+      const style = (song.style || '').trim();
+      const gp = getGenreParams(style);
+      const lines = [];
+      if (gp) {
+        lines.push(`${gp.style} — ${gp.description}`);
+        lines.push(`Energy ${gp.baseEnergy}/10 · ${gp.harmonicFriction} friction · ${gp.gravityBias} pull`);
+      } else if (style) {
+        lines.push(style);
+      }
+      if (song.styleInferred) lines.push('⚡ Style inferred — click Edit to confirm');
+      return lines.length ? lines.join('\n') : undefined;
+    }
+
+    // Style badge with a genre-aware tooltip. Renders nothing when the song has no style.
+    function StyleBadge({ song }) {
+      const style = (song.style || '').trim();
+      if (!style) return null;
+      return (
+        <span className={`song-badge style-${style.replace(/\s+/g, '-')}`} title={styleBadgeTitle(song)}>
+          {song.style}{song.styleInferred ? ' ⚡' : ''}
+        </span>
+      );
+    }
+
+    // Compact effective-energy indicator (coloured dot + value). The tooltip says whether
+    // the value is a manual override or auto-derived from style + BPM.
+    function EnergyMeta({ song }) {
+      const val = Math.round(getCompositeEnergy(song) * 10) / 10;
+      const m = parseFloat(song && song.energy);
+      const manual = Number.isFinite(m) && m > 0;
+      return (
+        <span className="song-energy" title={`Energy ${val.toFixed(1)}/10 — ${manual ? 'set on the song' : 'auto from style + BPM'}`}>
+          <span className="song-energy-dot" style={{ background: energyColor(val) }} />
+          {val.toFixed(1)}
+        </span>
+      );
     }
 
     // ─── STYLE INFERENCE: artist lookup + BPM-range fallback ─────────────────
@@ -4725,7 +4776,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                         <div className="song-title">{song.title}</div>
                         <div className="song-meta">
                           <span>{song.artist}</span>
-                          <span className={`song-badge style-${(song.style || '').replace(/\s+/g, '-')}`} title={song.styleInferred ? 'Style inferred — click Edit to confirm' : undefined}>{song.style}{song.styleInferred ? ' ⚡' : ''}</span>
+                          <StyleBadge song={song} />
+                          <EnergyMeta song={song} />
                           <span>{parseDuration(song.duration)}min</span>
                           {song.key && <span>{song.key}</span>}
                           {song.bpm && <span>{song.bpm}bpm</span>}
@@ -5325,7 +5377,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       <div style={{ fontWeight: 600, fontSize: '.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{song.title}</div>
                       <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', display: 'flex', gap: '.4rem', flexWrap: 'wrap' }}>
                         <span>{song.artist}</span>
-                        {song.style && <span className={`song-badge style-${(song.style || '').replace(/\s+/g, '-')}`} title={song.styleInferred ? 'Style inferred — click Edit to confirm' : undefined}>{song.style}{song.styleInferred ? ' ⚡' : ''}</span>}
+                        <StyleBadge song={song} />
+                        <EnergyMeta song={song} />
                         <span>{parseDuration(song.duration)}min</span>
                         {song.key && <span>{song.key}</span>}
                       </div>
@@ -5530,7 +5583,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   <div className="song-title">{song.title}</div>
                   <div className="song-meta">
                     <span>{song.artist}</span>
-                    <span className={`song-badge style-${(song.style || '').replace(/\s+/g, '-')}`} title={song.styleInferred ? 'Style inferred — click Edit to confirm' : undefined}>{song.style}{song.styleInferred ? ' ⚡' : ''}</span>
+                    <StyleBadge song={song} />
+                    <EnergyMeta song={song} />
                     <span>{parseDuration(song.duration)}min</span>
                     {song.key && <span style={{ fontSize: '.7rem', color: 'var(--text-muted)' }}>{song.key}</span>}
                   </div>
