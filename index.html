@@ -2073,6 +2073,7 @@
       key: ["key","tonality","pitch","root"],
       tempo: ["tempo","bpm","speed"],
       vocalist: ["vocalist","singer","lead","vox","vocal"],
+      energy: ["energy","intensity","vibe"],
       arrangement: ["arrangement","arr","notes","cues","chart notes","advance notes"]
     };
 
@@ -2213,6 +2214,7 @@
       const rawKey = mapping.keyCol != null ? (rowObj[mapping.keyCol] ?? "") : "";
       const rawTempo = mapping.tempoCol != null ? (rowObj[mapping.tempoCol] ?? "") : "";
       const rawVox = mapping.vocalistCol != null ? (rowObj[mapping.vocalistCol] ?? "") : "";
+      const rawEnergy = mapping.energyCol != null ? (rowObj[mapping.energyCol] ?? "") : "";
       // Per-role arrangement columns take priority over single Arrangement column
       const rowKeyMap = Object.fromEntries(Object.keys(rowObj).map(k => [k.toLowerCase().trim(), k]));
       const roleObj = { global: '', drums: '', keys: '', bass: '', guitar2: '', endingCue: '' };
@@ -2330,7 +2332,22 @@
       warnings.push(...v.warnings);
       if (v.original !== v.value) changes.push({ field: "vocalist", original: v.original, normalized: v.value });
 
-      const out = { title: t.value, artist: artistVal.value, duration: durationVal, style: styleVal, key: k.value, tempo: p.value, vocalist: v.value, arrangement: rawArrangement, ...(styleInferred ? { styleInferred: true } : {}) };
+      // Energy: optional per-song intensity (1–10). Parse, clamp, keep one decimal; warn on
+      // an unparseable non-blank value. Blank stays blank so the algorithm falls back to
+      // style + BPM (see getCompositeEnergy).
+      let energyVal = "";
+      const rawEnergyStr = String(rawEnergy).trim();
+      if (rawEnergyStr) {
+        const en = parseFloat(rawEnergyStr);
+        if (Number.isFinite(en) && en > 0) {
+          energyVal = String(Math.min(10, Math.max(1, Math.round(en * 10) / 10)));
+          if (energyVal !== rawEnergyStr) changes.push({ field: "energy", original: rawEnergyStr, normalized: energyVal });
+        } else {
+          warnings.push("energy_invalid");
+        }
+      }
+
+      const out = { title: t.value, artist: artistVal.value, duration: durationVal, style: styleVal, key: k.value, tempo: p.value, vocalist: v.value, energy: energyVal, arrangement: rawArrangement, ...(styleInferred ? { styleInferred: true } : {}) };
       const rejectReason = !out.title ? "empty_title" : null;
       return { out, rejectReason, warnings, changes };
     }
@@ -2359,14 +2376,14 @@
     }
 
     function importToCanonicalCSV(rows) {
-      const header = ["Title","Artist","Duration","Style","Key","BPM","Vocalist","Arr General","Arr Drums","Arr Keys","Arr Bass","Arr Guitar2","Arr Ending Cue"];
+      const header = ["Title","Artist","Duration","Style","Key","BPM","Vocalist","Energy","Arr General","Arr Drums","Arr Keys","Arr Bass","Arr Guitar2","Arr Ending Cue"];
       const esc = (s) => `"${String(s ?? "").replace(/"/g,'""')}"`;
       const lines = [header.join(",")];
       for (const r of rows) {
         const arr = parseArrangement(r.arrangement || '');
         lines.push([
           esc(r.title), esc(r.artist || ""), r.duration || "", esc(r.style || ""),
-          esc(r.key), r.tempo ? String(parseInt(r.tempo, 10)) : "", esc(r.vocalist),
+          esc(r.key), r.tempo ? String(parseInt(r.tempo, 10)) : "", esc(r.vocalist), r.energy || "",
           esc(arr.global), esc(arr.drums), esc(arr.keys), esc(arr.bass), esc(arr.guitar2), esc(arr.endingCue)
         ].join(","));
       }
@@ -2391,7 +2408,7 @@
     }
 
     function importAutoMapColumns(headers) {
-      const mapping = { titleCol: null, artistCol: null, durationCol: null, styleCol: null, keyCol: null, tempoCol: null, vocalistCol: null, arrangementCol: null };
+      const mapping = { titleCol: null, artistCol: null, durationCol: null, styleCol: null, keyCol: null, tempoCol: null, vocalistCol: null, energyCol: null, arrangementCol: null };
       const confidences = {};
       const used = new Set();
 
@@ -5622,7 +5639,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [parsedRows, setParsedRows] = useState([]);
 
       // Mapping
-      const [mapping, setMapping] = useState({ titleCol: null, artistCol: null, durationCol: null, styleCol: null, keyCol: null, tempoCol: null, vocalistCol: null, arrangementCol: null });
+      const [mapping, setMapping] = useState({ titleCol: null, artistCol: null, durationCol: null, styleCol: null, keyCol: null, tempoCol: null, vocalistCol: null, energyCol: null, arrangementCol: null });
       const [confidences, setConfidences] = useState({});
 
       // Options
@@ -5641,7 +5658,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         setStep("input"); setInputTab("upload"); setRawText(""); setFileName("");
         setHasHeaders(true); setDelimiter("auto");
         setParsedColumns([]); setParsedRows([]);
-        setMapping({ titleCol: null, artistCol: null, durationCol: null, styleCol: null, keyCol: null, tempoCol: null, vocalistCol: null, arrangementCol: null });
+        setMapping({ titleCol: null, artistCol: null, durationCol: null, styleCol: null, keyCol: null, tempoCol: null, vocalistCol: null, energyCol: null, arrangementCol: null });
         setConfidences({});
         setNormalizedResult(null);
       };
@@ -5733,6 +5750,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           keyCol: mapping.keyCol != null ? parsedColumns[mapping.keyCol] : null,
           tempoCol: mapping.tempoCol != null ? parsedColumns[mapping.tempoCol] : null,
           vocalistCol: mapping.vocalistCol != null ? parsedColumns[mapping.vocalistCol] : null,
+          energyCol: mapping.energyCol != null ? parsedColumns[mapping.energyCol] : null,
           arrangementCol: mapping.arrangementCol != null ? parsedColumns[mapping.arrangementCol] : null
         };
         const result = importNormalizeAll(parsedRows, colMapping, opts);
@@ -5776,6 +5794,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         style_unknown: "Style not in known styles list",
         style_inferred_artist: "Style inferred from artist name lookup (⚡)",
         style_inferred_bpm: "Style inferred from BPM range fallback (⚡)",
+        energy_invalid: "Energy not a number 1–10, left blank (auto)",
         artist_trimmed: "Artist whitespace trimmed"
       };
 
@@ -5888,6 +5907,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     { key: "keyCol", label: "Key" },
                     { key: "tempoCol", label: "Tempo / BPM" },
                     { key: "vocalistCol", label: "Vocalist" },
+                    { key: "energyCol", label: "Energy (1–10)" },
                     { key: "arrangementCol", label: "Arrangement Notes" }
                   ].map(({ key, label, required }) => (
                     <div key={key} className="import-mapping-item">
@@ -8862,6 +8882,7 @@ ${headerHtml}
               key: get(['key', 'tonality', 'pitch']) || '',
               bpm: get(['bpm', 'tempo', 'speed']) || '',
               vocalist: get(['vocalist', 'singer', 'lead', 'vox', 'vocal']) || '',
+              energy: get(['energy', 'intensity', 'vibe']) || '',
               arrangement: get(['arrangement', 'arr', 'notes', 'cues']) || ''
             });
           }
@@ -9010,6 +9031,7 @@ ${headerHtml}
               if ((!merged.duration || merged.duration === DEFAULT_DURATION_MINUTES) && row.duration) { merged.duration = parseDuration(row.duration); updated = true; }
               if (merged.style === 'midtempo' && row.style && row.style !== 'midtempo') { merged.style = row.style; updated = true; }
               if (!merged.arrangement && row.arrangement) { merged.arrangement = row.arrangement; updated = true; }
+              if (!merged.energy && row.energy) { merged.energy = row.energy; updated = true; }
               if (updated) {
                 const newSongs = [...songs];
                 newSongs[idx] = merged;
@@ -9031,6 +9053,7 @@ ${headerHtml}
             key: row.key || '',
             bpm: row.tempo || '',
             vocalist: row.vocalist || '',
+            energy: row.energy || '',
             arrangement: row.arrangement || ''
           });
         }
@@ -10169,6 +10192,7 @@ ${headerHtml}
               key: (row['Key'] || '').trim(),
               bpm: (row['BPM'] || '').trim(),
               vocalist: (row['Vocalist'] || '').trim(),
+              energy: (row['Energy'] || '').trim(),
             };
             if (!setMap.has(setName)) setMap.set(setName, []);
             setMap.get(setName).push(song);

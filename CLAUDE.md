@@ -184,11 +184,16 @@ Precedence:
 This is the single energy entry point used everywhere (greedy, SA, refinement,
 quality score, exports), so tuning it propagates consistently.
 
-> **Known follow-up:** the CSV/PDF **import** pipeline canonicalizes through a
-> fixed-schema CSV and does *not* yet carry the `Energy` column into the stored
-> song. Manual entry via the editor works today; wiring import → `song.energy`
-> end-to-end (synonyms, `importNormalizeRow` out, `importToCanonicalCSV`
-> header/rows, and the re-parse) is a clean next task.
+**Import carries energy.** CSV import reads an `Energy` column (synonyms
+`energy`/`intensity`/`vibe`) through every song-creating path — the validated
+`importNormalizeRow` → `importCanonicalRows`, the robust multi-file importer, and
+the gig-setlist CSV importer (`row['Energy']`). Values are parsed, clamped to 1–10,
+and stored as `song.energy`; a blank cell stays blank so the song falls back to
+style+BPM. A non-numeric value raises the `energy_invalid` import warning. PDF
+imports have no energy source, so those songs stay on auto. Because CSV **export**
+writes the effective (computed-or-manual) energy, a round-trip pins each song's
+energy to its exported value — clear the editor's Energy field to return a song to
+auto.
 
 ---
 
@@ -246,6 +251,10 @@ participate in tonal scoring with no extra wiring.
 - **New sub-styles integrated** into every `SET_STRUCTURE_TEMPLATES` zone's
   `preferStyles`, and `templateStylePenalty`'s fallback generalized so any style is
   placed by energy/gravity feel (fixes Gospel Jazz being penalized everywhere).
+- **Energy carried through CSV import** end-to-end (column synonyms,
+  `importNormalizeRow` out, `importCanonicalRows` new+dedup-merge, the robust
+  multi-file importer, gig-setlist import, and the canonical-CSV header/row), so a
+  library's per-song `Energy` survives import and feeds `getCompositeEnergy`.
 
 Verification for this pass: Babel compile clean; unit tests on the changed pure
 functions (energy override honored/clamped, arc contours assert 2 peaks for
