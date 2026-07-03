@@ -97,6 +97,9 @@
       --bossa-nova:#c4b5fd; --ambient:#bfdbfe; --post-rock:#93c5fd;
       --impressionist:#ddd6fe; --smooth-jazz:#7dd3fc; --chamber-pop:#e9d5ff;
       --psychedelic-rock:#a78bfa;
+      /* Added sub-styles */
+      --minor-blues:#6366f1; --up-tempo-boogie:#fb923c; --funk-shuffle:#c084fc;
+      --gospel:#fbbf24; --gospel-jazz:#d97706;
       --locked: #4ade80;
       --toast-bg: rgba(45,45,45,.95);
     }
@@ -231,6 +234,10 @@
     .style-ambient{background:var(--ambient);color:#111;} .style-post-rock{background:var(--post-rock);color:#111;}
     .style-impressionist{background:var(--impressionist);color:#111;} .style-smooth-jazz{background:var(--smooth-jazz);color:#111;}
     .style-chamber-pop{background:var(--chamber-pop);color:#111;} .style-psychedelic-rock{background:var(--psychedelic-rock);color:#111;}
+    /* Added sub-styles */
+    .style-minor-blues{background:var(--minor-blues);color:#fff;} .style-up-tempo-boogie{background:var(--up-tempo-boogie);color:#111;}
+    .style-funk-shuffle{background:var(--funk-shuffle);color:#111;} .style-gospel{background:var(--gospel);color:#111;}
+    .style-gospel-jazz{background:var(--gospel-jazz);color:#fff;}
 
     .setlists-container { display:grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1rem; }
     .setlist { background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
@@ -1253,6 +1260,13 @@
       { style: "Smooth Jazz",             baseEnergy:  4, gravityGroup: 4, harmonicFriction: "Fluid", gravityBias: "Counterclockwise", description: "Highly polished, floating harmony that gently descends for easy landings." },
       { style: "Chamber Pop",             baseEnergy:  3, gravityGroup: 4, harmonicFriction: "Fluid", gravityBias: "Fluid",            description: "Orchestral textures providing a lush, ambiguous harmonic bed." },
       { style: "Psychedelic Rock",        baseEnergy:  6, gravityGroup: 4, harmonicFriction: "Fluid", gravityBias: "Fluid",            description: "Modal, droning, and deliberately disorienting; versatile bridge between any two styles." },
+
+      // Added sub-styles — blues, boogie, funk and gospel shadings requested for finer tagging
+      { style: "Minor Blues",             baseEnergy:  4, gravityGroup: 1, harmonicFriction: "Low",   gravityBias: "Counterclockwise", description: "Minor-key i-iv-v blues; brooding and grounded with a darker tonal center than a standard shuffle." },
+      { style: "Up-Tempo Boogie",         baseEnergy:  8, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Clockwise",        description: "Fast boogie-woogie shuffle over driving dominant 7ths; relentless, high-momentum forward drive." },
+      { style: "Funk Shuffle",            baseEnergy:  7, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Static",           description: "Syncopated half-time (Purdie-style) shuffle; kinetic funk pocket riding a static vamp." },
+      { style: "Gospel",                  baseEnergy:  7, gravityGroup: 2, harmonicFriction: "Mid",   gravityBias: "Clockwise",        description: "Church-rooted call-and-response harmony with strong secondary-dominant lifts; mid-set energy raiser." },
+      { style: "Gospel Jazz",             baseEnergy:  6, gravityGroup: 3, harmonicFriction: "High",  gravityBias: "Clockwise",        description: "Gospel reharmonizations threaded through jazz ii-V motion; soulful, sophisticated and harmonically rich." },
     ];
 
     // O(1) lookup: normalized lowercase style name → full genre parameter object
@@ -1274,7 +1288,7 @@
       'reggae': 'reggae',            'swing': 'swing',              'waltz': 'waltz',
       'slow blues': 'traditional blues', 'blues rock': 'blues-rock',
       'swamp rock': 'swamp rock',    'southern rock': 'southern rock',
-      'jazz-rock': 'jazz fusion',    'blues-rock': 'blues-rock',
+      'jazz-rock': 'jazz fusion',    'jazz rock': 'jazz fusion', 'blues-rock': 'blues-rock',
     };
     for (const [legKey, canKey] of Object.entries(_LEGACY)) {
       if (!GENRE_PARAMS[legKey] && GENRE_PARAMS[canKey]) GENRE_PARAMS[legKey] = GENRE_PARAMS[canKey];
@@ -1292,6 +1306,85 @@
     for (const _gd of GENRE_DATABASE) {
       const _ek = _gd.style.toLowerCase();
       if (!(_ek in ENERGY_MAP)) ENERGY_MAP[_ek] = _gd.baseEnergy;
+    }
+
+    // ─── STYLE PICKER OPTIONS ──────────────────────────────────────────────────
+    // Single source of truth for the Style dropdown when adding/editing a song.
+    // Organised into musical sub-categories so the full canonical GENRE_DATABASE
+    // (plus the legacy short tags older libraries were saved with) is selectable.
+    // Every option value is lowercase to match how styles are stored/imported and
+    // how GENRE_PARAMS / ENERGY_MAP are keyed, so both new and existing songs
+    // resolve their tonal params and badge colours correctly.
+    const STYLE_GROUPS = [
+      { label: 'Blues', options: [
+        ['traditional blues','Traditional Blues'], ['slow blues','Slow Blues'],
+        ['minor blues','Minor Blues'], ['blues-rock','Blues-Rock'], ['shuffle','Shuffle'],
+      ]},
+      { label: 'Rock', options: [
+        ['straight-ahead rock','Straight-Ahead Rock'], ['hard rock','Hard Rock'],
+        ['southern rock','Southern Rock'], ['swamp rock','Swamp Rock'],
+        ['psychedelic rock','Psychedelic Rock'], ['progressive rock','Progressive Rock'],
+        ['alternative rock','Alternative Rock'], ['grunge','Grunge'], ['punk rock','Punk Rock'],
+        ['surf rock','Surf Rock'], ['rockabilly','Rockabilly'], ['heavy metal','Heavy Metal'],
+        ['post-rock','Post-Rock'], ['math rock','Math Rock'],
+      ]},
+      { label: 'Pop / New Wave', options: [
+        ['mainstream pop','Mainstream Pop'], ['power pop','Power Pop'], ['pop-rock','Pop-Rock'],
+        ['pop ballad','Pop Ballad'], ['indie pop','Indie Pop'], ['chamber pop','Chamber Pop'],
+        ['new wave','New Wave'], ['yacht rock','Yacht Rock'], ['soft rock','Soft Rock'],
+        ['disco','Disco'], ['electronic dance music','Electronic Dance Music'],
+      ]},
+      { label: 'Funk / Soul / R&B', options: [
+        ['up-tempo funk','Up-Tempo Funk'], ['funk shuffle','Funk Shuffle'],
+        ['up-tempo boogie','Up-Tempo Boogie'], ['classic soul','Classic Soul'],
+        ['soul ballad','Soul Ballad'], ['neo-soul','Neo-Soul'], ['motown','Motown'],
+        ['r&b','R&B'], ['hip-hop groove','Hip-Hop Groove'],
+      ]},
+      { label: 'Jazz', options: [
+        ['smooth jazz','Smooth Jazz'], ['cool jazz','Cool Jazz'], ['modal jazz','Modal Jazz'],
+        ['bebop','Bebop'], ['hard bop','Hard Bop'], ['jazz fusion','Jazz Fusion'],
+        ['gypsy jazz','Gypsy Jazz'], ['afro-cuban jazz','Afro-Cuban Jazz'],
+        ['gospel jazz','Gospel Jazz'], ['swing','Swing'], ['bossa nova','Bossa Nova'],
+      ]},
+      { label: 'Gospel', options: [
+        ['gospel','Gospel'], ['gospel ballads','Gospel Ballads'], ['gospel up-tempo','Gospel Up-Tempo'],
+      ]},
+      { label: 'Country / Roots / Folk', options: [
+        ['classic country','Classic Country'], ['modern country','Modern Country'],
+        ['roots americana','Roots Americana'], ['bluegrass','Bluegrass'], ['acoustic folk','Acoustic Folk'],
+      ]},
+      { label: 'Latin / Reggae / World', options: [
+        ['latin groove','Latin Groove'], ['salsa','Salsa'], ['reggae','Reggae'], ['ska','Ska'],
+      ]},
+      { label: 'Ballads & Atmospheric', options: [
+        ['waltz','Waltz'], ['doo-wop','Doo-Wop'], ['show tunes','Show Tunes'],
+        ['ambient','Ambient'], ['impressionist','Impressionist'],
+      ]},
+      // Short legacy tags kept so songs saved under the old simple scheme still
+      // display and remain re-selectable.
+      { label: 'Quick Tags (simple)', options: [
+        ['rock','Rock'], ['blues','Blues'], ['jazz','Jazz'], ['funk','Funk'], ['soul','Soul'],
+        ['rnb','R&B (simple)'], ['pop','Pop'], ['country','Country'], ['latin','Latin'],
+        ['americana','Americana'], ['acoustic','Acoustic'], ['bossa','Bossa'], ['ballad','Ballad'],
+        ['midtempo','Midtempo'], ['uptempo','Uptempo'], ['groove','Groove'],
+        ['blues rock','Blues Rock (simple)'], ['jazz rock','Jazz Rock'],
+        ['punk','Punk'], ['metal','Metal'], ['edm','EDM'],
+      ]},
+    ];
+
+    // Renders the full sub-categorised option list for a <select> Style picker.
+    function StyleOptions() {
+      return (
+        <React.Fragment>
+          {STYLE_GROUPS.map(group => (
+            <optgroup key={group.label} label={group.label}>
+              {group.options.map(([value, text]) => (
+                <option key={value} value={value}>{text}</option>
+              ))}
+            </optgroup>
+          ))}
+        </React.Fragment>
+      );
     }
 
     // Continuous energy curve: smooth sinusoidal arc replacing the old 4-zone step function.
@@ -2119,28 +2212,29 @@
       const STYLE_ALIASES = {
         // ── Original aliases: variant inputs → existing simple style keys ─────────
         'classic rock': 'rock',
-        'slow blues': 'blues',
+        // Keep these distinct — they are first-class styles in GENRE_DATABASE now.
+        'minor key blues': 'minor blues', 'minor-key blues': 'minor blues',
         'fast blues': 'blues-rock', 'blues rock': 'blues-rock',
         'r&b': 'rnb', 'r and b': 'rnb',
         'hip hop': 'groove', 'hip-hop': 'groove', 'hiphop': 'groove',
         'bossa nova': 'bossa',
         'folk': 'acoustic', 'singer-songwriter': 'acoustic', 'singer songwriter': 'acoustic',
-        'alternative': 'rock', 'grunge': 'rock',
+        'alternative': 'alternative rock', 'alt': 'alternative rock',
         'heavy metal': 'metal',
         'electronic': 'edm', 'dance': 'edm',
-        'disco': 'funk',
         'southern': 'southern rock',
         'swamp': 'swamp rock', 'swamp-rock': 'swamp rock',
         'americana rock': 'americana', 'roots rock': 'americana',
-        'jazz rock': 'jazz-rock',
-        'indie': 'midtempo',
-        'soft rock': 'midtempo',
-        'hard rock': 'rock',
+        'indie': 'indie pop',
+        'boogie': 'up-tempo boogie', 'up tempo boogie': 'up-tempo boogie', 'uptempo boogie': 'up-tempo boogie',
+        'gospel jazz': 'gospel jazz', 'gospel fusion': 'gospel jazz',
+        'funk shuffle': 'funk shuffle', 'shuffle funk': 'funk shuffle',
+        'pop rock': 'pop-rock',
         // ── Shorthand inputs → new canonical names (all have CSS badges now) ──────
         'alt rock': 'alternative rock',
         'surf': 'surf rock',
         'punk rock': 'punk rock',
-        'gospel': 'gospel ballads',
+        'gospel': 'gospel',
         'gospel rock': 'gospel up-tempo', 'gospel uptempo': 'gospel up-tempo',
         'doo wop': 'doo-wop',
         'ballad': 'soul ballad', 'slow ballad': 'soul ballad',
@@ -2329,12 +2423,11 @@
       return pages;
     }
 
-    // Known style values for BandHelper / Zemba-style PDFs
-    const PDF_KNOWN_STYLES = new Set([
-      'uptempo','ballad','midtempo','groove','shuffle','swing','funk',
-      'slow blues','rock','blues','country','jazz','reggae','latin','pop',
-      'southern rock','blues rock','swamp rock','jazz rock','americana'
-    ]);
+    // Known style values for BandHelper / Zemba-style PDFs. Derived from ENERGY_MAP so
+    // every canonical GENRE_DATABASE style (Blues-Rock, Up-Tempo Funk, Smooth Jazz, the
+    // added Minor Blues / Up-Tempo Boogie / Funk Shuffle / Gospel / Gospel Jazz, …) and
+    // the legacy short tags are all recognised and preserved on PDF import.
+    const PDF_KNOWN_STYLES = new Set(Object.keys(ENERGY_MAP));
 
     /**
      * Detect column header row and return column index mapping.
@@ -4318,45 +4411,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             <div className="input-group">
               <label>Style</label>
               <select value={form.style} onChange={e => setForm({ ...form, style: e.target.value })}>
-                <optgroup label="Low Energy (1-3)">
-                  <option value="ballad">Ballad</option>
-                  <option value="acoustic">Acoustic</option>
-                  <option value="slow blues">Slow Blues</option>
-                  <option value="waltz">Waltz</option>
-                </optgroup>
-                <optgroup label="Moderate (3.5-4)">
-                  <option value="bossa">Bossa</option>
-                  <option value="blues">Blues</option>
-                  <option value="jazz">Jazz</option>
-                  <option value="latin">Latin</option>
-                  <option value="swing">Swing</option>
-                  <option value="country">Country</option>
-                  <option value="reggae">Reggae</option>
-                  <option value="americana">Americana</option>
-                </optgroup>
-                <optgroup label="Mid-High (4.5-5.5)">
-                  <option value="midtempo">Midtempo</option>
-                  <option value="soul">Soul</option>
-                  <option value="rnb">R&amp;B</option>
-                  <option value="pop">Pop</option>
-                  <option value="shuffle">Shuffle</option>
-                  <option value="groove">Groove</option>
-                  <option value="swamp rock">Swamp Rock</option>
-                  <option value="jazz rock">Jazz Rock</option>
-                  <option value="blues rock">Blues Rock</option>
-                </optgroup>
-                <optgroup label="High (6-7)">
-                  <option value="funk">Funk</option>
-                  <option value="rock">Rock</option>
-                  <option value="ska">Ska</option>
-                  <option value="uptempo">Uptempo</option>
-                  <option value="southern rock">Southern Rock</option>
-                </optgroup>
-                <optgroup label="Peak (8-10)">
-                  <option value="punk">Punk</option>
-                  <option value="edm">EDM</option>
-                  <option value="metal">Metal</option>
-                </optgroup>
+                <StyleOptions />
               </select>
             </div>
           </div>
@@ -4498,45 +4553,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                         <div className="input-group" style={{ flex: 1 }}>
                           <label style={{ fontSize: '.65rem' }}>Style</label>
                           <select value={editForm.style} onChange={e => setEditForm({ ...editForm, style: e.target.value })} style={{ fontSize: '.82rem', padding: '.3rem .3rem' }}>
-                            <optgroup label="Low Energy (1-3)">
-                              <option value="ballad">Ballad</option>
-                              <option value="acoustic">Acoustic</option>
-                              <option value="slow blues">Slow Blues</option>
-                              <option value="waltz">Waltz</option>
-                            </optgroup>
-                            <optgroup label="Moderate (3.5-4)">
-                              <option value="bossa">Bossa</option>
-                              <option value="blues">Blues</option>
-                              <option value="jazz">Jazz</option>
-                              <option value="latin">Latin</option>
-                              <option value="swing">Swing</option>
-                              <option value="country">Country</option>
-                              <option value="reggae">Reggae</option>
-                              <option value="americana">Americana</option>
-                            </optgroup>
-                            <optgroup label="Mid-High (4.5-5.5)">
-                              <option value="midtempo">Midtempo</option>
-                              <option value="soul">Soul</option>
-                              <option value="rnb">R&amp;B</option>
-                              <option value="pop">Pop</option>
-                              <option value="shuffle">Shuffle</option>
-                              <option value="groove">Groove</option>
-                              <option value="swamp rock">Swamp Rock</option>
-                              <option value="jazz rock">Jazz Rock</option>
-                              <option value="blues rock">Blues Rock</option>
-                            </optgroup>
-                            <optgroup label="High (6-7)">
-                              <option value="funk">Funk</option>
-                              <option value="rock">Rock</option>
-                              <option value="ska">Ska</option>
-                              <option value="uptempo">Uptempo</option>
-                              <option value="southern rock">Southern Rock</option>
-                            </optgroup>
-                            <optgroup label="Peak (8-10)">
-                              <option value="punk">Punk</option>
-                              <option value="edm">EDM</option>
-                              <option value="metal">Metal</option>
-                            </optgroup>
+                            <StyleOptions />
                           </select>
                         </div>
                       </div>
