@@ -1,4 +1,9 @@
 
+>>> NOTE (2026-07-03): CLAUDE.md is now the authoritative engineering guide —
+>>> architecture, the verification workflow, the genre system, and the setlist
+>>> algorithm live there. This AGENT.MD is retained for historical handoff detail
+>>> (component map, feature history) but CLAUDE.md takes precedence on any conflict.
+
 AGENT.MD — Setlist Generator Pro v3.8+ Handoff Document
 Last updated: 2026-05-31 (branch claude/agent-roadmap-venue-csv-VXJra)
 
