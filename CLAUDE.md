@@ -260,6 +260,12 @@ participate in tonal scoring with no extra wiring.
   genre-aware tooltip (`styleBadgeTitle`: canonical name + description + energy/
   friction/bias) and every row shows an effective-energy dot (`energyColor`) that
   distinguishes a manual override from an auto style+BPM value.
+- **Energy-curve preview** (`EnergyCurvePreview`) at the top of each generated set:
+  an inline SVG plotting the target intensity arc (dashed, from
+  `targetEnergyCurve` given the active preset + template) against the set's actual
+  per-song energy (accent line, dots tinted by `energyColor`, per-point hover
+  titles). Self-gates on `useEnergyCurve` + ≥2 songs; `SetlistView` now takes a
+  `settings` prop.
 
 Verification for this pass: Babel compile clean; unit tests on the changed pure
 functions (energy override honored/clamped, arc contours assert 2 peaks for
