@@ -272,3 +272,41 @@ functions (energy override honored/clamped, arc contours assert 2 peaks for
 doublePeak, monotonic rise for slowBurn, mid dip for highEnergy, new styles present
 in template zones with sensible penalties); headless render with 0 page errors and
 the Energy field present.
+
+## 9b. Change log — 2026-07 opener/closer + pairing correctness pass
+
+Fixes reported bugs where Force Opener / Force Closer duplicated songs across sets
+and "pair together / keep apart" were unreliable. All in `generateSetlistsCore`
+(greedy) with matching guards in `_WithTonalGravity` refinement and the SA cost.
+
+- **No cross-set duplication of designated openers/closers.** The old code let a
+  locked opener/closer bypass the dedup guard (`|| lockedOpeners.includes(id)`, and
+  the closer candidate list never checked availability), so a single designated
+  opener/closer was re-emitted in *every* set. Both now honor `isAvailable()` unless
+  `allowSongReuse` — with N designations they distribute across up to N sets with no
+  overlap; extra sets fall back to a style opener/closer.
+- **Designated openers/closers are reserved** (`reservedRoleIds`) — held out of
+  ordinary filler selection (primary + fallback candidate filters and both style
+  fallbacks) so they remain available to fill their intended slot in a later set
+  instead of being consumed as mid-set filler in set 1.
+- **"Pair together" is now ordered + glued.** Affinities are read as directional
+  `[a,b]` (a → b): `affinityNextMap`/`affinitySecondOf` drive (1) an order-bias that
+  holds `b` back while `a` is still placeable and (2) a forced-adjacency pass that,
+  right after `a` is placed, inserts `b` (and follows A→B→C chains via a cycle
+  guard). Guarantees co-location, adjacency, and order rather than a soft bonus a
+  timing/energy penalty could swamp.
+- **"Keep apart" is now a hard non-adjacency guarantee.** At pick time the candidate
+  pool is filtered to drop any song that is an anti-partner of the immediately
+  preceding song, unless *no* alternative exists (deadlock-safe); the decayed
+  gap-2/3 soft penalty is retained for extra spacing.
+- **Refinement/SA respect pairings.** `_WithTonalGravity` swap sweeps (adjacent and
+  distance-2/3) add a dominant `adjPairScore` so tonal gains never separate a pair
+  or join an anti-pair; the deep-mode SA cost's affinity/anti adjacency weights were
+  raised (−50 / +50) to the same effect.
+
+Verification: Babel compile clean; pure-function unit tests (18 greedy + 7 tonal/SA)
+asserting single/multi locked openers & closers appear exactly once and per-set with
+no cross-set dup, affinity pairs stay adjacent & ordered & co-located, anti pairs
+never adjacent — across greedy, always-on tonal refinement (under adversarial random
+tonal scores), and deep SA; headless render boots with the app mounted and no JS
+page errors.
