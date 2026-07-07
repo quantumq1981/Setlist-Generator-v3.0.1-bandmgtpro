@@ -53,9 +53,33 @@ Two-step recipe that works and should be reused:
    with the preinstalled Chromium at `/opt/pw-browsers/chromium` via Playwright.
    Assert `pageerror` count is 0 and the expected DOM is present.
 
-The pure algorithm functions can also be unit-tested directly: `grep` the function
-source out of `index.html`, `eval` it in Node with its small dependencies, and
-assert on outputs (see how the energy-arc and template tests were written).
+### Automated test suite (`npm test`)
+
+A committed suite exercises the pure setlist-algorithm functions with **zero
+dependencies** (Node's built-in `node:test` + `node:assert`), so it runs anywhere
+`node` is available and needs no `npm install`:
+
+```
+npm test        # runs node --test test/*.test.js
+```
+
+`test/extract-algorithm.js` is the bridge: it lifts the **exact source** of a
+whitelisted set of top-level declarations out of `index.html` (a
+comment/string/template/regex-aware brace/semicolon scanner) and evaluates them in
+a Node sandbox, then hands the live functions to the tests. There is nothing to keep
+in sync — change a function in `index.html` and the tests exercise the new source on
+the next run. If you add an algorithm function that depends on a new module-scope
+symbol, add that symbol's name to the whitelist arrays in `extract-algorithm.js`.
+
+Coverage: openers/closers (no cross-set duplication, pool distribution, reservation),
+per-set opener/closer assignment + precedence, pairing (ordered adjacency, chains,
+co-location, keep-apart non-adjacency) across the greedy, tonal-refinement, and deep
+SA paths, constraint validation, and the energy/tonal pure functions (arc contours,
+composite-energy precedence, `targetEnergyCurve` bounds, circle-of-fifths distance,
+key parsing, quality score). Run it before and after any algorithm change.
+
+For a one-off probe you can still lift a single function ad hoc, but prefer adding a
+case to the suite so the check is permanent.
 
 ### Git / PRs
 Feature branch: `claude/set-list-import-format-snxsm5`. Open PRs against `main`.
@@ -339,3 +363,21 @@ closers land in their exact set with no cross-set dup, explicit picks override t
 pool, and each validator rule fires on a crafted conflict and stays silent on a clean
 config); prior 25 assertions still green; headless render boots with the per-set UI
 present and 0 JS page errors.
+
+## 9d. Change log — 2026-07 committed test harness + order-guarantee hardening
+
+- **Committed, dependency-free test suite** (`npm test`, `test/`): 35 assertions over
+  the real lifted algorithm source via `test/extract-algorithm.js` (see §2). Locks in
+  the opener/closer, per-set, pairing, validation, and energy/tonal behavior so future
+  algorithm changes have a regression net. Node's built-in runner; no `npm install`.
+- **Hard pairing ORDER guarantee** (`generateSetlistsCore`). The "pair together" order
+  was previously only a soft bias, so under randomness the second member of a pair
+  could occasionally be picked before its leader — breaking A→B ordering and, more
+  often, A→B→C chains. Selection now hard-excludes the second member of a pair while
+  its leader is still placeable (deadlock-safe: skipped if every candidate is a
+  held-back follower), making the forced-adjacency pass deterministic. Surfaced by the
+  new chain test; the soft order-bias is retained as the ranking signal.
+- **Infra**: added `.gitignore` (`node_modules/` is only ever transient for headless
+  render) and a minimal `package.json` whose sole purpose is the `test` script.
+
+Verification: `npm test` → 35/35, stable across repeated runs; Babel compile clean.
