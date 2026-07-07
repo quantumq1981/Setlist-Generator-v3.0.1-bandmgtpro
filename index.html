@@ -3351,6 +3351,30 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
   const tonalOpts = { anchorKey: anchor };
   const smoothness = opts.tonalSmoothness ?? 70;
 
+  // Pairing-aware refinement: build bidirectional affinity / anti-affinity sets so
+  // the tonal swap sweeps never separate a "pair together" couple or push a
+  // "keep apart" pair adjacent. The constants dwarf any tonal delta so pairing
+  // intent always wins over a marginal harmonic improvement.
+  const _affSet = new Set();
+  const _antiSet = new Set();
+  for (const [a, b] of (opts.songAffinities || [])) {
+    if (a == null || b == null) continue;
+    _affSet.add(`${a}|${b}`); _affSet.add(`${b}|${a}`);
+  }
+  for (const [a, b] of (opts.songAntiAffinities || [])) {
+    if (a == null || b == null) continue;
+    _antiSet.add(`${a}|${b}`); _antiSet.add(`${b}|${a}`);
+  }
+  const PAIR_KEEP = 100;   // reward for keeping an affinity pair adjacent
+  const PAIR_SPLIT = 100;  // penalty for an anti pair landing adjacent
+  const adjPairScore = (x, y) => {
+    if (!x || !y) return 0;
+    let v = 0;
+    if (_affSet.has(`${x.id}|${y.id}`)) v += PAIR_KEEP;
+    if (_antiSet.has(`${x.id}|${y.id}`)) v -= PAIR_SPLIT;
+    return v;
+  };
+
   // Always use core generator to satisfy duration/energy/locks robustly
   const base = generateSetlistsCore(enriched, opts);
 
@@ -3411,11 +3435,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         let currentScore = calculateTonalTransitionScore_TG(prev, curr, Math.min(i, j), len, smoothness, tonalOpts)
           + calculateTonalTransitionScore_TG(curr, next, Math.max(i, j), len, smoothness, tonalOpts);
         if (after) currentScore += calculateTonalTransitionScore_TG(next, after, Math.max(i, j) + 1, len, smoothness, tonalOpts);
+        currentScore += adjPairScore(prev, curr) + adjPairScore(curr, next) + (after ? adjPairScore(next, after) : 0);
 
         // Score swapped arrangement
         let swappedScore = calculateTonalTransitionScore_TG(prev, next, Math.min(i, j), len, smoothness, tonalOpts)
           + calculateTonalTransitionScore_TG(next, curr, Math.max(i, j), len, smoothness, tonalOpts);
         if (after) swappedScore += calculateTonalTransitionScore_TG(curr, after, Math.max(i, j) + 1, len, smoothness, tonalOpts);
+        swappedScore += adjPairScore(prev, next) + adjPairScore(next, curr) + (after ? adjPairScore(curr, after) : 0);
 
         // Energy-aware swap check: penalize swaps that worsen energy curve adherence
         if (opts.useEnergyCurve) {
@@ -3457,6 +3483,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             sc += calculateTonalTransitionScore_TG(
               arr[k-1], arr[k], k, len, smoothness, tonalOpts
             );
+            // Keep pairing intent intact through distance-2/3 swaps too.
+            sc += adjPairScore(arr[k-1], arr[k]);
           }
           return sc;
         };
@@ -3618,11 +3646,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             if (_gA && _gA === _gB && _gB === _gC) c += 0.7;
           }
 
-          // PERF: Check affinities inline using O(1) Set lookups
+          // PERF: Check affinities inline using O(1) Set lookups.
+          // Pairing intent is a hard user constraint, so weight it far above the
+          // tonal/energy/diversity terms — SA must never trade a "pair together"
+          // adjacency (or introduce a "keep apart" adjacency) for a marginal
+          // harmonic gain.
           if (i > 0) {
             const pairKey = `${arr[i - 1].id}|${arr[i].id}`;
-            if (affinitySet.has(pairKey)) c -= 3; // adjacent affinity bonus
-            if (antiAffinitySet.has(pairKey)) c += 4; // adjacent anti-affinity penalty
+            if (affinitySet.has(pairKey)) c -= 50; // adjacent affinity bonus (dominant)
+            if (antiAffinitySet.has(pairKey)) c += 50; // adjacent anti-affinity penalty (dominant)
           }
         }
 
@@ -3890,10 +3922,22 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       // Key format: "idA|idB" stored bidirectionally so either order matches in O(1).
       const affinitySet = new Set();
       const antiAffinitySet = new Set();
+      // Ordered maps so "pair together" respects the intended order (A → B):
+      //   affinityNextMap:  aId -> [bId, ...]  (songs that should immediately follow a)
+      //   affinitySecondOf: bId -> [aId, ...]  (a is the leader b should trail)
+      // These drive the forced-adjacency placement + order-bias below so a paired
+      // couple stays glued together in order instead of relying on a soft score alone.
+      const affinityNextMap = new Map();
+      const affinitySecondOf = new Map();
       if (opts.songAffinities && opts.songAffinities.length > 0) {
         for (const [a, b] of opts.songAffinities) {
+          if (a == null || b == null || a === b) continue;
           affinitySet.add(`${a}|${b}`);
           affinitySet.add(`${b}|${a}`);
+          if (!affinityNextMap.has(a)) affinityNextMap.set(a, []);
+          affinityNextMap.get(a).push(b);
+          if (!affinitySecondOf.has(b)) affinitySecondOf.set(b, []);
+          affinitySecondOf.get(b).push(a);
         }
       }
       if (opts.songAntiAffinities && opts.songAntiAffinities.length > 0) {
@@ -3902,6 +3946,16 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           antiAffinitySet.add(`${b}|${a}`);
         }
       }
+
+      // RESERVED ROLE SONGS: designated openers/closers are held out of ordinary
+      // filler selection so they are still available to fill their intended slot in
+      // a later set. Without this, a designated opener could be picked as a mid-set
+      // filler in set 1 and then be unavailable to open set 2 (falling back to a
+      // random style opener), which is exactly the "opener/closer not honored per
+      // set" symptom. They are still placed via the opener/closer logic below.
+      const reservedRoleIds = new Set();
+      for (const id of lockedOpeners) reservedRoleIds.add(id);
+      for (const id of lockedClosers) reservedRoleIds.add(id);
 
       const getSongDedupKeys = (s) => {
         const k = [];
@@ -4009,9 +4063,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           let opener = null;
 
           // Prefer user-selected locked openers.
-          // Designated opener/closer songs are allowed to bypass the global
-          // allowSongReuse guard so that the same opener can appear in every set
-          // when only one opener is designated.
+          // FIX (opener cross-set duplication): a designated opener must honor the
+          // global dedup guard so it is used in AT MOST ONE set. Previously the
+          // `|| lockedOpeners.includes(s.id)` bypass forced the same opener into
+          // every set. Now, with N designated openers and M sets, each set draws a
+          // distinct unused opener; sets beyond the supply fall back to a style
+          // opener. When allowSongReuse=true, isAvailable() is always true so
+          // intentional reuse still works.
           if (lockedOpeners.length > 0) {
             const availableLockedOpeners = lockedOpeners
               .map(id => pool.find(s => s.id === id))
@@ -4022,8 +4080,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 // pinned song is already tracked here — prevents intra-set duplicates when
                 // allowSongReuse=true makes isAvailable() always return true.
                 if (setUsedIds.has(s.id)) return false;
-                // If globally available, use it; otherwise allow reuse for opener role
-                return isAvailable(s) || lockedOpeners.includes(s.id);
+                // Only reuse across sets when explicitly allowed.
+                return isAvailable(s);
               });
             if (availableLockedOpeners.length > 0) {
               // Pick the least-used designated opener to distribute evenly across sets
@@ -4047,7 +4105,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             // Exclude songs already in this set via pins/lockPlan (setUsedIds guard).
             // Without this, allowSongReuse=true would allow a pinned song to also become
             // the opener, producing an intra-set duplicate.
-            const openers = pool.filter(s => isAvailable(s) && !setUsedIds.has(s.id) && openerStyles.includes(s.style));
+            const openers = pool.filter(s => isAvailable(s) && !setUsedIds.has(s.id) && !reservedRoleIds.has(s.id) && openerStyles.includes(s.style));
             if (openers.length > 0) {
               // When tonal gravity is active, prefer openers near the anchor key
               if (opts.useTonalGravity && opts._anchorKey) {
@@ -4096,13 +4154,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
           let candidates = pool.filter(song => {
             if (setUsedIds.has(song.id)) return false;
+            if (reservedRoleIds.has(song.id)) return false; // held for opener/closer role
             if (!isAvailable(song)) return false;
             const dur = song.duration;
             return dur <= durMax && dur >= durMin;
           });
 
           if (candidates.length === 0) {
-            candidates = pool.filter(s => !setUsedIds.has(s.id) && isAvailable(s));
+            candidates = pool.filter(s => !setUsedIds.has(s.id) && !reservedRoleIds.has(s.id) && isAvailable(s));
             if (candidates.length === 0) {
               if (!allowSongReuse) {
                 // FIX (LEAK #2 — v3.8.0): Hard-abort the entire generation when the unique
@@ -4177,29 +4236,37 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               templatePenalty = templateStylePenalty(s.style, pos, opts.setTemplate);
             }
 
-            // Song affinity / anti-affinity scoring using pre-built O(1) Sets.
-            // Affinity: strong bonus (-4.0) for placing adjacent to a paired song.
-            // Anti-affinity: strong penalty (+8.0) for adjacent placement;
-            //   also check the last 3 slots so "keep apart" songs stay separated
-            //   by more than one position.
+            // Song affinity / anti-affinity scoring (additive so terms never clobber
+            // each other). Ordered "pair together" is finalized by the forced-adjacency
+            // placement below; these terms bias the greedy toward the right shape:
             let affinityPenalty = 0;
+            // Adjacency bonus (either order) — reinforces pairs whose leader was
+            // locked/pinned and so didn't trigger forced placement.
             if (last && affinitySet.has(`${last.id}|${s.id}`)) {
-              affinityPenalty = -4.0; // strong adjacency bonus
+              affinityPenalty -= 4.0;
             }
+            // Order bias: hold the 2nd member of a pair back while its leader is still
+            // placeable, so the pair is emitted in order (A → B) and can be glued
+            // together by the forced-adjacency pass.
+            if (affinitySecondOf.has(s.id)) {
+              for (const aId of affinitySecondOf.get(s.id)) {
+                if (setUsedIds.has(aId)) continue; // leader already placed in this set
+                const aSong = pool.find(x => x.id === aId);
+                if (aSong && (allowSongReuse || isAvailable(aSong))) { affinityPenalty += 5.0; break; }
+              }
+            }
+            // "Keep apart" — decayed penalty across the last 3 slots so a pair stays
+            // separated by more than one position. A hard non-adjacency guarantee is
+            // enforced at pick time below.
             if (antiAffinitySet.size > 0) {
-              // Check the last 3 songs placed (not just the immediate predecessor)
               const recentSongs = setArr.filter(Boolean).slice(-3);
-              let maxAntiPenalty = 0;
               for (let ri = 0; ri < recentSongs.length; ri++) {
                 const rs = recentSongs[ri];
                 if (antiAffinitySet.has(`${rs.id}|${s.id}`)) {
-                  // Penalty decays with distance: adjacent = 8, gap-2 = 5, gap-3 = 3
                   const distFromEnd = recentSongs.length - 1 - ri;
-                  const penalty = distFromEnd === 0 ? 8.0 : distFromEnd === 1 ? 5.0 : 3.0;
-                  if (penalty > maxAntiPenalty) maxAntiPenalty = penalty;
+                  affinityPenalty += distFromEnd === 0 ? 8.0 : distFromEnd === 1 ? 5.0 : 3.0;
                 }
               }
-              if (maxAntiPenalty > 0) affinityPenalty = maxAntiPenalty;
             }
 
             const score = timePenalty + diversityPenalty + energyPenalty + tonalPenalty + templatePenalty + affinityPenalty;
@@ -4208,15 +4275,25 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
           scored.sort((a, b) => a.score - b.score);
 
+          // HARD "keep apart" guarantee: never place a song immediately after its
+          // anti-affinity partner when any non-adjacent alternative exists. Only if
+          // every remaining candidate is an anti-partner of `last` do we fall back to
+          // the full list (so generation can't deadlock).
+          let selectable = scored;
+          if (last && antiAffinitySet.size > 0) {
+            const nonAdjacent = scored.filter(c => !antiAffinitySet.has(`${last.id}|${c.s.id}`));
+            if (nonAdjacent.length > 0) selectable = nonAdjacent;
+          }
+
           // Temperature-controlled selection: randomness 0=deterministic, 50=top-6, 100=softmax-all
           let pick;
           if (randomness <= 10) {
-            pick = scored[0].s;
-          } else if (randomness >= 80 && scored.length > 3) {
+            pick = selectable[0].s;
+          } else if (randomness >= 80 && selectable.length > 3) {
             // Softmax selection over all candidates
             const temp = (randomness / 100) * 2 + 0.1;
-            const maxScore = scored[0].score;
-            const weights = scored.map(c => Math.exp(-(c.score - maxScore) / temp));
+            const maxScore = selectable[0].score;
+            const weights = selectable.map(c => Math.exp(-(c.score - maxScore) / temp));
             const totalW = weights.reduce((a, b) => a + b, 0);
             let r = Math.random() * totalW;
             let pickIdx = 0;
@@ -4224,9 +4301,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               r -= weights[wi];
               if (r <= 0) { pickIdx = wi; break; }
             }
-            pick = scored[pickIdx].s;
+            pick = selectable[pickIdx].s;
           } else {
-            const topK = scored.slice(0, Math.min(6, scored.length));
+            const topK = selectable.slice(0, Math.min(6, selectable.length));
             pick = topK[Math.floor(Math.random() * topK.length)].s;
           }
 
@@ -4236,6 +4313,40 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           current += pick.duration;
           lastAddedSong = pick;
           totalAttempts++;
+
+          // FORCED ADJACENCY for "pair together": if the song just placed is the
+          // leader of one or more affinity pairs, glue its partner(s) in right after
+          // it, in order. This guarantees paired songs are co-located, adjacent, and
+          // in the intended A → B sequence rather than relying on a soft score that a
+          // timing/energy penalty could outweigh. Chains (A→B→C) are followed via the
+          // chainGuard set, which also prevents cycles.
+          if (affinityNextMap.size > 0) {
+            let chainFrom = pick;
+            const chainGuard = new Set([pick.id]);
+            while (true) {
+              const nexts = affinityNextMap.get(chainFrom.id) || [];
+              let placed = null;
+              for (const nid of nexts) {
+                if (chainGuard.has(nid) || setUsedIds.has(nid)) continue;
+                const partner = pool.find(s => s.id === nid);
+                if (!partner) continue;
+                if (!allowSongReuse && !isAvailable(partner)) continue;
+                let pIdx = setArr.indexOf(null);
+                if (pIdx === -1) pIdx = setArr.length;
+                setArr[pIdx] = partner;
+                setUsedIds.add(partner.id);
+                markUsed(partner);
+                current += partner.duration || 0;
+                lastAddedSong = partner;
+                totalAttempts++;
+                chainGuard.add(nid);
+                placed = partner;
+                break;
+              }
+              if (!placed) break;
+              chainFrom = placed;
+            }
+          }
 
           if (current > setDuration + 8) break;
         }
@@ -4267,10 +4378,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             // to a duplicate. It is re-markd below if no replacement is made.
             if (!allowSongReuse) unmarkUsed(lastSong);
 
-            // Build candidate list: designated closers not already in this set (except as last slot)
+            // Build candidate list: designated closers that are still globally
+            // available (so a closer used in an earlier set is NOT reused — the
+            // cross-set duplication bug) and not already placed elsewhere in this
+            // set. lastSong was just unmarked above, so a locked closer equal to it
+            // reads as available. allowSongReuse bypasses the availability check.
             const closerCandidates = lockedClosers
               .map(id => pool.find(s => s.id === id))
-              .filter(s => s && !setSongs.some((x, xi) => xi !== lastIdx && x.id === s.id));
+              .filter(s => s && (allowSongReuse || isAvailable(s))
+                && !setSongs.some((x, xi) => xi !== lastIdx && x.id === s.id));
 
             if (closerCandidates.length > 0) {
               // Prefer the least-used designated closer to distribute evenly across sets
@@ -4306,7 +4422,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             if (!allowSongReuse && useLockedCloser === false) unmarkUsed(lastSong);
 
             const styleCloserCandidates = pool.filter(s =>
-              isAvailable(s) && closerStyles.includes(s.style) && s.id !== lastSong.id
+              isAvailable(s) && !reservedRoleIds.has(s.id) && closerStyles.includes(s.style) && s.id !== lastSong.id
               && !setSongs.some((x, xi) => xi !== lastIdx && x.id === s.id)
             );
             if (styleCloserCandidates.length > 0) {
