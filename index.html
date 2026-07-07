@@ -3395,6 +3395,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
   if (Array.isArray(opts.lockedClosers)) {
     for (const id of opts.lockedClosers) lockedIds.add(id);
   }
+  // Per-set opener/closer assignments are fixed to their slot — never reposition them.
+  for (const v of Object.values(opts.openerBySet || {})) { if (v) lockedIds.add(v); }
+  for (const v of Object.values(opts.closerBySet || {})) { if (v) lockedIds.add(v); }
   if (Array.isArray(opts.songSetPins)) {
     for (const pin of opts.songSetPins) {
       if (pin && pin.songId) lockedIds.add(pin.songId);
@@ -3531,6 +3534,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     if (Array.isArray(opts.lockedClosers)) {
       for (const id of opts.lockedClosers) lockedIdSet.add(id);
     }
+    // Protect per-set opener/closer assignments from SA reordering
+    for (const v of Object.values(opts.openerBySet || {})) { if (v) lockedIdSet.add(v); }
+    for (const v of Object.values(opts.closerBySet || {})) { if (v) lockedIdSet.add(v); }
     // Protect set-pinned songs
     if (Array.isArray(opts.songSetPins)) {
       for (const pin of opts.songSetPins) {
@@ -3886,6 +3892,116 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       return 0.4; // default mismatch penalty
     }
 
+    /******************* CONSTRAINT VALIDATION *******************/
+    // Pure pre-generation check: inspects the user's manual constraints (per-set and
+    // pool openers/closers, song-to-set pins, affinity/anti-affinity pairs, set count
+    // vs. library size) and returns human-readable issues so conflicts are surfaced
+    // BEFORE they silently distort the generated setlist. Returns
+    //   [{ severity: 'error'|'warning'|'info', message }]
+    // Nothing here blocks generation — it only explains what the engine will do.
+    function validateGenerationConstraints(settings, activeSongs) {
+      const issues = [];
+      const songs = Array.isArray(activeSongs) ? activeSongs : [];
+      const byId = new Map(songs.map(s => [s.id, s]));
+      const title = (id) => (byId.get(id)?.title) || 'a removed song';
+      const numSets = Math.max(1, settings.numSets || 1);
+      const allowReuse = !!settings.allowSongReuse;
+      const openerBySet = settings.openerBySet || {};
+      const closerBySet = settings.closerBySet || {};
+      const pins = Array.isArray(settings.songSetPins) ? settings.songSetPins : [];
+      const affinities = Array.isArray(settings.songAffinities) ? settings.songAffinities : [];
+      const antis = Array.isArray(settings.songAntiAffinities) ? settings.songAntiAffinities : [];
+
+      // Track which set each explicitly-assigned song lands in, to catch a single song
+      // being asked to appear in two different sets (impossible without reuse).
+      const assignedSetOf = new Map(); // songId -> Set(setIndex)
+      const noteAssign = (id, setIdx) => {
+        if (!id) return;
+        if (!assignedSetOf.has(id)) assignedSetOf.set(id, new Set());
+        assignedSetOf.get(id).add(setIdx);
+      };
+
+      // Per-set opener/closer: stale IDs, same-song open+close, and role gating.
+      for (let i = 0; i < numSets; i++) {
+        const op = openerBySet[i];
+        const cl = closerBySet[i];
+        if (op) {
+          noteAssign(op, i);
+          if (!byId.has(op)) issues.push({ severity: 'warning', message: `Set ${i + 1}: assigned opener is no longer in your library — it will be ignored.` });
+        }
+        if (cl) {
+          noteAssign(cl, i);
+          if (!byId.has(cl)) issues.push({ severity: 'warning', message: `Set ${i + 1}: assigned closer is no longer in your library — it will be ignored.` });
+        }
+        if (op && cl && op === cl) {
+          issues.push({ severity: 'error', message: `Set ${i + 1}: "${title(op)}" is assigned as BOTH opener and closer — it can only fill one slot.` });
+        }
+      }
+
+      // Role toggles vs. assignments.
+      if (!settings.forceOpener && Object.values(openerBySet).some(Boolean)) {
+        issues.push({ severity: 'info', message: `Per-set openers are assigned but "Force Opener" is off — they won't be applied.` });
+      }
+      if (!settings.forceCloser && Object.values(closerBySet).some(Boolean)) {
+        issues.push({ severity: 'info', message: `Per-set closers are assigned but "Force Closer" is off — they won't be applied.` });
+      }
+
+      // Pins in the same-song multi-set check too.
+      for (const p of pins) { if (p && p.songId != null && p.setIndex != null) noteAssign(p.songId, Math.floor(p.setIndex)); }
+
+      // Same song forced into multiple different sets (impossible without reuse).
+      if (!allowReuse) {
+        for (const [id, setIdxs] of assignedSetOf) {
+          if (setIdxs.size > 1) {
+            issues.push({ severity: 'error', message: `"${title(id)}" is assigned to ${setIdxs.size} different sets, but Song Reuse is off — it can appear in only one.` });
+          }
+        }
+      }
+
+      // Pool openers/closers exceeding set count → some will go unused.
+      const poolOpeners = (settings.lockedOpeners || []).length;
+      const poolClosers = (settings.lockedClosers || []).length;
+      if (settings.forceOpener && !allowReuse && poolOpeners > numSets) {
+        issues.push({ severity: 'info', message: `${poolOpeners} pool openers designated for ${numSets} set(s) — ${poolOpeners - numSets} won't be used.` });
+      }
+      if (settings.forceCloser && !allowReuse && poolClosers > numSets) {
+        issues.push({ severity: 'info', message: `${poolClosers} pool closers designated for ${numSets} set(s) — ${poolClosers - numSets} won't be used.` });
+      }
+
+      // Contradictory pairings: a pair marked BOTH "together" and "apart".
+      const antiKey = new Set(antis.map(([a, b]) => [a, b].sort().join('|')));
+      for (const [a, b] of affinities) {
+        if (antiKey.has([a, b].sort().join('|'))) {
+          issues.push({ severity: 'error', message: `"${title(a)}" and "${title(b)}" are marked both "pair together" AND "keep apart" — pick one.` });
+        }
+      }
+
+      // Affinity pair whose members are pinned/assigned to different sets can never be
+      // adjacent, so the pairing can't be honored.
+      for (const [a, b] of affinities) {
+        const sa = assignedSetOf.get(a), sb = assignedSetOf.get(b);
+        if (sa && sb) {
+          const aOnly = [...sa], bOnly = [...sb];
+          if (aOnly.length === 1 && bOnly.length === 1 && aOnly[0] !== bOnly[0]) {
+            issues.push({ severity: 'warning', message: `"${title(a)}" and "${title(b)}" are "paired together" but assigned to different sets — they can't be kept adjacent.` });
+          }
+        }
+      }
+
+      // Library-size sanity: not enough material to fill the requested sets without reuse.
+      if (!allowReuse && songs.length > 0) {
+        const durations = settings.setDurations || [];
+        let requested = 0;
+        for (let i = 0; i < numSets; i++) requested += (durations[i] > 0 ? durations[i] : (settings.setDuration || 45));
+        const available = songs.reduce((s, x) => s + (parseDuration(x.duration) || 0), 0);
+        if (available < requested * 0.9) {
+          issues.push({ severity: 'warning', message: `Your active library holds ~${Math.round(available)} min but ${numSets} set(s) need ~${Math.round(requested)} min — sets may come up short. Add songs or enable Song Reuse.` });
+        }
+      }
+
+      return issues;
+    }
+
     /******************* CORE GENERATOR (PHASE 2 OPTIMIZED) *******************/
     function generateSetlistsCore(songs, opts) {
       const {
@@ -3899,6 +4015,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         forceCloser = true,
         lockedOpeners = [],
         lockedClosers = [],
+        openerBySet = {},
+        closerBySet = {},
         lockPlan = null
       } = opts || {};
 
@@ -3956,6 +4074,21 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const reservedRoleIds = new Set();
       for (const id of lockedOpeners) reservedRoleIds.add(id);
       for (const id of lockedClosers) reservedRoleIds.add(id);
+      // Per-set opener/closer assignments (setIndex -> songId) also reserve their
+      // songs so an explicitly-assigned opener/closer for a later set isn't consumed
+      // as filler earlier.
+      const openerBySetMap = new Map();
+      const closerBySetMap = new Map();
+      for (const [k, v] of Object.entries(openerBySet || {})) {
+        if (v == null || v === '') continue;
+        openerBySetMap.set(Number(k), v);
+        reservedRoleIds.add(v);
+      }
+      for (const [k, v] of Object.entries(closerBySet || {})) {
+        if (v == null || v === '') continue;
+        closerBySetMap.set(Number(k), v);
+        reservedRoleIds.add(v);
+      }
 
       const getSongDedupKeys = (s) => {
         const k = [];
@@ -4062,7 +4195,20 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         if (!lockedSlots.has(0) && forceOpener) {
           let opener = null;
 
-          // Prefer user-selected locked openers.
+          // PER-SET OPENER (highest precedence): if the user explicitly assigned an
+          // opener to THIS set, use exactly that song. It bypasses the pool/style
+          // logic entirely. Guards: song must exist, not already be in this set, and
+          // be available (unless allowSongReuse).
+          const explicitOpenerId = openerBySetMap.get(setNum);
+          if (explicitOpenerId) {
+            const cand = pool.find(s => s.id === explicitOpenerId);
+            if (cand && !setUsedIds.has(cand.id) && (allowSongReuse || isAvailable(cand))) {
+              opener = cand;
+              if (opener) unmarkUsed(opener); // re-marked below; keeps count exact
+            }
+          }
+
+          // Prefer user-selected locked openers (pool) when no explicit per-set pick.
           // FIX (opener cross-set duplication): a designated opener must honor the
           // global dedup guard so it is used in AT MOST ONE set. Previously the
           // `|| lockedOpeners.includes(s.id)` bypass forced the same opener into
@@ -4070,7 +4216,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           // distinct unused opener; sets beyond the supply fall back to a style
           // opener. When allowSongReuse=true, isAvailable() is always true so
           // intentional reuse still works.
-          if (lockedOpeners.length > 0) {
+          if (!opener && lockedOpeners.length > 0) {
             const availableLockedOpeners = lockedOpeners
               .map(id => pool.find(s => s.id === id))
               .filter(s => {
@@ -4364,39 +4510,54 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           const lastSong = setSongs[lastIdx];
           const closerStyles = ['ballad', 'acoustic', 'slow blues', 'blues', 'midtempo', 'swing', 'soul', 'waltz', 'americana', 'blues rock'];
 
-          // Check if a locked closer should be used.
-          // FIX: designated closer songs bypass the global used-check (same as opener)
-          // so the same closer song can appear in every set when only one is designated.
+          // Check if a designated closer should be used.
           let useLockedCloser = false;
           let lockedCloserSong = null;
 
-          if (lockedClosers.length > 0) {
+          // A per-set assignment for THIS set takes precedence over the closer pool.
+          const explicitCloserId = closerBySetMap.get(setNum);
+          const hasDesignatedCloser = !!explicitCloserId || lockedClosers.length > 0;
+
+          if (hasDesignatedCloser) {
             // FIX (LEAK #1 — v3.8.0): Temporarily remove lastSong from the global dedup
-            // map before searching for a locked closer. Without this, lastSong occupies
-            // a slot in `used` while also being the song we intend to replace — causing
-            // the closer search to see a falsely-full used-set and potentially fall back
-            // to a duplicate. It is re-markd below if no replacement is made.
+            // map before searching for a designated closer. Without this, lastSong
+            // occupies a slot in `used` while also being the song we intend to replace —
+            // causing the closer search to see a falsely-full used-set and potentially
+            // fall back to a duplicate. It is re-markd below if no replacement is made.
             if (!allowSongReuse) unmarkUsed(lastSong);
 
-            // Build candidate list: designated closers that are still globally
-            // available (so a closer used in an earlier set is NOT reused — the
-            // cross-set duplication bug) and not already placed elsewhere in this
-            // set. lastSong was just unmarked above, so a locked closer equal to it
-            // reads as available. allowSongReuse bypasses the availability check.
-            const closerCandidates = lockedClosers
-              .map(id => pool.find(s => s.id === id))
-              .filter(s => s && (allowSongReuse || isAvailable(s))
-                && !setSongs.some((x, xi) => xi !== lastIdx && x.id === s.id));
+            // PER-SET CLOSER (highest precedence): use exactly the song the user
+            // assigned to this set, when available and not already elsewhere in it.
+            if (explicitCloserId) {
+              const cand = pool.find(s => s.id === explicitCloserId);
+              if (cand && (allowSongReuse || isAvailable(cand))
+                  && !setSongs.some((x, xi) => xi !== lastIdx && x.id === cand.id)) {
+                lockedCloserSong = cand;
+                useLockedCloser = true;
+              }
+            }
 
-            if (closerCandidates.length > 0) {
-              // Prefer the least-used designated closer to distribute evenly across sets
-              const sorted = [...closerCandidates].sort((a, b) => {
-                return (used.get(`id:${a.id}`) || 0) - (used.get(`id:${b.id}`) || 0);
-              });
-              const minCount = (used.get(`id:${sorted[0].id}`) || 0);
-              const tied = sorted.filter(s => (used.get(`id:${s.id}`) || 0) === minCount);
-              lockedCloserSong = tied[Math.floor(Math.random() * tied.length)];
-              useLockedCloser = true;
+            // Pool fallback: least-used designated closer that is still globally
+            // available (so a closer used in an earlier set is NOT reused — the
+            // cross-set duplication bug) and not already placed elsewhere in this set.
+            // lastSong was just unmarked above, so a designated closer equal to it reads
+            // as available. allowSongReuse bypasses the availability check.
+            if (!useLockedCloser && lockedClosers.length > 0) {
+              const closerCandidates = lockedClosers
+                .map(id => pool.find(s => s.id === id))
+                .filter(s => s && (allowSongReuse || isAvailable(s))
+                  && !setSongs.some((x, xi) => xi !== lastIdx && x.id === s.id));
+
+              if (closerCandidates.length > 0) {
+                // Prefer the least-used designated closer to distribute evenly across sets
+                const sorted = [...closerCandidates].sort((a, b) => {
+                  return (used.get(`id:${a.id}`) || 0) - (used.get(`id:${b.id}`) || 0);
+                });
+                const minCount = (used.get(`id:${sorted[0].id}`) || 0);
+                const tied = sorted.filter(s => (used.get(`id:${s.id}`) || 0) === minCount);
+                lockedCloserSong = tied[Math.floor(Math.random() * tied.length)];
+                useLockedCloser = true;
+              }
             }
 
             if (!useLockedCloser && !allowSongReuse) markUsed(lastSong);
@@ -4934,6 +5095,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const openHelp = (featureKey) => setActiveHelpKey(featureKey);
       const closeHelp = () => setActiveHelpKey(null);
 
+      // Live constraint check — surfaces conflicts (per-set/pool opener-closer clashes,
+      // contradictory pairings, library too small, etc.) before the user generates.
+      const constraintIssues = (() => {
+        try { return validateGenerationConstraints(settings, activeSongs); }
+        catch (e) { return []; }
+      })();
+
       const poolAvailable = (activeSongs || []).length;
       const poolRequired = (() => {
         if (!poolAvailable) return 0;
@@ -5146,6 +5314,50 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Per-Set Opener / Closer assignment — a specific song per set. Overrides
+              the pool above for any set where a pick is made. */}
+          {(settings.forceOpener || settings.forceCloser) && (settings.numSets || 1) >= 1 && (
+            <div className="input-group" style={{ marginTop: '.6rem', paddingTop: '.6rem', borderTop: '1px dashed var(--border)' }}>
+              <label style={{ textTransform: 'none', fontSize: '.75rem', fontWeight: 600, display: 'block' }}>
+                Per-Set Opener / Closer
+                <span style={{ fontSize: '.65rem', color: 'var(--text-muted)', marginLeft: '.4rem', fontWeight: 400 }}>
+                  assign a specific song to each set
+                </span>
+              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '.35rem', marginTop: '.4rem' }}>
+                {Array.from({ length: settings.numSets || 1 }, (_, i) => {
+                  const opId = (settings.openerBySet || {})[i] || '';
+                  const clId = (settings.closerBySet || {})[i] || '';
+                  const setRole = (roleKey, val) => {
+                    const next = { ...(settings[roleKey] || {}) };
+                    if (val) next[i] = val; else delete next[i];
+                    onChange({ ...settings, [roleKey]: next });
+                  };
+                  return (
+                    <div key={i} style={{ display: 'flex', gap: '.3rem', alignItems: 'center' }}>
+                      <span style={{ fontSize: '.7rem', color: 'var(--text-muted)', minWidth: '3rem' }}>Set {i + 1}</span>
+                      {settings.forceOpener && (
+                        <select value={opId} onChange={e => setRole('openerBySet', e.target.value)} style={{ fontSize: '.72rem', flex: 1, minWidth: 0 }} title="Opener for this set">
+                          <option value="">▶ Opener: auto</option>
+                          {(activeSongs || []).map(s => <option key={s.id} value={s.id}>▶ {s.title}</option>)}
+                        </select>
+                      )}
+                      {settings.forceCloser && (
+                        <select value={clId} onChange={e => setRole('closerBySet', e.target.value)} style={{ fontSize: '.72rem', flex: 1, minWidth: 0 }} title="Closer for this set">
+                          <option value="">⏹ Closer: auto</option>
+                          {(activeSongs || []).map(s => <option key={s.id} value={s.id}>⏹ {s.title}</option>)}
+                        </select>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: '.65rem', color: 'var(--text-muted)', marginTop: '.35rem' }}>
+                A per-set pick overrides the locked pool above for that set. Leave on “auto” to use the pool or a style-based choice.
+              </div>
             </div>
           )}
 
@@ -5420,6 +5632,25 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 {poolAvailable} available · ~{poolRequired} needed
               </span>
               {!poolOk && <span style={{ color: 'var(--accent)', fontSize: '.68rem' }}>⚠ may exhaust</span>}
+            </div>
+          )}
+          {constraintIssues.length > 0 && (
+            <div style={{ marginTop: '.6rem', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+              <div style={{ fontSize: '.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)', padding: '.4rem .6rem', background: 'var(--primary)' }}>
+                Constraint check ({constraintIssues.length})
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {constraintIssues.map((iss, idx) => {
+                  const color = iss.severity === 'error' ? 'var(--error)' : iss.severity === 'warning' ? 'var(--warning)' : 'var(--text-muted)';
+                  const icon = iss.severity === 'error' ? '⛔' : iss.severity === 'warning' ? '⚠️' : 'ℹ️';
+                  return (
+                    <div key={idx} style={{ display: 'flex', gap: '.4rem', alignItems: 'flex-start', fontSize: '.7rem', color, padding: '.35rem .6rem', borderTop: idx === 0 ? 'none' : '1px solid var(--border)' }}>
+                      <span aria-hidden="true">{icon}</span>
+                      <span>{iss.message}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
           <button className="btn btn-primary" onClick={onGenerate} disabled={songCount === 0} style={{ width: '100%', marginTop: '.5rem' }}>
@@ -8356,7 +8587,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         // PHASE 3A: normalize status for older data
         const normalizedSongs = storedSongsRaw.map(s => ({ ...s, status: (s.status || 'active') }));
 
-        const storedSettings = LS.get(LS_KEYS.bandSettings(activeBandId)) || { numSets: 2, setDuration: 45, setDurations: [], allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, lockedOpeners: [], lockedClosers: [], useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false, energyCurveType: 'standard', energyWeight: 0.35, tonalWeight: 0.25, diversityWeight: 1.0, randomness: 50, optimizationLevel: 'standard', setTemplate: 'freeform', songAffinities: [], songAntiAffinities: [] };
+        const storedSettings = LS.get(LS_KEYS.bandSettings(activeBandId)) || { numSets: 2, setDuration: 45, setDurations: [], allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, lockedOpeners: [], lockedClosers: [], useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false, energyCurveType: 'standard', energyWeight: 0.35, tonalWeight: 0.25, diversityWeight: 1.0, randomness: 50, optimizationLevel: 'standard', setTemplate: 'freeform', songAffinities: [], songAntiAffinities: [], openerBySet: {}, closerBySet: {} };
         // Ensure backward compatibility for settings without newer fields
         if (!storedSettings.lockedOpeners) storedSettings.lockedOpeners = [];
         if (!storedSettings.lockedClosers) storedSettings.lockedClosers = [];
@@ -8371,6 +8602,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         if (!storedSettings.songAntiAffinities) storedSettings.songAntiAffinities = [];
         // Backward-compat for song-to-set pinning (new in this version)
         if (!storedSettings.songSetPins) storedSettings.songSetPins = [];
+        // Backward-compat for per-set opener/closer assignment (setIndex -> songId).
+        if (!storedSettings.openerBySet || typeof storedSettings.openerBySet !== 'object') storedSettings.openerBySet = {};
+        if (!storedSettings.closerBySet || typeof storedSettings.closerBySet !== 'object') storedSettings.closerBySet = {};
         const storedImports = LS.get(LS_KEYS.bandImports(activeBandId)) || [];
         const storedGigs = LS.get(LS_KEYS.bandGigs(activeBandId)) || [];
         const storedWatermark = LS.get(LS_KEYS.bandWatermark(activeBandId)) || null;
@@ -8879,8 +9113,18 @@ ${headerHtml}
         const newEntry = { ts: Date.now(), settings, setlists: out };
         LS.set(LS_KEYS.bandHistory(activeBandId), [newEntry, ...history].slice(0, 50));
 
+        // Surface hard constraint conflicts (e.g. a song assigned to two sets) so a
+        // user who generates past the live panel still gets a heads-up.
+        let constraintErrors = [];
+        try {
+          constraintErrors = validateGenerationConstraints(settings, activeSongs)
+            .filter(iss => iss.severity === 'error');
+        } catch (e) { /* non-fatal */ }
+
         if (out.generationWarnings && out.generationWarnings.length) {
           showToast(out.generationWarnings[0], 'warning');
+        } else if (constraintErrors.length) {
+          showToast(`Generated with ${constraintErrors.length} unresolved conflict(s) — see the constraint check.`, 'warning');
         } else {
           showToast(`Generated ${settings.numSets} set(s)`, 'success');
         }

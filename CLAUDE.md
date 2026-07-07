@@ -310,3 +310,32 @@ no cross-set dup, affinity pairs stay adjacent & ordered & co-located, anti pair
 never adjacent — across greedy, always-on tonal refinement (under adversarial random
 tonal scores), and deep SA; headless render boots with the app mounted and no JS
 page errors.
+
+## 9c. Change log — 2026-07 per-set opener/closer + constraint validation
+
+Builds on 9b. Adds explicit per-set control and pre-generation conflict surfacing.
+
+- **Per-set opener/closer assignment.** New settings maps `openerBySet` /
+  `closerBySet` (`{ setIndex: songId }`). In `generateSetlistsCore`, an explicit
+  assignment for a set takes precedence over the locked pool (`lockedOpeners` /
+  `lockedClosers`) and the style fallback for that set; sets left on "auto" still use
+  the pool → style path. Assigned songs join `reservedRoleIds` (held out of filler)
+  and the `_WithTonalGravity` / SA locked-ID sets (never repositioned). Persisted per
+  band with backward-compat defaults (`{}`).
+- **UI**: a "Per-Set Opener / Closer" block in `SetConfiguration` renders one row per
+  set (opener and/or closer dropdown, gated by the Force toggles). The old pool
+  selectors remain as the "any of these" fallback.
+- **Constraint validation.** New pure `validateGenerationConstraints(settings,
+  activeSongs)` returns `[{severity:'error'|'warning'|'info', message}]` for: a song
+  set as both opener & closer of one set; a song forced into multiple sets without
+  reuse; pool openers/closers exceeding set count; a pair marked both "together" and
+  "apart"; paired songs pinned/assigned to different sets; per-set picks with the
+  Force toggle off; stale assigned IDs; and library-too-small-for-requested-minutes.
+  Surfaced live as a "Constraint check" panel above Generate, and as a warning toast
+  on generate when unresolved errors exist. Nothing blocks generation — it explains.
+
+Verification: Babel compile clean; +14 pure-function unit tests (per-set openers &
+closers land in their exact set with no cross-set dup, explicit picks override the
+pool, and each validator rule fires on a crafted conflict and stays silent on a clean
+config); prior 25 assertions still green; headless render boots with the per-set UI
+present and 0 JS page errors.
