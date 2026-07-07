@@ -1,0 +1,6 @@
+# The app has no build step and no runtime dependencies. node_modules only ever
+# appears transiently for headless-render verification (libs vendored from npm);
+# it must never be committed. The test suite (npm test) needs no dependencies.
+node_modules/
+package-lock.json
+npm-debug.log*

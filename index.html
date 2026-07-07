@@ -4431,6 +4431,25 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             if (nonAdjacent.length > 0) selectable = nonAdjacent;
           }
 
+          // HARD "pair together" ORDER guarantee: never pick the second member of a
+          // pair while its leader is still placeable, so the leader always lands first
+          // and the forced-adjacency pass below can glue the pair (and chains A→B→C)
+          // in order. The soft order-bias above ranks; this makes it deterministic.
+          // Deadlock-safe: if every candidate is a held-back follower, we don't filter.
+          if (affinitySecondOf.size > 0) {
+            const leaderPlaceable = (aId) => {
+              if (setUsedIds.has(aId)) return false; // leader already placed in this set
+              const aSong = pool.find(x => x.id === aId);
+              return !!aSong && (allowSongReuse || isAvailable(aSong));
+            };
+            const notHeldBack = selectable.filter(c => {
+              const leaders = affinitySecondOf.get(c.s.id);
+              if (!leaders) return true;
+              return !leaders.some(leaderPlaceable);
+            });
+            if (notHeldBack.length > 0) selectable = notHeldBack;
+          }
+
           // Temperature-controlled selection: randomness 0=deterministic, 50=top-6, 100=softmax-all
           let pick;
           if (randomness <= 10) {
