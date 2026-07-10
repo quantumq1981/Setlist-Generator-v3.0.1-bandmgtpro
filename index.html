@@ -586,7 +586,48 @@
       font-size: .62rem; font-weight: 700; padding: .1rem .4rem;
       border-radius: 10px; text-transform: uppercase; letter-spacing: .04em;
     }
-    .venue-email-actions { display: flex; gap: .3rem; flex-wrap: wrap; margin-top: .45rem; }
+    .venue-email-actions { display: flex; gap: .3rem; flex-wrap: wrap; margin-top: .45rem; align-items: center; }
+    /* Venue outreach: search, filter chips, bulk select, compose queue */
+    .venue-toolbar { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; margin-bottom: .5rem; }
+    .venue-search { flex: 1 1 170px; min-width: 150px; font-size: .8rem; padding: .4rem .55rem; }
+    .venue-filter-chips { display: flex; gap: .3rem; flex-wrap: wrap; margin-bottom: .55rem; }
+    .venue-filter-chip {
+      border: 1px solid var(--border); background: var(--primary); color: var(--text-muted);
+      font-size: .68rem; font-weight: 700; padding: .18rem .5rem; border-radius: 12px; cursor: pointer;
+    }
+    .venue-filter-chip.active { border-color: var(--accent); color: var(--text); background: rgba(255,107,53,.1); }
+    .venue-filter-chip.chip-due { border-color: var(--warning); color: var(--warning); }
+    .venue-filter-chip.chip-due.active { background: rgba(251,191,36,.12); color: var(--warning); }
+    .venue-filter-chip .chip-count { opacity: .7; font-weight: 600; margin-left: .2rem; }
+    .venue-check { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; margin-top: .15rem; }
+    .venue-bulk-bar {
+      position: sticky; top: 0; z-index: 2;
+      display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+      background: var(--primary); border: 1px solid var(--accent); border-radius: 8px;
+      padding: .45rem .6rem; margin-bottom: .55rem; font-size: .78rem;
+    }
+    .followup-due-badge {
+      font-size: .6rem; font-weight: 800; padding: .1rem .4rem; border-radius: 10px;
+      background: rgba(251,191,36,.14); color: var(--warning); border: 1px solid var(--warning);
+      text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+    }
+    .venue-touch-log { font-size: .7rem; color: var(--accent); margin-top: .15rem; }
+    /* Compose overlay (sits above the venue modal) */
+    .compose-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.62); display: flex; justify-content: center; align-items: center; z-index: 1600; padding: 1rem; }
+    .compose-panel {
+      width: min(660px, 96vw); max-height: 92vh; overflow-y: auto;
+      background: var(--secondary); border: 1px solid var(--border); border-radius: 12px;
+      padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: .45rem;
+    }
+    .compose-head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+    .compose-title { font-weight: 700; font-size: .92rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .compose-progress-track { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; margin: .15rem 0 .3rem; }
+    .compose-progress-fill { height: 100%; background: var(--accent); transition: width .25s ease; }
+    .compose-tpl-chips { display: flex; gap: .3rem; flex-wrap: wrap; }
+    .compose-warn { font-size: .7rem; color: var(--warning); background: rgba(251,191,36,.08); border: 1px solid var(--warning); border-radius: 6px; padding: .35rem .5rem; }
+    .compose-body-textarea { width: 100%; font-size: .8rem; line-height: 1.45; resize: vertical; font-family: inherit; }
+    .compose-actions { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; justify-content: flex-end; padding-top: .4rem; border-top: 1px solid var(--border); }
+    .compose-queue-meta { margin-right: auto; font-size: .7rem; color: var(--text-muted); }
     /* Booking Calendar */
     .booking-cal-grid {
       display: grid; grid-template-columns: repeat(7, 1fr);
@@ -1005,6 +1046,8 @@
       { key: 'pass',          label: 'Pass',          color: '#ef4444' },
     ];
     const VENUE_STATUS_ORDER = { booked: 0, call_scheduled: 1, responded: 2, contacted: 3, prospect: 4, pass: 5 };
+    // A venue stuck in "Contacted" with no reply for this many days is flagged as follow-up due.
+    const FOLLOWUP_DUE_DAYS = 7;
 
     const EMAIL_TEMPLATES_DEFAULT = {
       outreach: {
@@ -7226,6 +7269,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [localEpk, setLocalEpk] = useState(epkSettings);
       const [tplKey, setTplKey] = useState('outreach');
       const [epkDirty, setEpkDirty] = useState(false);
+      // Outreach: search / pipeline filter / multi-select / compose queue
+      const [venueSearch, setVenueSearch] = useState('');
+      const [venueFilter, setVenueFilter] = useState('all');
+      const [selectedIds, setSelectedIds] = useState([]);
+      const [compose, setCompose] = useState(null);
+      const [composeCopied, setComposeCopied] = useState(false);
       const venueCsvRef = React.useRef(null);
       const epkPhotoRef = React.useRef(null);
 
@@ -7273,7 +7322,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         reader.readAsDataURL(file);
       };
 
-      useEffect(() => { setLocalEpk(epkSettings); setEpkDirty(false); }, [open]);
+      useEffect(() => {
+        setLocalEpk(epkSettings); setEpkDirty(false);
+        setSelectedIds([]); setCompose(null); setVenueSearch(''); setVenueFilter('all');
+      }, [open]);
       if (!open) return null;
 
       const statusInfo = (key) => VENUE_STATUSES.find(s => s.key === key) || VENUE_STATUSES[0];
@@ -7310,7 +7362,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         return { typeLabel: t.label, songs: top, pitch };
       };
 
-      const fillAndSend = (templateKey, venue, booking) => {
+      // Fill a template's placeholders for one venue (+ optional booking). Pure — no side effects.
+      const fillTemplate = (templateKey, venue, booking) => {
         const tpl = (localEpk.templates || {})[templateKey] || EMAIL_TEMPLATES_DEFAULT[templateKey];
         const sug = suggestForVenue(venue);
         const repl = {
@@ -7334,12 +7387,110 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         };
         let subj = tpl.subject; let body = tpl.body;
         Object.entries(repl).forEach(([k, v]) => { subj = subj.split(k).join(v); body = body.split(k).join(v); });
-        const to = venue?.email || '';
-        window.open(`mailto:${to}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`);
-        if (venue) {
-          const today = new Date().toISOString().slice(0, 10);
-          onUpdateVenue({ ...venue, lastContactDate: today, status: venue.status === 'prospect' ? 'contacted' : venue.status });
+        subj = subj.replace(/[,\s]+$/, ''); // tidy dangling punctuation from unfilled placeholders (e.g. no booking date)
+        return { to: venue?.email || '', subject: subj, body };
+      };
+
+      const todayISO = () => new Date().toISOString().slice(0, 10);
+
+      // Pick the template that matches where a venue sits in the pipeline.
+      const defaultTemplateFor = (venue) => {
+        switch (venue?.status) {
+          case 'contacted': return 'followup';
+          case 'responded': case 'call_scheduled': return 'callRequest';
+          case 'booked': return 'bookingConfirmation';
+          default: return 'outreach';
         }
+      };
+
+      const isFollowupDue = (venue) => {
+        if (venue?.status !== 'contacted' || !venue.lastContactDate) return false;
+        const then = new Date(venue.lastContactDate + 'T00:00:00').getTime();
+        return isFinite(then) && (Date.now() - then) / 86400000 >= FOLLOWUP_DUE_DAYS;
+      };
+
+      const bookingFor = (venue, bookingId) =>
+        (bookingId && bookings.find(b => b.id === bookingId)) ||
+        bookings.find(b => b.venueId === venue?.id && b.status === 'confirmed') || null;
+
+      // Open the compose overlay for one or many venues; each draft is personalized per venue.
+      const openCompose = (venueIds, templateKey, bookingId) => {
+        const ids = venueIds.filter(id => venues.some(v => v.id === id));
+        if (!ids.length) { showToast('No venues to message', 'warning'); return; }
+        const venue = venues.find(v => v.id === ids[0]);
+        const tk = templateKey || defaultTemplateFor(venue);
+        setComposeCopied(false);
+        setCompose({
+          ids, index: 0, templateKey: tk, bookingId: bookingId || null, sent: 0, skipped: 0,
+          ...fillTemplate(tk, venue, bookingFor(venue, bookingId)),
+        });
+      };
+
+      const composeVenue = compose ? venues.find(v => v.id === compose.ids[compose.index]) : null;
+
+      const composeSetTemplate = (tk) => {
+        if (!compose || !composeVenue) return;
+        setCompose({ ...compose, templateKey: tk, ...fillTemplate(tk, composeVenue, bookingFor(composeVenue, compose.bookingId)) });
+      };
+
+      // Log the touch: stamp the date, bump prospects to Contacted, append to the contact log,
+      // and save back an email typed into the To field so it sticks on the venue.
+      const recordOutreach = (venue, c) => {
+        const to = (c.to || '').trim();
+        const label = (EMAIL_TEMPLATES_DEFAULT[c.templateKey] || {}).label || c.templateKey;
+        onUpdateVenue({
+          ...venue,
+          email: to || venue.email,
+          lastContactDate: todayISO(),
+          status: venue.status === 'prospect' ? 'contacted' : venue.status,
+          contactLog: [...(venue.contactLog || []), { date: todayISO(), template: label }],
+        });
+      };
+
+      const composeAdvance = (c, didSend) => {
+        const sent = c.sent + (didSend ? 1 : 0);
+        const skipped = c.skipped + (didSend ? 0 : 1);
+        const next = c.index + 1;
+        setComposeCopied(false);
+        if (next >= c.ids.length) {
+          setCompose(null);
+          if (c.ids.length > 1) {
+            setSelectedIds([]);
+            showToast(`Outreach run done — ${sent} sent, ${skipped} skipped`, sent ? 'success' : 'warning');
+          } else if (didSend) {
+            showToast('Draft opened — finish and send from your email app', 'success');
+          }
+          return;
+        }
+        const venue = venues.find(v => v.id === c.ids[next]);
+        if (!venue) { composeAdvance({ ...c, index: next, sent, skipped }, false); return; }
+        setCompose({ ...c, index: next, sent, skipped, ...fillTemplate(c.templateKey, venue, bookingFor(venue, c.bookingId)) });
+      };
+
+      const composeSend = (via) => {
+        const c = compose; if (!c) return;
+        const to = (c.to || '').trim();
+        if (via === 'gmail') {
+          window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(c.subject)}&body=${encodeURIComponent(c.body)}`, '_blank');
+        } else {
+          window.open(`mailto:${to}?subject=${encodeURIComponent(c.subject)}&body=${encodeURIComponent(c.body)}`);
+        }
+        if (composeVenue) recordOutreach(composeVenue, c);
+        composeAdvance(c, true);
+      };
+
+      const composeCopy = () => {
+        const c = compose; if (!c) return;
+        const text = `To: ${c.to || ''}\nSubject: ${c.subject}\n\n${c.body}`;
+        const done = () => { setComposeCopied(true); setTimeout(() => setComposeCopied(false), 1600); };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, done);
+        else done();
+      };
+
+      const composeMarkSent = () => {
+        const c = compose; if (!c) return;
+        if (composeVenue) recordOutreach(composeVenue, c);
+        composeAdvance(c, true);
       };
 
       const downloadGigSheet = (booking, venue, linkedSetlist) => {
@@ -7575,34 +7726,88 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           const a = document.createElement('a'); a.href = url; a.download = 'venue-import-sample.csv'; a.click();
           URL.revokeObjectURL(url);
         };
-        const sortedVenues = [...venues].sort((a, b) => (VENUE_STATUS_ORDER[a.status] ?? 4) - (VENUE_STATUS_ORDER[b.status] ?? 4));
+        const q = venueSearch.trim().toLowerCase();
+        const matchesSearch = (v) => !q || [v.name, v.city, v.state, v.contactName, v.email, v.type].some(f => (f || '').toLowerCase().includes(q));
+        const matchesFilter = (v) => venueFilter === 'all' ? true : venueFilter === 'due' ? isFollowupDue(v) : v.status === venueFilter;
+        const filtered = venues.filter(v => matchesSearch(v) && matchesFilter(v))
+          .sort((a, b) => (VENUE_STATUS_ORDER[a.status] ?? 4) - (VENUE_STATUS_ORDER[b.status] ?? 4) || (a.name || '').localeCompare(b.name || ''));
+        const dueCount = venues.filter(isFollowupDue).length;
+        const statusCounts = {};
+        venues.forEach(v => { statusCounts[v.status] = (statusCounts[v.status] || 0) + 1; });
+        const selectedSet = new Set(selectedIds);
+        const visibleIds = filtered.map(v => v.id);
+        const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedSet.has(id));
+        const toggleSelect = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+        const toggleSelectAll = () => setSelectedIds(allVisibleSelected
+          ? selectedIds.filter(id => !visibleIds.includes(id))
+          : [...new Set([...selectedIds, ...visibleIds])]);
+        const selectedVenues = filtered.filter(v => selectedSet.has(v.id))
+          .concat(venues.filter(v => selectedSet.has(v.id) && !visibleIds.includes(v.id)));
+        const selectedNoEmail = selectedVenues.filter(v => !(v.email || '').trim()).length;
         return (
           <div>
             <input ref={venueCsvRef} type="file" accept=".csv" style={{ display: 'none' }}
               onChange={e => { handleVenueCSV(e.target.files[0]); e.target.value = ''; }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.65rem', flexWrap: 'wrap', gap: '.35rem' }}>
-              <div style={{ fontSize: '.8rem', color: 'var(--text-muted)' }}>{venues.length} venue{venues.length !== 1 ? 's' : ''}</div>
-              <div style={{ display: 'flex', gap: '.35rem', flexWrap: 'wrap' }}>
-                <button className="btn btn-small" onClick={downloadSampleVenueCSV} title="Download sample CSV template" style={{ fontSize: '.68rem', color: 'var(--text-muted)' }}>⬇ Sample CSV</button>
-                <button className="btn btn-small" onClick={() => venueCsvRef.current?.click()} title="Bulk-import venues from a CSV file" style={{ fontSize: '.68rem' }}>⬆ Import CSV</button>
-                <button className="btn btn-small btn-primary" onClick={() => setVenueForm({...BLANK_VENUE})}>+ Add Venue</button>
-              </div>
+            <div className="venue-toolbar">
+              <input className="venue-search" value={venueSearch} onChange={e => setVenueSearch(e.target.value)} placeholder="🔍 Search name, city, contact…" />
+              <button className="btn btn-small" onClick={downloadSampleVenueCSV} title="Download sample CSV template" style={{ fontSize: '.68rem', color: 'var(--text-muted)' }}>⬇ Sample CSV</button>
+              <button className="btn btn-small" onClick={() => venueCsvRef.current?.click()} title="Bulk-import venues from a CSV file" style={{ fontSize: '.68rem' }}>⬆ Import CSV</button>
+              <button className="btn btn-small btn-primary" onClick={() => setVenueForm({...BLANK_VENUE})}>+ Add Venue</button>
             </div>
+            {venues.length > 0 && (
+              <div className="venue-filter-chips">
+                <button className={`venue-filter-chip${venueFilter === 'all' ? ' active' : ''}`} onClick={() => setVenueFilter('all')}>All <span className="chip-count">{venues.length}</span></button>
+                {VENUE_STATUSES.map(s => (statusCounts[s.key] || 0) > 0 && (
+                  <button key={s.key} className={`venue-filter-chip${venueFilter === s.key ? ' active' : ''}`} onClick={() => setVenueFilter(venueFilter === s.key ? 'all' : s.key)}>
+                    {s.label} <span className="chip-count">{statusCounts[s.key]}</span>
+                  </button>
+                ))}
+                {dueCount > 0 && (
+                  <button className={`venue-filter-chip chip-due${venueFilter === 'due' ? ' active' : ''}`} onClick={() => setVenueFilter(venueFilter === 'due' ? 'all' : 'due')} title={`Contacted over ${FOLLOWUP_DUE_DAYS} days ago with no response`}>
+                    ⏰ Follow-up due <span className="chip-count">{dueCount}</span>
+                  </button>
+                )}
+              </div>
+            )}
+            {selectedIds.length > 0 && (
+              <div className="venue-bulk-bar">
+                <span style={{ fontWeight: 700 }}>✉ {selectedIds.length} venue{selectedIds.length !== 1 ? 's' : ''} selected</span>
+                {selectedNoEmail > 0 && <span style={{ color: 'var(--warning)', fontSize: '.72rem' }}>{selectedNoEmail} missing email — you can add it as you go</span>}
+                <span style={{ flex: 1 }} />
+                <button className="btn btn-small btn-primary" onClick={() => openCompose(selectedVenues.map(v => v.id))} title="Step through a personalized email for each selected venue">Compose to selected →</button>
+                <button className="btn btn-small" onClick={() => setSelectedIds([])}>Clear</button>
+              </div>
+            )}
+            {filtered.length > 0 && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '.45rem', marginBottom: '.4rem', fontSize: '.72rem', color: 'var(--text-muted)', cursor: 'pointer', width: 'fit-content' }}>
+                <input type="checkbox" className="venue-check" style={{ marginTop: 0 }} checked={allVisibleSelected} onChange={toggleSelectAll} />
+                <span>{allVisibleSelected ? 'Deselect all shown' : `Select all shown (${filtered.length})`}</span>
+              </label>
+            )}
             {venues.length === 0 && (
               <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2.5rem 1rem' }}>
                 No venues yet. Add your first prospect to start building your pipeline.
               </div>
             )}
-            {sortedVenues.map(venue => {
+            {venues.length > 0 && filtered.length === 0 && (
+              <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem 1rem' }}>
+                No venues match your search or filter.
+              </div>
+            )}
+            {filtered.map(venue => {
               const si = statusInfo(venue.status);
-              const confirmedBooking = bookings.find(b => b.venueId === venue.id && b.status === 'confirmed');
+              const touches = (venue.contactLog || []).length;
+              const lastLog = touches ? venue.contactLog[touches - 1] : null;
+              const due = isFollowupDue(venue);
               return (
                 <div key={venue.id} className="venue-item">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '.5rem' }}>
+                    <input type="checkbox" className="venue-check" checked={selectedSet.has(venue.id)} onChange={() => toggleSelect(venue.id)} title="Select for bulk outreach" />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '.2rem' }}>
                         <span style={{ fontWeight: 700 }}>{venue.name}</span>
                         <span className="venue-status-badge" style={{ background: si.color, color: si.key === 'booked' || si.key === 'responded' || si.key === 'prospect' ? '#111' : '#fff' }}>{si.label}</span>
+                        {due && <span className="followup-due-badge">⏰ follow-up due</span>}
                         <span style={{ fontSize: '.72rem', color: 'var(--text-muted)' }}>{venue.type}</span>
                       </div>
                       <div style={{ fontSize: '.75rem', color: 'var(--text-muted)' }}>
@@ -7610,8 +7815,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                         {venue.city && <span>{venue.city}{venue.state ? ', ' + venue.state : ''}{venue.email ? ' · ' : ''}</span>}
                         {venue.email && <span>{venue.email}</span>}
                       </div>
-                      {venue.lastContactDate && (
-                        <div style={{ fontSize: '.7rem', color: 'var(--accent)', marginTop: '.15rem' }}>Last contact: {venue.lastContactDate}</div>
+                      {(venue.lastContactDate || touches > 0) && (
+                        <div className="venue-touch-log">
+                          {touches > 0 && <span>{touches} touch{touches !== 1 ? 'es' : ''} · </span>}
+                          Last contact: {venue.lastContactDate || (lastLog && lastLog.date)}{lastLog && lastLog.template ? ` (${lastLog.template})` : ''}
+                        </div>
                       )}
                     </div>
                     <div style={{ display: 'flex', gap: '.25rem', flexShrink: 0 }}>
@@ -7620,14 +7828,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     </div>
                   </div>
                   <div className="venue-email-actions">
-                    {Object.entries(EMAIL_TEMPLATES_DEFAULT).map(([key, def]) => (
-                      <button key={key} className="btn btn-small"
-                        onClick={() => fillAndSend(key, venue, confirmedBooking)}
-                        style={{ fontSize: '.68rem', borderColor: '#60a5fa', color: '#60a5fa' }}
-                        title={`Open email: ${def.label}`}>
-                        ✉ {def.label}
-                      </button>
-                    ))}
+                    <button className="btn btn-small"
+                      onClick={() => openCompose([venue.id])}
+                      style={{ fontSize: '.7rem', borderColor: '#60a5fa', color: '#60a5fa' }}
+                      title={`Preview & edit before sending — starts from "${(EMAIL_TEMPLATES_DEFAULT[defaultTemplateFor(venue)] || {}).label}" based on this venue's status`}>
+                      ✉ Compose Email
+                    </button>
+                    {!(venue.email || '').trim() && <span style={{ fontSize: '.68rem', color: 'var(--warning)' }}>no email saved — add one in the composer</span>}
                   </div>
                 </div>
               );
@@ -7871,10 +8078,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                           <button className="btn btn-small" title="Download gig sheet PDF"
                             style={{ color: 'var(--success)', borderColor: 'var(--success)' }}
                             onClick={() => downloadGigSheet(b, bookingVenue || null, linkedSetlist || null)}>📄</button>
-                          {bookingVenue?.email && (
-                            <button className="btn btn-small" title="Send booking confirmation email"
+                          {bookingVenue && (
+                            <button className="btn btn-small" title="Compose booking confirmation email"
                               style={{ color: '#60a5fa', borderColor: '#60a5fa' }}
-                              onClick={() => fillAndSend('bookingConfirmation', bookingVenue, b)}>✉</button>
+                              onClick={() => openCompose([bookingVenue.id], 'bookingConfirmation', b.id)}>✉</button>
                           )}
                           <button className="btn btn-small" onClick={() => {
                             setBookingForm({...b}); setEditBookingId(b.id);
@@ -7912,6 +8119,26 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 </div>
               </div>
               <div style={hint}>🌐 Web EPK opens the designed page (Print → Save as PDF). ⬇ .html downloads a self-contained file you can host as your shareable link. Generate uses current edits — Save to keep them.</div>
+
+              {(() => {
+                const checks = [
+                  ['Tagline', localEpk.tagline], ['Elevator pitch', localEpk.elevatorPitch], ['Bio', localEpk.bio],
+                  ['Press photo', localEpk.pressPhotoData], ['Video reel', localEpk.demoVideoUrl], ['Genres', localEpk.genres],
+                  ['Testimonials', localEpk.testimonials], ['Booking email', localEpk.contactEmail],
+                  ['Booking phone', localEpk.contactPhone], ['EPK / hub link', localEpk.epkUrl || localEpk.linktree],
+                ];
+                const missing = checks.filter(([, v]) => !(v || '').trim()).map(([n]) => n);
+                const pct = Math.round(((checks.length - missing.length) / checks.length) * 100);
+                return (
+                  <div style={{ margin: '.45rem 0 .25rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '.5rem', flexWrap: 'wrap', fontSize: '.7rem', color: 'var(--text-muted)', marginBottom: '.2rem' }}>
+                      <span style={{ fontWeight: 700, color: pct === 100 ? 'var(--success)' : 'var(--text)' }}>EPK completeness: {pct}%{pct === 100 ? ' ✓ buyer-ready' : ''}</span>
+                      {missing.length > 0 && <span>Missing: {missing.slice(0, 4).join(', ')}{missing.length > 4 ? ` +${missing.length - 4} more` : ''}</span>}
+                    </div>
+                    <div className="compose-progress-track"><div className="compose-progress-fill" style={{ width: pct + '%', background: pct === 100 ? 'var(--success)' : 'var(--accent)' }} /></div>
+                  </div>
+                );
+              })()}
 
               <div style={subHead}>1 · Branding &amp; Bio</div>
               <div className="set-config">
@@ -8015,6 +8242,65 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         );
       };
 
+      // Compose overlay: preview/edit one personalized email at a time; in bulk mode it
+      // steps through the selected venues with progress, skip, and a wrap-up summary.
+      const renderComposeOverlay = () => {
+        const c = compose;
+        const many = c.ids.length > 1;
+        const unresolved = [];
+        if (c.body.includes('[EPK Link]')) unresolved.push('EPK link');
+        if (c.body.includes('[Demo Link]')) unresolved.push('demo link');
+        return (
+          <div className="compose-backdrop" onClick={() => setCompose(null)}>
+            <div className="compose-panel" onClick={e => e.stopPropagation()}>
+              <div className="compose-head">
+                <div className="compose-title">✉ {composeVenue.name}{composeVenue.contactName ? ` · ${composeVenue.contactName}` : ''}</div>
+                <button className="btn btn-small" onClick={() => setCompose(null)} title="Close without sending">✕</button>
+              </div>
+              {many && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.72rem', color: 'var(--text-muted)' }}>
+                    <span>Venue {c.index + 1} of {c.ids.length}</span>
+                    <span>{c.sent} sent · {c.skipped} skipped</span>
+                  </div>
+                  <div className="compose-progress-track"><div className="compose-progress-fill" style={{ width: `${(c.index / c.ids.length) * 100}%` }} /></div>
+                </div>
+              )}
+              <div className="compose-tpl-chips">
+                {Object.entries(EMAIL_TEMPLATES_DEFAULT).map(([key, def]) => (
+                  <button key={key} className={`venue-filter-chip${c.templateKey === key ? ' active' : ''}`}
+                    onClick={() => composeSetTemplate(key)}
+                    title="Switching template re-fills the draft for this venue">{def.label}</button>
+                ))}
+              </div>
+              {unresolved.length > 0 && (
+                <div className="compose-warn">⚠ Your {unresolved.join(' and ')} placeholder{unresolved.length > 1 ? 's are' : ' is'} unfilled — add the link{unresolved.length > 1 ? 's' : ''} in the EPK &amp; Templates tab so buyers get something to click.</div>
+              )}
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label>To{!(c.to || '').trim() && <span style={{ color: 'var(--warning)', fontWeight: 700 }}> — no email saved; type one and it's saved to the venue on send</span>}</label>
+                <input type="email" value={c.to} onChange={e => setCompose({ ...c, to: e.target.value })} placeholder="booking@venue.com" />
+              </div>
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label>Subject</label>
+                <input value={c.subject} onChange={e => setCompose({ ...c, subject: e.target.value })} />
+              </div>
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label>Message</label>
+                <textarea className="compose-body-textarea" rows={11} value={c.body} onChange={e => setCompose({ ...c, body: e.target.value })} />
+              </div>
+              <div className="compose-actions">
+                <span className="compose-queue-meta">Sending logs the touch &amp; moves prospects to Contacted.</span>
+                <button className="btn btn-small" onClick={composeCopy} title="Copy To / Subject / Message to the clipboard">{composeCopied ? '✓ Copied' : '📋 Copy'}</button>
+                <button className="btn btn-small" onClick={() => composeSend('gmail')} title="Open this draft in Gmail (new tab)">Gmail ↗</button>
+                {many && <button className="btn btn-small" onClick={() => composeAdvance(c, false)} title="Skip this venue without logging a touch">Skip →</button>}
+                <button className="btn btn-small" onClick={composeMarkSent} title="Log the touch without opening an email app (e.g. after Copy)">✓ Mark sent{many ? ' →' : ''}</button>
+                <button className="btn btn-small btn-primary" onClick={() => composeSend('mailto')} title="Open this draft in your default email app">📨 Email App</button>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
       return (
         <div className="modal-backdrop" onClick={onClose}>
           <div className="venue-modal" onClick={e => e.stopPropagation()}>
@@ -8035,6 +8321,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               {vTab === 'settings' && renderSettingsTab()}
             </div>
           </div>
+          {compose && composeVenue && renderComposeOverlay()}
         </div>
       );
     }
