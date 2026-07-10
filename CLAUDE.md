@@ -82,7 +82,7 @@ For a one-off probe you can still lift a single function ad hoc, but prefer addi
 case to the suite so the check is permanent.
 
 ### Git / PRs
-Feature branch: `claude/set-list-import-format-snxsm5`. Open PRs against `main`.
+Feature branch: `claude/epk-venue-messaging-enhance-1xcsu7`. Open PRs against `main`.
 When a PR merges, restart the branch from `origin/main` for the next change.
 
 ---
@@ -381,3 +381,42 @@ present and 0 JS page errors.
   render) and a minimal `package.json` whose sole purpose is the `test` script.
 
 Verification: `npm test` → 35/35, stable across repeated runs; Babel compile clean.
+
+## 9e. Change log — 2026-07 venue outreach (mass messaging) + EPK usability pass
+
+All inside `VenueModal` (plus CSS + one constant). Replaces the old per-venue row of
+five blind `mailto:` template buttons with a preview-first, bulk-capable outreach flow.
+
+- **Compose overlay** (`fillTemplate` → `openCompose`/`composeSend`): every email is
+  now previewed in an editable To / Subject / Message panel before anything opens.
+  Template chips switch + re-fill the draft in place; a warning flags unfilled
+  `[EPK Link]` / `[Demo Link]` placeholders. Send options: default email app
+  (`mailto:`), Gmail web compose, clipboard copy, or "Mark sent" (log-only, for
+  copy-paste workflows). Sending stamps `lastContactDate`, bumps `prospect` →
+  `contacted`, appends to a per-venue `contactLog` (new, backward-compatible field),
+  and saves an email typed into To back onto the venue.
+- **Mass messaging**: per-row checkboxes + "select all shown" + a sticky bulk bar
+  ("N selected · Compose to selected →"). Bulk compose steps through the selected
+  venues in pipeline order, personalizing each draft, with a progress bar,
+  sent/skipped tallies, Skip, and a wrap-up summary toast. Venues without an email
+  are flagged up front and can be filled in as you go.
+- **Pipeline navigation**: live search (name/city/state/contact/email/type) and
+  status filter chips with counts, plus a **⏰ Follow-up due** chip/badge for venues
+  sitting in Contacted for ≥ `FOLLOWUP_DUE_DAYS` (7) days. Rows show touch count +
+  last template used.
+- **Smart template default** (`defaultTemplateFor`): prospect → Initial Outreach,
+  contacted → Follow-Up, responded/call_scheduled → Let's Connect, booked → Booking
+  Confirmed. The bookings-tab ✉ button now opens the same compose overlay with the
+  booking's context (and no longer requires a saved email).
+- **EPK completeness meter** in the EPK & Templates tab: 10-field checklist
+  (tagline, pitch, bio, photo, video, genres, testimonials, email, phone, EPK/hub
+  link) rendered as a progress bar with the missing fields named.
+- Unfilled subject placeholders no longer leave dangling punctuation (trailing
+  comma tidy in `fillTemplate`).
+
+Verification: Babel compile clean (index.html + the three companion files);
+`npm test` → 35/35; headless Playwright drive (vendored npm libs, seeded venues in
+every pipeline state): 32/32 interaction checks — search/chip filtering, smart
+default template, placeholder fill, template re-fill, single + bulk queue advance
+with tallies, email save-back, prospect→contacted bump, touch log, EPK meter,
+0 page errors.
