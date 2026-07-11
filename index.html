@@ -628,6 +628,16 @@
     .compose-body-textarea { width: 100%; font-size: .8rem; line-height: 1.45; resize: vertical; font-family: inherit; }
     .compose-actions { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; justify-content: flex-end; padding-top: .4rem; border-top: 1px solid var(--border); }
     .compose-queue-meta { margin-right: auto; font-size: .7rem; color: var(--text-muted); }
+    /* Built-in venue directory browser */
+    .dir-list { overflow-y: auto; flex: 1; min-height: 0; }
+    .dir-region { font-size: .68rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin: .6rem 0 .3rem; }
+    .dir-row { display: flex; align-items: flex-start; gap: .5rem; background: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: .45rem .55rem; margin-bottom: .3rem; }
+    .dir-row.dir-added { opacity: .55; }
+    .dir-row-name { font-weight: 700; font-size: .82rem; }
+    .dir-row-meta { font-size: .68rem; color: var(--text-muted); }
+    .dir-row-styles { font-size: .7rem; color: var(--text-muted); margin-top: .12rem; line-height: 1.35; }
+    .dir-unverified { font-size: .6rem; font-weight: 800; color: var(--warning); border: 1px solid var(--warning); border-radius: 8px; padding: .04rem .3rem; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+    .dir-added-tag { font-size: .62rem; font-weight: 800; color: var(--success); white-space: nowrap; }
     /* Booking Calendar */
     .booking-cal-grid {
       display: grid; grid-template-columns: repeat(7, 1fr);
@@ -1097,6 +1107,259 @@
 
     const BLANK_VENUE = { name: '', email: '', phone: '', contactName: '', type: 'Bar', city: '', state: '', website: '', notes: '', status: 'prospect', lastContactDate: '' };
     const BLANK_BOOKING = { venueId: '', venueName: '', date: '', startTime: '', endTime: '', fee: '', status: 'pending', setlistId: '', notes: '' };
+
+    // Built-in Las Vegas / Henderson / Boulder City live-music venue directory.
+    // Curated for working-band outreach: booking contact, direct email/phone where known,
+    // and the styles/formats each room actually books. Entries with verified: false are
+    // directory research — confirm the contact and schedule before leaning on them.
+    // Added to the pipeline via the "Vegas Directory" browser in the Venues tab
+    // (bulk-add dedups by name, so re-adding is always safe).
+    const VENUE_DIRECTORY = [
+      // ── Downtown & Arts District ──
+      { region: 'Downtown & Arts District', name: "Vic's Las Vegas", type: 'Club', city: 'Las Vegas', state: 'NV',
+        contactName: 'Chris Lowden (Talent Buyer)', email: 'chris@stoneys.com', phone: '(725) 755-5299', website: 'vicslasvegas.com', verified: true,
+        addr: '355 Promenade Place, Las Vegas, NV 89106 (Symphony Park)',
+        styles: 'Jazz-focused: full rhythm sections, jazz trios/quartets, instrumental soloists, jazz vocalists — integrated with the Italian-American dining room',
+        extra: 'General email: info@vicslasvegas.com. Active lineup on their "Live Jazz" event portal.' },
+      { region: 'Downtown & Arts District', name: 'SoulBelly BBQ', type: 'Restaurant', city: 'Las Vegas', state: 'NV',
+        contactName: 'Entertainment & Catering Coordinator', email: 'catering@soulbellybbq.com', phone: '(702) 483-4404', website: 'soulbellybbq.com', verified: true,
+        addr: '1327 S Main St, Las Vegas, NV 89104 (Arts District)',
+        styles: 'Roots, blues, classic rock, alt-country, Americana — full electric bands on the indoor stage; acoustic solo/duo on the patio',
+        extra: 'Live music schedule pinned to their site and Instagram.' },
+      { region: 'Downtown & Arts District', name: "Lola's A Louisiana Kitchen", type: 'Restaurant', city: 'Las Vegas', state: 'NV',
+        contactName: 'General Manager / Music Coordinator', email: '', phone: '(702) 227-5652', website: 'lolaslasvegas.com', verified: true,
+        addr: '241 W Charleston Blvd, Las Vegas, NV 89102',
+        styles: 'New Orleans jazz, Delta blues, Cajun, Zydeco, acoustic R&B — brass duos, solo pianists, small blues combos; live Wed–Sun after 6 PM',
+        extra: 'Booking via the website contact form; schedules cross-posted to socials.' },
+      { region: 'Downtown & Arts District', name: 'Backstage Bar & Billiards', type: 'Bar', city: 'Las Vegas', state: 'NV',
+        contactName: 'Brian Saliba (Bogus Productions) / Smash Mag Presents', email: '', phone: '(702) 650-9542', website: '601fremont.com', verified: true,
+        addr: '601 E Fremont St, Las Vegas, NV 89101',
+        styles: 'Indie rock, punk, metal, alternative, hip-hop, rock tributes — pro stage, touring bands and regional indie showcases',
+        extra: 'Booking via main site or social outreach; concert calendar on the 601 Fremont events engine. Also: facebook.com/backstagebarlv' },
+      { region: 'Downtown & Arts District', name: 'Taverna Costera', type: 'Restaurant', city: 'Las Vegas', state: 'NV',
+        contactName: 'Events / Entertainment Team', email: '', phone: '', website: 'tavernacostera.com', verified: false,
+        addr: '1031 S Main St, Las Vegas, NV 89101 (Arts District)',
+        styles: 'Latin, indie, acoustic — rooftop and stage sets most weekends' },
+      { region: 'Downtown & Arts District', name: 'The Underground at The Mob Museum', type: 'Bar', city: 'Las Vegas', state: 'NV',
+        contactName: 'Events Team', email: '', phone: '', website: 'themobmuseum.org', verified: false,
+        addr: '300 Stewart Ave, Las Vegas, NV 89101 (basement speakeasy)',
+        styles: 'Live jazz, swing, prohibition-era standards — weekend sets in the speakeasy' },
+      { region: 'Downtown & Arts District', name: 'Atomic Liquors', type: 'Bar', city: 'Las Vegas', state: 'NV',
+        contactName: 'Events / Booking', email: '', phone: '', website: 'atomicliquors.com', verified: false,
+        addr: '917 Fremont St, Las Vegas, NV 89101',
+        styles: 'Occasional live music and outdoor events — rock, indie, acoustic' },
+      { region: 'Downtown & Arts District', name: 'The Sand Dollar Downtown', type: 'Bar', city: 'Las Vegas', state: 'NV',
+        contactName: 'Booking (Sand Dollar group)', email: '', phone: '', website: 'thesanddollarlv.com', verified: false,
+        addr: 'The Plaza Hotel, 1 S Main St, Las Vegas, NV 89101',
+        styles: 'Jazz, blues, funk — live music daily in the lounge' },
+      // ── West Side, Chinatown & Summerlin ──
+      { region: 'West Side, Chinatown & Summerlin', name: 'Maxan Jazz Club', type: 'Club', city: 'Las Vegas', state: 'NV',
+        contactName: 'Booking Manager / Owner', email: 'owner@maxanjazz.com', phone: '(702) 485-3926', website: 'maxanjazz.com', verified: true,
+        addr: '4130 S Decatur Blvd, Las Vegas, NV 89103',
+        styles: 'Mainstream jazz, fusion, Latin jazz, soul, blues — full bands, trios, jazz vocalists; music 5 nights (Thu–Mon 7–10 PM) in a high-end sushi room',
+        extra: 'Detailed booking calendar on the homepage.' },
+      { region: 'West Side, Chinatown & Summerlin', name: "Count's Vamp'd Rock Bar & Grill", type: 'Bar', city: 'Las Vegas', state: 'NV',
+        contactName: 'Entertainment Booker (HUKL Hospitality)', email: 'booking@vampdvegas.com', phone: '(702) 220-8849', website: 'vampdvegas.com', verified: true,
+        addr: '6750 W Sahara Ave, Las Vegas, NV 89146',
+        styles: 'Hard rock, classic rock, metal, high-energy tributes — strictly full electric bands indoors; acoustic rock solo/duo for early patio slots',
+        extra: 'Active monthly calendar on the live events page.' },
+      { region: 'West Side, Chinatown & Summerlin', name: 'Marché Bacchus French Bistro', type: 'Restaurant', city: 'Las Vegas', state: 'NV',
+        contactName: 'Entertainment Coordinator', email: 'info@marchebacchus.com', phone: '(702) 804-8008', website: 'marchebacchus.com', verified: true,
+        addr: '2620 Regatta Dr, Las Vegas, NV 89128 (Desert Shores / Summerlin)',
+        styles: 'Classical, upscale lounge pop, smooth jazz, classical guitar — solo acoustic guitarists, jazz duos, violinists, subtle vocalists for lakeside patio dining',
+        extra: 'Event dates and specialty music nights tracked on their site.' },
+      { region: 'West Side, Chinatown & Summerlin', name: 'Grape Vine Cafe & Wine Bar', type: 'Restaurant', city: 'Las Vegas', state: 'NV',
+        contactName: 'General Manager', email: '', phone: '(702) 228-9463', website: 'grapevinevegas.com', verified: true,
+        addr: '7501 W Lake Mead Blvd, Las Vegas, NV 89128',
+        styles: 'Pop, classic rock covers, jazz, acoustic blues — solo acoustic, guitar/vocal duos, light trios for the patio',
+        extra: 'Booking via direct site inquiry; updates on local promos and social feeds.' },
+      { region: 'West Side, Chinatown & Summerlin', name: 'The Mint Tavern', type: 'Bar', city: 'Las Vegas', state: 'NV',
+        contactName: 'Stephanie (Live Music Coordinator)', email: '', phone: '(702) 776-3313', website: 'theminttavern.com', verified: true,
+        addr: '332 W Sahara Ave, Las Vegas, NV 89102',
+        styles: 'Retro lounge pop, rockabilly, classic rock, swing, jazz duos — 24/7 classic Vegas lounge booking mid-century-vibe acts and lounge singers',
+        extra: 'Booking processed via FINE Entertainment Management; lineups on socials and in-venue displays.' },
+      { region: 'West Side, Chinatown & Summerlin', name: 'The Golden Tiki', type: 'Bar', city: 'Las Vegas', state: 'NV',
+        contactName: 'Entertainment Booking Manager', email: '', phone: '(702) 222-3196', website: 'thegoldentiki.com', verified: true,
+        addr: '3939 Spring Mountain Rd, Las Vegas, NV 89102 (Chinatown)',
+        styles: 'Exotica, surf rock, rockabilly, vintage lounge, tropical sets — surf-rock trios, island-style acoustic ensembles, retro formats',
+        extra: 'Booking via site inquiry portal; events cataloged on socials.' },
+      { region: 'West Side, Chinatown & Summerlin', name: 'Pine Hollow Winery', type: 'Other', city: 'Las Vegas', state: 'NV',
+        contactName: 'Barbara & John Virgilio (Owners)', email: 'pinehollowwinery@comcast.net', phone: '(702) 780-4778', website: 'facebook.com/pinehollowwinery', verified: true,
+        addr: '7018 W Charleston Blvd, Las Vegas, NV 89117',
+        styles: 'Soft acoustic pop, classic hits covers, jazz duos, indie singer-songwriters — relaxed acoustic acts for wine-tasting flights, mostly weekends',
+        extra: 'Show updates tracked on local social networks.' },
+      { region: 'West Side, Chinatown & Summerlin', name: 'The Sand Dollar Lounge', type: 'Bar', city: 'Las Vegas', state: 'NV',
+        contactName: 'Booking (Sand Dollar group)', email: '', phone: '', website: 'thesanddollarlv.com', verified: false,
+        addr: '3355 Spring Mountain Rd, Las Vegas, NV 89102',
+        styles: 'Blues, funk, rock — live music nightly; one of the longest-running live-music bars in Vegas, famous jam nights' },
+      { region: 'West Side, Chinatown & Summerlin', name: 'The Composers Room', type: 'Club', city: 'Las Vegas', state: 'NV',
+        contactName: 'Showroom / Booking Team', email: '', phone: '', website: 'thecomposersroom.com', verified: false,
+        addr: '953 E Sahara Ave, Las Vegas, NV 89104 (Commercial Center)',
+        styles: 'Classic Vegas supper-club showroom — jazz, standards, big band, tribute vocalists' },
+      { region: 'West Side, Chinatown & Summerlin', name: 'Italian American Club', type: 'Club', city: 'Las Vegas', state: 'NV',
+        contactName: 'Showroom / Entertainment Team', email: '', phone: '', website: 'iacvegas.com', verified: false,
+        addr: '2333 E Sahara Ave, Las Vegas, NV 89104',
+        styles: 'Supper-club showroom — standards, jazz, Rat Pack era, tribute vocalists; weekly dinner shows' },
+      { region: 'West Side, Chinatown & Summerlin', name: 'Saddle N Spurs Saloon', type: 'Bar', city: 'Las Vegas', state: 'NV',
+        contactName: 'Bar Manager / Booking', email: '', phone: '', website: '', verified: false,
+        addr: '2329 N Jones Blvd, Las Vegas, NV 89108',
+        styles: 'Country, honky-tonk, country-rock — live bands weekly in a locals country bar; find them on Facebook' },
+      { region: 'West Side, Chinatown & Summerlin', name: "Big Dog's Draft House", type: 'Bar', city: 'Las Vegas', state: 'NV',
+        contactName: 'Events / Booking', email: '', phone: '', website: 'bigdogsbrews.com', verified: false,
+        addr: '4543 N Rancho Dr, Las Vegas, NV 89130',
+        styles: 'Classic rock, covers, acoustic — weekend live music at the brewery/draft house' },
+      // ── Strip & Casino Lounges ──
+      { region: 'Strip & Casino Lounges', name: "Carnival Court (Harrah's)", type: 'Casino', city: 'Las Vegas', state: 'NV',
+        contactName: 'Caesars Entertainment Nightlife & Box Office', email: 'hirboxoffice@caesars.com', phone: '(702) 693-6138', website: 'caesars.com/harrahs-las-vegas/things-to-do/nightlife-carnaval-court', verified: true,
+        addr: '3475 Las Vegas Blvd S, Las Vegas, NV 89109',
+        styles: 'High-energy top-40 pop/rock cover bands, dance ensembles, party DJs — outdoor Strip stage paired with flair bartending',
+        extra: 'Band residencies and slots on the Harrah\'s nightlife directory.' },
+      { region: 'Strip & Casino Lounges', name: 'Rí Rá Irish Pub', type: 'Bar', city: 'Las Vegas', state: 'NV',
+        contactName: 'Scott Sherman', email: 'riralasvegas@rira.com', phone: '(702) 632-7771', website: 'rira.com/las-vegas', verified: true,
+        addr: '3930 Las Vegas Blvd S, Las Vegas, NV 89119 (Shoppes at Mandalay Place)',
+        styles: 'Traditional Irish folk, Celtic rock, acoustic classic rock, top-40 covers — high-energy pub bands, duos, solo singer-songwriters nightly',
+        extra: 'Performance details on their web calendar.' },
+      { region: 'Strip & Casino Lounges', name: "Gilley's Saloon (Treasure Island)", type: 'Casino', city: 'Las Vegas', state: 'NV',
+        contactName: 'Entertainment / Venue Management', email: '', phone: '', website: 'gilleyslasvegas.com', verified: false,
+        addr: '3300 Las Vegas Blvd S, Las Vegas, NV 89109',
+        styles: 'Country, country-rock — live bands and line dancing most nights on the Strip' },
+      { region: 'Strip & Casino Lounges', name: 'Rush Lounge (Golden Nugget)', type: 'Casino', city: 'Las Vegas', state: 'NV',
+        contactName: 'Entertainment Department', email: '', phone: '', website: 'goldennugget.com/las-vegas', verified: false,
+        addr: '129 E Fremont St, Las Vegas, NV 89101',
+        styles: 'Pop, rock, R&B, lounge — free nightly live acts in the casino lounge' },
+      { region: 'Strip & Casino Lounges', name: 'Grandview Lounge (South Point)', type: 'Casino', city: 'Las Vegas', state: 'NV',
+        contactName: 'Entertainment Department', email: '', phone: '', website: 'southpointcasino.com', verified: false,
+        addr: '9777 Las Vegas Blvd S, Las Vegas, NV 89183',
+        styles: 'Classic rock, country, oldies, dance bands — free nightly lounge entertainment' },
+      { region: 'Strip & Casino Lounges', name: "Roxy's Lounge (Sam's Town)", type: 'Casino', city: 'Las Vegas', state: 'NV',
+        contactName: 'Entertainment Department (Boyd Gaming)', email: '', phone: '', website: 'samstownlv.com', verified: false,
+        addr: '5111 Boulder Hwy, Las Vegas, NV 89122',
+        styles: 'Classic rock, country, R&B cover bands — live lounge acts most nights' },
+      { region: 'Strip & Casino Lounges', name: 'Railhead (Boulder Station)', type: 'Casino', city: 'Las Vegas', state: 'NV',
+        contactName: 'Entertainment Department (Station Casinos)', email: '', phone: '', website: 'boulderstation.com', verified: false,
+        addr: '4111 Boulder Hwy, Las Vegas, NV 89121',
+        styles: 'Blues, classic rock, country, tribute acts — free weekend shows in a dedicated music room' },
+      // ── South Strip & East Valley ──
+      { region: 'South Strip & East Valley', name: 'The Bootlegger Italian Bistro (Copa Room)', type: 'Restaurant', city: 'Las Vegas', state: 'NV',
+        contactName: 'Copa Room Events Team / Entertainment Manager', email: '', phone: '(702) 736-4939', website: 'bootleggerlasvegas.com', verified: true,
+        addr: '7700 Las Vegas Blvd S, Las Vegas, NV 89123 (South Strip)',
+        styles: 'Classic Vegas lounge, Sinatra-era standards, big band jazz, cabaret, piano-vocal duos, harpists — live 7 nights; solo showmen, open-mic hosts, acoustic jazz duos',
+        extra: 'Events/Copa Room line: (702) 609-3390. Schedules via weekly circulars and the events page.' },
+      { region: 'South Strip & East Valley', name: "Stoney's Rockin' Country", type: 'Club', city: 'Las Vegas', state: 'NV',
+        contactName: 'Talent Buyer & Booking Dept', email: 'booking@stoneys.com', phone: '(702) 435-2855', website: 'stoneysrockincountry.com', verified: true,
+        addr: '6611 Las Vegas Blvd S #160, Las Vegas, NV 89119 (Town Square)',
+        styles: 'Modern country, country-rock, Americana — local country cover bands, line-dancing acts, acoustic singer-songwriters for opening sets',
+        extra: 'Private events: events@stoneys.com. Full ticketing/event list on their site.' },
+      { region: 'South Strip & East Valley', name: 'The Noypitz Bar & Grill', type: 'Restaurant', city: 'Las Vegas', state: 'NV',
+        contactName: 'Breland B. Mendoza', email: 'brelandbmendoza@fairbourne.com', phone: '(702) 269-5001 / (702) 485-3213', website: 'noypitzholding.com', verified: true,
+        addr: '6605 S Las Vegas Blvd Ste B-145, Las Vegas, NV 89119 (Town Square)',
+        styles: 'Acoustic pop, contemporary R&B, rock covers, traditional/modern Filipino acoustic — live musicians and full combos Fri–Sun in an upscale dining room',
+        extra: 'Lineups promoted on their Instagram and Facebook.' },
+      { region: 'South Strip & East Valley', name: 'The Dispensary Lounge', type: 'Bar', city: 'Las Vegas', state: 'NV',
+        contactName: 'Uli (Music Booking Coordinator)', email: 'ulimusic@gmail.com', phone: '(702) 458-6343', website: 'thedispensarylounge.com', verified: true,
+        addr: '2451 E Tropicana Ave, Las Vegas, NV 89121 (Southeast Valley)',
+        styles: 'Traditional jazz, bebop, cool jazz, swing, vintage lounge standards — weekend jazz combos, trios, vocal duos in an intimate retro room',
+        extra: 'Live music events updated on their entertainment page.' },
+      { region: 'South Strip & East Valley', name: 'Piazza Lounge (Tuscany Suites)', type: 'Casino', city: 'Las Vegas', state: 'NV',
+        contactName: 'Sylvia & Andrew (Entertainment Managers)', email: '', phone: '(702) 893-8933', website: 'tuscanylasvegas.com', verified: true,
+        addr: '255 E Flamingo Rd, Las Vegas, NV 89169',
+        styles: 'Vintage Vegas lounge standards, jazz combos, bebop, contemporary R&B vocalists, piano bar — upscale local trios and solo showmen 7 nights a week',
+        extra: 'Inquiries via the Tuscany Suites entertainment department; tracked by the Las Vegas Jazz Society.' },
+      { region: 'South Strip & East Valley', name: 'Silver Sevens Casino', type: 'Casino', city: 'Las Vegas', state: 'NV',
+        contactName: 'Marketing Dept / Entertainment Buyer', email: '', phone: '(702) 733-7000', website: 'silversevenscasino.com', verified: true,
+        addr: '4100 Paradise Rd, Las Vegas, NV 89169',
+        styles: 'Classic rock covers, R&B hits, blues, oldies — high-energy local cover bands and party acts for Fri & Sat night slots',
+        extra: 'Contact via player services / corporate portals; schedules on marquee and promo feeds.' },
+      { region: 'South Strip & East Valley', name: 'Red Dwarf', type: 'Bar', city: 'Las Vegas', state: 'NV',
+        contactName: 'Entertainment Booker', email: '', phone: '(702) 640-0496', website: 'sites.google.com/reddwarflv.com/home', verified: true,
+        addr: '1305 Vegas Valley Dr, Las Vegas, NV 89169',
+        styles: 'Punk rock, surf rock, garage rock, psychobilly, alt vinyl DJs — raw high-energy full electric underground rock in a tiki dive / Detroit pizza hub',
+        extra: 'Booking via web or Instagram outreach; gigs tracked on socials and local concert registries.' },
+      // ── Henderson & Green Valley ──
+      { region: 'Henderson & Green Valley', name: "Shakespeare's Grille & Pub", type: 'Bar', city: 'Henderson', state: 'NV',
+        contactName: 'General Manager / Live Music Coordinator', email: '', phone: '(702) 837-7900', website: 'facebook.com/shakespearesgrilleandpub', verified: true,
+        addr: '790 Coronado Center Dr #130, Henderson, NV 89052',
+        styles: 'Classic rock, pop covers, acoustic folk, British pub favorites — acoustic singer-songwriters, cover duos, weekend classic rock bands',
+        extra: 'Booking via Facebook/Instagram DM; schedules posted on their Facebook page.' },
+      { region: 'Henderson & Green Valley', name: 'Tailgater Tavern', type: 'Bar', city: 'Henderson', state: 'NV',
+        contactName: 'Entertainment Coordinator', email: '', phone: '(702) 565-5552', website: 'facebook.com/tailgatertavern', verified: true,
+        addr: '431 S Green Valley Pkwy, Henderson, NV 89052',
+        styles: 'Country, southern rock, classic rock, modern pop covers — full cover bands weekend nights; acoustic duos/solo for weekdays and patio events',
+        extra: 'Calendars shared via Facebook events and on-site flyers.' },
+      { region: 'Henderson & Green Valley', name: 'Hammers Grill & Bar', type: 'Bar', city: 'Henderson', state: 'NV',
+        contactName: 'General Manager / Entertainment Booker', email: '', phone: '(702) 564-1866', website: 'hammersgrillandbar.com', verified: true,
+        addr: '771 E Horizon Dr #104, Henderson, NV 89015 (Cornet Plaza)',
+        styles: 'Classic rock covers, acoustic folk, blues, neighborhood bar favorites — casual acoustic singer-songwriters and weekend rock duos/bands',
+        extra: 'Schedules on in-venue events boards and local social feeds.' },
+      { region: 'Henderson & Green Valley', name: 'Club Madrid (Sunset Station)', type: 'Casino', city: 'Henderson', state: 'NV',
+        contactName: 'Entertainment Department (Station Casinos)', email: '', phone: '', website: 'sunsetstation.com', verified: false,
+        addr: '1301 W Sunset Rd, Henderson, NV 89014',
+        styles: 'Cover bands, tribute acts, dance bands — weekend shows in the dedicated lounge/showroom' },
+      { region: 'Henderson & Green Valley', name: 'Emerald Island Casino', type: 'Casino', city: 'Henderson', state: 'NV',
+        contactName: 'Entertainment / Marketing', email: '', phone: '', website: 'emeraldislandcasino.com', verified: false,
+        addr: '120 Market St, Henderson, NV 89015 (Water Street District)',
+        styles: 'Classic rock, oldies, dance bands — free weekend live music for the casino floor' },
+      { region: 'Henderson & Green Valley', name: 'The Pass Casino', type: 'Casino', city: 'Henderson', state: 'NV',
+        contactName: 'Entertainment / Marketing', email: '', phone: '', website: 'passcasino.com', verified: false,
+        addr: '40 S Water St, Henderson, NV 89015',
+        styles: 'Live lounge entertainment on weekends — covers, party bands, acoustic acts' },
+      { region: 'Henderson & Green Valley', name: 'Lovelady Brewing Company', type: 'Bar', city: 'Henderson', state: 'NV',
+        contactName: 'Taproom Manager / Events', email: '', phone: '', website: 'loveladybrewing.com', verified: false,
+        addr: '20 S Water St, Henderson, NV 89015',
+        styles: 'Acoustic acts, singer-songwriters, open-mic and jam nights in the taproom' },
+      // ── Boulder City & Outskirts ──
+      { region: 'Boulder City & Outskirts', name: 'Backstop Sports Pub', type: 'Bar', city: 'Boulder City', state: 'NV',
+        contactName: 'Bar Manager / Live Events Coordinator', email: '', phone: '(702) 294-8445', website: 'backstopsportspub.com', verified: true,
+        addr: '533 Avenue B, Boulder City, NV 89005',
+        styles: 'Country rock, classic rock covers, blues, high-energy bar bands — local weekend bands and dancing events in a casual sports pub',
+        extra: 'Booking via website contact; schedules on flyers and Boulder City community social groups.' },
+      { region: 'Boulder City & Outskirts', name: "Jack's Place", type: 'Bar', city: 'Boulder City', state: 'NV',
+        contactName: 'Live Music Coordinator', email: '', phone: '(702) 293-2200', website: 'visitbouldercity.com/listing/jacks-place/34344', verified: true,
+        addr: '544 Nevada Way, Boulder City, NV 89005',
+        styles: 'Acoustic classic rock, alternative country, folk, acoustic duos — easy-listening neighborhood musicians, solo guitar acts, small cover groups',
+        extra: 'Gig updates via regional entertainment circulars and local booking pages.' },
+      { region: 'Boulder City & Outskirts', name: 'Boulder Dam Brewing Company', type: 'Bar', city: 'Boulder City', state: 'NV',
+        contactName: 'Brewpub Manager / Events', email: '', phone: '', website: 'boulderdambrewing.com', verified: false,
+        addr: '453 Nevada Way, Boulder City, NV 89005',
+        styles: 'Rock, folk, blues, acoustic — live music on the beer-garden patio, mostly weekends' },
+      { region: 'Boulder City & Outskirts', name: 'The Dillinger Food & Drinkery', type: 'Bar', city: 'Boulder City', state: 'NV',
+        contactName: 'Owner / Events', email: '', phone: '', website: 'thedillinger.com', verified: false,
+        addr: '1224 Arizona St, Boulder City, NV 89005',
+        styles: 'Acoustic singer-songwriters and small bands — weekend live music in the historic district' },
+      { region: 'Boulder City & Outskirts', name: "Milo's Cellar & Inn", type: 'Restaurant', city: 'Boulder City', state: 'NV',
+        contactName: 'Owner / Manager', email: '', phone: '', website: '', verified: false,
+        addr: '534 Nevada Way, Boulder City, NV 89005',
+        styles: 'Wine bar / sidewalk bistro — occasional acoustic and jazz patio sets; listed on visitbouldercity.com' },
+      { region: 'Boulder City & Outskirts', name: 'Pioneer Saloon', type: 'Bar', city: 'Goodsprings', state: 'NV',
+        contactName: 'Monica (Entertainment Booker)', email: 'pioneersaloon11c@gmail.com', phone: '(702) 874-6809 / (702) 674-6809', website: 'pioneersaloonnv.com', verified: true,
+        addr: '310 W Spring St, Goodsprings, NV 89019',
+        styles: 'Country-rock, outlaw country, Americana, folk, southern rock — full outdoor country bands and acoustic soloists, weekend patio + indoor stages',
+        extra: 'Email was provided as "pioneersaloon11c.@gmail.com" (stray dot removed) — verify on first contact. Gig dates current on their site.' },
+      { region: 'Boulder City & Outskirts', name: 'THE HUBB Bar & Grill', type: 'Bar', city: 'Pahrump', state: 'NV',
+        contactName: 'Live Music Coordinator', email: 'thehubb2018@gmail.com', phone: '', website: 'thehubbbarandgrill.com', verified: true,
+        addr: '3720 W Bell Vista Ave, Pahrump, NV 89060',
+        styles: 'Southern rock, classic country, blues, swamp rock, classic rock covers — full electric bands Saturday nights; acoustic jam sessions Sunday afternoons',
+        extra: 'Monthly live music calendar published on their homepage.' },
+      // ── North Las Vegas ──
+      { region: 'North Las Vegas', name: 'Stonehouse Bar & Grill', type: 'Bar', city: 'North Las Vegas', state: 'NV',
+        contactName: 'General Manager', email: 'stonehousevegas@gmail.com', phone: '(702) 644-7080', website: 'facebook.com/stonehousevegas', verified: true,
+        addr: '3889 E Craig Rd, North Las Vegas, NV 89030',
+        styles: 'Classic rock, top-40 cover sets, casual acoustic rock — live entertainment booked for Friday night slots',
+        extra: 'Weekend show details on their Facebook business page.' },
+    ];
+
+    // Map a directory entry onto the venue schema (address/styles/booking route → notes).
+    const directoryEntryToVenue = (d) => ({
+      ...BLANK_VENUE,
+      name: d.name, type: d.type, city: d.city, state: d.state,
+      contactName: d.contactName || '', email: d.email || '', phone: d.phone || '', website: d.website || '',
+      notes: [
+        d.verified ? '' : '⚠ Directory research — verify current booking contact & schedule before outreach.',
+        d.addr ? `📍 ${d.addr}` : '',
+        d.styles ? `🎵 ${d.styles}.` : '',
+        d.extra || '',
+      ].filter(Boolean).join(' '),
+    });
 
     /******************* UTILITIES & GUARDS *******************/
     const genId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() :
@@ -7275,6 +7538,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [selectedIds, setSelectedIds] = useState([]);
       const [compose, setCompose] = useState(null);
       const [composeCopied, setComposeCopied] = useState(false);
+      const [showDirectory, setShowDirectory] = useState(false);
+      const [dirSelected, setDirSelected] = useState([]); // directory entry names picked for import
       const venueCsvRef = React.useRef(null);
       const epkPhotoRef = React.useRef(null);
 
@@ -7325,6 +7590,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       useEffect(() => {
         setLocalEpk(epkSettings); setEpkDirty(false);
         setSelectedIds([]); setCompose(null); setVenueSearch(''); setVenueFilter('all');
+        setShowDirectory(false);
       }, [open]);
       if (!open) return null;
 
@@ -7752,6 +8018,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               <input className="venue-search" value={venueSearch} onChange={e => setVenueSearch(e.target.value)} placeholder="🔍 Search name, city, contact…" />
               <button className="btn btn-small" onClick={downloadSampleVenueCSV} title="Download sample CSV template" style={{ fontSize: '.68rem', color: 'var(--text-muted)' }}>⬇ Sample CSV</button>
               <button className="btn btn-small" onClick={() => venueCsvRef.current?.click()} title="Bulk-import venues from a CSV file" style={{ fontSize: '.68rem' }}>⬆ Import CSV</button>
+              <button className="btn btn-small" onClick={openDirectory} title={`Browse ${VENUE_DIRECTORY.length} Las Vegas / Henderson / Boulder City live-music venues with booking contacts and add them to your pipeline`} style={{ fontSize: '.68rem', borderColor: 'var(--accent)', color: 'var(--accent)' }}>📂 Vegas Directory</button>
               <button className="btn btn-small btn-primary" onClick={() => setVenueForm({...BLANK_VENUE})}>+ Add Venue</button>
             </div>
             {venues.length > 0 && (
@@ -8242,6 +8509,80 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         );
       };
 
+      // Built-in Vegas venue directory: browse, pick, and bulk-add curated venues.
+      const existingVenueNames = new Set(venues.map(v => (v.name || '').trim().toLowerCase()));
+      const dirIsAdded = (d) => existingVenueNames.has(d.name.trim().toLowerCase());
+      const openDirectory = () => {
+        setDirSelected(VENUE_DIRECTORY.filter(d => !dirIsAdded(d)).map(d => d.name));
+        setShowDirectory(true);
+      };
+      const dirToggle = (name) => setDirSelected(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
+      const dirAddSelected = () => {
+        const entries = VENUE_DIRECTORY.filter(d => dirSelected.includes(d.name) && !dirIsAdded(d));
+        if (!entries.length) { showToast('Nothing new selected — these venues are already in your list', 'warning'); return; }
+        onBulkAddVenues(entries.map(directoryEntryToVenue));
+        setShowDirectory(false);
+      };
+
+      const renderDirectoryOverlay = () => {
+        const regions = [];
+        VENUE_DIRECTORY.forEach(d => { if (!regions.includes(d.region)) regions.push(d.region); });
+        const newCount = VENUE_DIRECTORY.filter(d => !dirIsAdded(d)).length;
+        const pickedNew = dirSelected.filter(n => { const d = VENUE_DIRECTORY.find(x => x.name === n); return d && !dirIsAdded(d); }).length;
+        return (
+          <div className="compose-backdrop" onClick={() => setShowDirectory(false)}>
+            <div className="compose-panel" onClick={e => e.stopPropagation()} style={{ width: 'min(720px, 96vw)' }}>
+              <div className="compose-head">
+                <div className="compose-title">📂 Las Vegas Venue Directory</div>
+                <button className="btn btn-small" onClick={() => setShowDirectory(false)}>✕</button>
+              </div>
+              <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                {VENUE_DIRECTORY.length} live-music bars, restaurants, lounges &amp; casino rooms across Las Vegas, Henderson, Boulder City and nearby — each with booking contact, styles they book, and how they publish schedules. Entries marked <span className="dir-unverified">verify</span> are directory research: confirm the contact before leaning on it. Adding skips anything already in your list.
+              </div>
+              <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button className="btn btn-small" onClick={() => setDirSelected(VENUE_DIRECTORY.filter(d => !dirIsAdded(d)).map(d => d.name))}>Select all new ({newCount})</button>
+                <button className="btn btn-small" onClick={() => setDirSelected([])}>Clear</button>
+                <span style={{ marginLeft: 'auto', fontSize: '.72rem', color: 'var(--text-muted)' }}>{pickedNew} selected</span>
+              </div>
+              <div className="dir-list">
+                {regions.map(region => (
+                  <div key={region}>
+                    <div className="dir-region">{region}</div>
+                    {VENUE_DIRECTORY.filter(d => d.region === region).map(d => {
+                      const added = dirIsAdded(d);
+                      return (
+                        <div key={d.name} className={`dir-row${added ? ' dir-added' : ''}`}>
+                          <input type="checkbox" className="venue-check" disabled={added} checked={!added && dirSelected.includes(d.name)} onChange={() => dirToggle(d.name)} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span className="dir-row-name">{d.name}</span>
+                              <span className="dir-row-meta">{d.type} · {d.city}</span>
+                              {!d.verified && <span className="dir-unverified" title="Directory research — verify current booking contact & schedule before outreach">verify</span>}
+                              {added && <span className="dir-added-tag">✓ in your list</span>}
+                            </div>
+                            <div className="dir-row-styles">
+                              {d.contactName && <span>👤 {d.contactName}{(d.email || d.phone) ? ' · ' : ''}</span>}
+                              {d.email && <span>{d.email}{d.phone ? ' · ' : ''}</span>}
+                              {d.phone && <span>{d.phone}</span>}
+                            </div>
+                            <div className="dir-row-styles">{d.styles}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+              <div className="compose-actions">
+                <span className="compose-queue-meta">Every field lands on the venue — contact, phone, styles &amp; address in notes — ready for Compose.</span>
+                <button className="btn btn-small" onClick={() => setShowDirectory(false)}>Cancel</button>
+                <button className="btn btn-small btn-primary" onClick={dirAddSelected} disabled={pickedNew === 0}>+ Add {pickedNew} venue{pickedNew !== 1 ? 's' : ''}</button>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
       // Compose overlay: preview/edit one personalized email at a time; in bulk mode it
       // steps through the selected venues with progress, skip, and a wrap-up summary.
       const renderComposeOverlay = () => {
@@ -8321,6 +8662,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               {vTab === 'settings' && renderSettingsTab()}
             </div>
           </div>
+          {showDirectory && renderDirectoryOverlay()}
           {compose && composeVenue && renderComposeOverlay()}
         </div>
       );
