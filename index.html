@@ -1348,6 +1348,83 @@
         extra: 'Weekend show details on their Facebook business page.' },
     ];
 
+    // ── Gig Prospector: discover rooms that could host solo/duo acts via OpenStreetMap ──
+    // Queries the free Overpass API (no key, CORS-open) for named bars/pubs/restaurants/
+    // clubs/casinos around a point, then scores each for live-music potential — including
+    // places that don't advertise entertainment at all.
+    const PROSPECT_AREAS = [
+      { key: 'lv-central',  label: 'Las Vegas — Central & Strip',          lat: 36.1447, lon: -115.1728, city: 'Las Vegas' },
+      { key: 'lv-downtown', label: 'Las Vegas — Downtown & Arts District', lat: 36.1620, lon: -115.1470, city: 'Las Vegas' },
+      { key: 'lv-west',     label: 'Las Vegas — West & Summerlin',         lat: 36.1672, lon: -115.2410, city: 'Las Vegas' },
+      { key: 'lv-east',     label: 'Las Vegas — East & Boulder Hwy',       lat: 36.1130, lon: -115.0620, city: 'Las Vegas' },
+      { key: 'lv-north',    label: 'North Las Vegas',                      lat: 36.1989, lon: -115.1175, city: 'North Las Vegas' },
+      { key: 'henderson',   label: 'Henderson / Green Valley',             lat: 36.0395, lon: -114.9817, city: 'Henderson' },
+      { key: 'boulder',     label: 'Boulder City',                         lat: 35.9789, lon: -114.8341, city: 'Boulder City' },
+      { key: 'pahrump',     label: 'Pahrump',                              lat: 36.2083, lon: -115.9839, city: 'Pahrump' },
+    ];
+    const PROSPECT_KINDS = [
+      { key: 'bar',        label: 'Bars & Pubs',  regex: 'bar|pub|biergarten', on: true },
+      { key: 'restaurant', label: 'Restaurants',  regex: 'restaurant',         on: true },
+      { key: 'nightclub',  label: 'Clubs',        regex: 'nightclub',          on: true },
+      { key: 'cafe',       label: 'Cafes',        regex: 'cafe',               on: false },
+      { key: 'casino',     label: 'Casinos',      regex: 'casino|gambling',    on: false },
+    ];
+    const OVERPASS_ENDPOINTS = [
+      'https://overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter',
+    ];
+    const buildOverpassQuery = (lat, lon, radiusM, kindRegexes) => {
+      const rx = kindRegexes.join('|');
+      return `[out:json][timeout:30];(node["amenity"~"^(${rx})$"]["name"](around:${radiusM},${lat},${lon});way["amenity"~"^(${rx})$"]["name"](around:${radiusM},${lat},${lon}););out center tags 400;`;
+    };
+    // Score a place 0–10 for solo/duo gig potential from its OSM tags, with named signals.
+    const scoreProspect = (tags) => {
+      let score = 0; const signals = [];
+      const amenity = tags.amenity || '';
+      if (/bar|pub|nightclub|biergarten|casino|gambling/.test(amenity)) score += 3;
+      else if (amenity === 'restaurant') score += 2;
+      else score += 1;
+      if (tags.live_music === 'yes') { score += 4; signals.push('🎵 live music tagged'); }
+      if (tags.outdoor_seating && tags.outdoor_seating !== 'no') { score += 2; signals.push('🌿 patio — acoustic-friendly'); }
+      const name = (tags.name || '').toLowerCase();
+      if (/saloon|tavern|lounge|roadhouse|honky|cantina|speakeasy|taproom|tap house|brewer|winery|wine|distill|social|grill/.test(name)) { score += 2; signals.push('🍸 bar-room style name'); }
+      const cuisine = (tags.cuisine || '').toLowerCase();
+      if (/steak|italian|american|mexican|bbq|barbecue|seafood|tapas|wine/.test(cuisine)) { score += 1; signals.push('🍽 dinner-crowd cuisine'); }
+      if (tags.phone || tags['contact:phone'] || tags.website || tags['contact:website'] || tags.email || tags['contact:email']) { score += 1; signals.push('☎ contactable'); }
+      if (tags.brand || amenity === 'fast_food') { score = 0; signals.length = 0; signals.push('⛔ chain / franchise'); }
+      return { score: Math.max(0, Math.min(10, score)), signals };
+    };
+    // Flatten an Overpass response into scored prospect rows (named places only).
+    const overpassToProspects = (json, fallbackCity) => (json && json.elements || []).map(el => {
+      const t = el.tags || {};
+      if (!t.name) return null;
+      const { score, signals } = scoreProspect(t);
+      const street = [t['addr:housenumber'], t['addr:street']].filter(Boolean).join(' ');
+      const addr = [street, t['addr:city'] || fallbackCity].filter(Boolean).join(', ');
+      const typeMap = { bar: 'Bar', pub: 'Bar', biergarten: 'Bar', restaurant: 'Restaurant', cafe: 'Restaurant', nightclub: 'Club', casino: 'Casino', gambling: 'Casino' };
+      return {
+        key: `${el.type}/${el.id}`, name: t.name, amenity: t.amenity,
+        type: typeMap[t.amenity] || 'Bar',
+        city: t['addr:city'] || fallbackCity || '', addr,
+        phone: t.phone || t['contact:phone'] || '',
+        website: (t.website || t['contact:website'] || '').replace(/^https?:\/\//, ''),
+        email: t.email || t['contact:email'] || '',
+        cuisine: t.cuisine || '', score, signals,
+      };
+    }).filter(Boolean);
+    // Map a scored prospect onto the venue schema.
+    const prospectToVenue = (p) => ({
+      ...BLANK_VENUE,
+      name: p.name, type: p.type, city: p.city, state: 'NV',
+      email: p.email, phone: p.phone, website: p.website,
+      notes: [
+        '🔎 Gig Prospector find (OpenStreetMap) — may not advertise entertainment; pitch solo/duo formats.',
+        p.addr ? `📍 ${p.addr}.` : '',
+        p.signals.length ? `Signals: ${p.signals.join(', ')}.` : '',
+        p.cuisine ? `Cuisine: ${p.cuisine}.` : '',
+      ].filter(Boolean).join(' '),
+    });
+
     // Map a directory entry onto the venue schema (address/styles/booking route → notes).
     const directoryEntryToVenue = (d) => ({
       ...BLANK_VENUE,
@@ -7540,6 +7617,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [composeCopied, setComposeCopied] = useState(false);
       const [showDirectory, setShowDirectory] = useState(false);
       const [dirSelected, setDirSelected] = useState([]); // directory entry names picked for import
+      const [prospector, setProspector] = useState(null); // Gig Prospector overlay state (null = closed)
       const venueCsvRef = React.useRef(null);
       const epkPhotoRef = React.useRef(null);
 
@@ -7590,7 +7668,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       useEffect(() => {
         setLocalEpk(epkSettings); setEpkDirty(false);
         setSelectedIds([]); setCompose(null); setVenueSearch(''); setVenueFilter('all');
-        setShowDirectory(false);
+        setShowDirectory(false); setProspector(null);
       }, [open]);
       if (!open) return null;
 
@@ -8019,6 +8097,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               <button className="btn btn-small" onClick={downloadSampleVenueCSV} title="Download sample CSV template" style={{ fontSize: '.68rem', color: 'var(--text-muted)' }}>⬇ Sample CSV</button>
               <button className="btn btn-small" onClick={() => venueCsvRef.current?.click()} title="Bulk-import venues from a CSV file" style={{ fontSize: '.68rem' }}>⬆ Import CSV</button>
               <button className="btn btn-small" onClick={openDirectory} title={`Browse ${VENUE_DIRECTORY.length} Las Vegas / Henderson / Boulder City live-music venues with booking contacts and add them to your pipeline`} style={{ fontSize: '.68rem', borderColor: 'var(--accent)', color: 'var(--accent)' }}>📂 Vegas Directory</button>
+              <button className="btn btn-small" onClick={openProspector} title="Search the open map for bars, restaurants & clubs in an area — even ones that don't advertise entertainment — scored for solo/duo potential" style={{ fontSize: '.68rem', borderColor: 'var(--success)', color: 'var(--success)' }}>🔎 Prospector</button>
               <button className="btn btn-small btn-primary" onClick={() => setVenueForm({...BLANK_VENUE})}>+ Add Venue</button>
             </div>
             {venues.length > 0 && (
@@ -8078,9 +8157,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                         <span style={{ fontSize: '.72rem', color: 'var(--text-muted)' }}>{venue.type}</span>
                       </div>
                       <div style={{ fontSize: '.75rem', color: 'var(--text-muted)' }}>
-                        {venue.contactName && <span>{venue.contactName} · </span>}
-                        {venue.city && <span>{venue.city}{venue.state ? ', ' + venue.state : ''}{venue.email ? ' · ' : ''}</span>}
-                        {venue.email && <span>{venue.email}</span>}
+                        {[venue.contactName,
+                          venue.city ? venue.city + (venue.state ? ', ' + venue.state : '') : '',
+                          venue.email, venue.phone].filter(Boolean).join(' · ')}
                       </div>
                       {(venue.lastContactDate || touches > 0) && (
                         <div className="venue-touch-log">
@@ -8583,6 +8662,128 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         );
       };
 
+      // Gig Prospector: search OpenStreetMap for rooms that could host solo/duo acts.
+      const openProspector = () => setProspector({
+        area: 'lv-central', radius: 8000,
+        kinds: PROSPECT_KINDS.filter(k => k.on).map(k => k.key),
+        loading: false, error: '', results: null, selected: [],
+      });
+      const prospectorSearch = async () => {
+        const p = prospector; if (!p || p.loading) return;
+        const area = PROSPECT_AREAS.find(a => a.key === p.area) || PROSPECT_AREAS[0];
+        const kinds = PROSPECT_KINDS.filter(k => p.kinds.includes(k.key));
+        if (!kinds.length) { showToast('Pick at least one venue kind', 'warning'); return; }
+        setProspector({ ...p, loading: true, error: '', results: null, selected: [] });
+        const query = buildOverpassQuery(area.lat, area.lon, p.radius, kinds.map(k => k.regex));
+        let lastErr = null;
+        for (const endpoint of OVERPASS_ENDPOINTS) {
+          try {
+            const res = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: 'data=' + encodeURIComponent(query),
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const json = await res.json();
+            const seen = new Set();
+            const results = overpassToProspects(json, area.city)
+              .filter(r => { const k = r.name.trim().toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
+              .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+            setProspector(prev => prev && { ...prev, loading: false, results, selected: [] });
+            return;
+          } catch (e) { lastErr = e; }
+        }
+        setProspector(prev => prev && { ...prev, loading: false, error: `Search failed — the free map service may be busy; try again in a minute. (${(lastErr && lastErr.message) || 'network error'})` });
+      };
+      const prospectorAddSelected = () => {
+        const p = prospector; if (!p || !p.results) return;
+        const picks = p.results.filter(r => p.selected.includes(r.key) && !existingVenueNames.has(r.name.trim().toLowerCase()));
+        if (!picks.length) { showToast('Nothing new selected', 'warning'); return; }
+        onBulkAddVenues(picks.map(prospectToVenue));
+        setProspector(null);
+      };
+
+      const renderProspectorOverlay = () => {
+        const p = prospector;
+        const setP = (patch) => setProspector(prev => prev && { ...prev, ...patch });
+        const scoreColor = (s) => s >= 7 ? 'var(--success)' : s >= 4 ? 'var(--accent)' : 'var(--text-muted)';
+        const newResults = (p.results || []).filter(r => !existingVenueNames.has(r.name.trim().toLowerCase()));
+        const pickedNew = p.selected.filter(k => newResults.some(r => r.key === k)).length;
+        return (
+          <div className="compose-backdrop" onClick={() => setProspector(null)}>
+            <div className="compose-panel" onClick={e => e.stopPropagation()} style={{ width: 'min(720px, 96vw)' }}>
+              <div className="compose-head">
+                <div className="compose-title">🔎 Gig Prospector</div>
+                <button className="btn btn-small" onClick={() => setProspector(null)}>✕</button>
+              </div>
+              <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                Searches the open map database for every named bar, restaurant &amp; club in an area — including rooms that don't advertise entertainment — and scores each 0–10 for solo/duo potential (live-music tag, patio, bar-room name, dinner crowd, contactability; chains are filtered out). Pick the promising ones and they join your pipeline as prospects.
+              </div>
+              <div style={{ display: 'flex', gap: '.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <select value={p.area} onChange={e => setP({ area: e.target.value })} style={{ flex: '1 1 200px', fontSize: '.78rem' }}>
+                  {PROSPECT_AREAS.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}
+                </select>
+                <select value={p.radius} onChange={e => setP({ radius: Number(e.target.value) })} style={{ fontSize: '.78rem' }}>
+                  <option value={5000}>≈ 3 mi radius</option>
+                  <option value={8000}>≈ 5 mi radius</option>
+                  <option value={16000}>≈ 10 mi radius</option>
+                </select>
+                <button className="btn btn-small btn-primary" onClick={prospectorSearch} disabled={p.loading}>{p.loading ? 'Searching…' : '🔎 Search'}</button>
+              </div>
+              <div className="compose-tpl-chips">
+                {PROSPECT_KINDS.map(k => (
+                  <button key={k.key} className={`venue-filter-chip${p.kinds.includes(k.key) ? ' active' : ''}`}
+                    onClick={() => setP({ kinds: p.kinds.includes(k.key) ? p.kinds.filter(x => x !== k.key) : [...p.kinds, k.key] })}>
+                    {k.label}
+                  </button>
+                ))}
+              </div>
+              {p.error && <div className="compose-warn">⚠ {p.error}</div>}
+              {p.loading && <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.2rem', fontSize: '.8rem' }}>Scanning the map… this can take ~10–20 seconds.</div>}
+              {p.results && !p.loading && (
+                <React.Fragment>
+                  <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap', fontSize: '.72rem', color: 'var(--text-muted)' }}>
+                    <span>{p.results.length} places found · {newResults.length} not in your list</span>
+                    <span style={{ flex: 1 }} />
+                    <button className="btn btn-small" onClick={() => setP({ selected: newResults.slice(0, 25).map(r => r.key) })}>Select top 25</button>
+                    <button className="btn btn-small" onClick={() => setP({ selected: [] })}>Clear</button>
+                  </div>
+                  <div className="dir-list">
+                    {p.results.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.2rem', fontSize: '.8rem' }}>No places found here — widen the radius or add more kinds.</div>}
+                    {p.results.map(r => {
+                      const added = existingVenueNames.has(r.name.trim().toLowerCase());
+                      return (
+                        <div key={r.key} className={`dir-row${added ? ' dir-added' : ''}`}>
+                          <input type="checkbox" className="venue-check" disabled={added}
+                            checked={!added && p.selected.includes(r.key)}
+                            onChange={() => setP({ selected: p.selected.includes(r.key) ? p.selected.filter(x => x !== r.key) : [...p.selected, r.key] })} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span className="dir-row-name">{r.name}</span>
+                              <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '.72rem', fontWeight: 700, color: scoreColor(r.score) }} title="Solo/duo gig potential (0–10)">{r.score}/10</span>
+                              <span className="dir-row-meta">{r.type}{r.city ? ` · ${r.city}` : ''}</span>
+                              {added && <span className="dir-added-tag">✓ in your list</span>}
+                            </div>
+                            {(r.addr || r.phone || r.website) && (
+                              <div className="dir-row-styles">{[r.addr, r.phone, r.website].filter(Boolean).join(' · ')}</div>
+                            )}
+                            {r.signals.length > 0 && <div className="dir-row-styles">{r.signals.join(' · ')}</div>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="compose-actions">
+                    <span className="compose-queue-meta">Adds land as prospects with the find signals in notes — ready for Compose.</span>
+                    <button className="btn btn-small btn-primary" onClick={prospectorAddSelected} disabled={pickedNew === 0}>+ Add {pickedNew} prospect{pickedNew !== 1 ? 's' : ''}</button>
+                  </div>
+                </React.Fragment>
+              )}
+            </div>
+          </div>
+        );
+      };
+
       // Compose overlay: preview/edit one personalized email at a time; in bulk mode it
       // steps through the selected venues with progress, skip, and a wrap-up summary.
       const renderComposeOverlay = () => {
@@ -8663,6 +8864,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             </div>
           </div>
           {showDirectory && renderDirectoryOverlay()}
+          {prospector && renderProspectorOverlay()}
           {compose && composeVenue && renderComposeOverlay()}
         </div>
       );
