@@ -446,3 +446,32 @@ Verification: Babel compile clean; `npm test` → 35/35; headless drive extended
 bulk add lands all entries in the pipeline with contacts intact, re-open shows
 everything as added with the add button disabled, and a directory venue composes
 with its booking email prefilled; 0 page errors.
+
+## 9g. Change log — 2026-07 Gig Prospector (OpenStreetMap venue discovery)
+
+- **Prospecting engine** (module scope, next to `VENUE_DIRECTORY`): queries the free
+  Overpass API (no key, CORS-open; primary + kumi.systems mirror fallback) for every
+  *named* bar/pub/restaurant/nightclub/cafe/casino around a point. `PROSPECT_AREAS`
+  covers 8 Vegas-area centers (Central/Strip, Downtown, West/Summerlin, East, North LV,
+  Henderson, Boulder City, Pahrump); radius 3/5/10 mi; `PROSPECT_KINDS` toggles the
+  amenity classes. `buildOverpassQuery` / `overpassToProspects` / `prospectToVenue`
+  are pure.
+- **Solo/duo fit scoring** (`scoreProspect`, 0–10 with named signal chips): base by
+  amenity, +4 `live_music=yes`, +2 `outdoor_seating` (patio/acoustic), +2 bar-room
+  style name (saloon/tavern/lounge/taproom/winery/…), +1 dinner-crowd cuisine,
+  +1 contactable (phone/website/email); anything with a `brand` tag (chains) is
+  zeroed and flagged. Surfaces rooms that never advertise entertainment.
+- **UI**: "🔎 Prospector" toolbar button in the Venues tab opens an overlay with
+  area/radius/kind controls, a score-sorted result list (signal chips, address,
+  phone/website, "✓ in your list" dedup markers, "Select top 25"), and an
+  "+ Add N prospects" action through `onBulkAddVenues`. Adds land as prospects with
+  find signals in `notes`, ready for the §9e compose/mass-messaging flow.
+- Venue rows now display the phone number in the contact line (prospects are often
+  phone-only).
+
+Verification: Babel compile clean; `npm test` → 35/35; headless drive extended to
+53/53 checks (Overpass mocked via route interception): search returns scored rows,
+live-music venue ranks first, chains score 0 and are flagged, in-pipeline names are
+disabled, selected prospects land with phone intact; 0 page errors. Live Overpass
+calls can't run from the sandbox (proxy 403) but the endpoints are CORS-open in a
+real browser.
