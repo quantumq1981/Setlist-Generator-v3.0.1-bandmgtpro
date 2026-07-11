@@ -420,3 +420,29 @@ every pipeline state): 32/32 interaction checks — search/chip filtering, smart
 default template, placeholder fill, template re-fill, single + bulk queue advance
 with tallies, email save-back, prospect→contacted bump, touch log, EPK meter,
 0 page errors.
+
+## 9f. Change log — 2026-07 built-in Las Vegas venue directory
+
+- **`VENUE_DIRECTORY`** (module scope, next to `BLANK_VENUE`): 49 curated live-music
+  bars/restaurants/lounges/casino rooms across Las Vegas, Henderson, Boulder City,
+  North Las Vegas, Goodsprings and Pahrump, grouped by `region`. Each entry carries
+  booking `contactName`, direct `email`/`phone` where known, `website`, `addr`,
+  the `styles`/formats the room actually books, and how it publishes schedules
+  (`extra`). Entries sourced from user-supplied research are `verified: true`;
+  supplemental entries are `verified: false` and get a "⚠ verify before outreach"
+  prefix. `directoryEntryToVenue` maps an entry onto the venue schema (address +
+  styles + booking route land in `notes`).
+- **Directory browser** in the Venues tab ("📂 Vegas Directory" toolbar button): a
+  region-grouped overlay with per-venue checkboxes (all-new preselected), contact
+  preview, an `unverified` badge, "✓ in your list" markers for venues already in
+  the pipeline (checkbox disabled), select-all-new/clear, and an "+ Add N venues"
+  action that routes through `onBulkAddVenues` (which dedups by name, so re-adding
+  is always safe).
+- Added venues arrive as prospects with full contact info attached, so they flow
+  straight into the compose/mass-messaging pipeline from §9e.
+
+Verification: Babel compile clean; `npm test` → 35/35; headless drive extended to
+44/44 checks — directory opens with 49 rows in 6+ regions, unverified flags render,
+bulk add lands all entries in the pipeline with contacts intact, re-open shows
+everything as added with the add button disabled, and a directory venue composes
+with its booking email prefilled; 0 page errors.
