@@ -494,3 +494,30 @@ Verification: Babel compile clean; `npm test` → 35/35; headless drive extended
 56/56 checks — a stored profile with an empty tagline + custom bio loads with the
 tagline backfilled from defaults, the custom bio preserved, genres preloaded, and
 the completeness meter at 40%; 0 page errors.
+
+## 9i. Change log — 2026-07 data safety + outreach feedback loop + rebooking pass
+
+- **Full-app backup/restore** (band bar): 💾 Backup downloads every `setlist_*`
+  localStorage store as one JSON (`kind:'full-backup'`); ↩ Restore validates,
+  confirms, replaces all stores, reloads. A toast nudges after 14 days without a
+  backup (`setlist_last_backup_at`).
+- **Outcome tracking**: `updateVenue` (App) logs every status transition into
+  `contactLog` as `{kind:'status', status}`; compose sends log `{kind:'sent',
+  template}`. Legacy entries without `kind` count as sent.
+- **Outreach Performance dashboard** (Analytics tab): venues contacted, reply
+  rate, avg touches-to-reply, and per-template reply-rate bars. A "reply" is a
+  status move to responded/call_scheduled/booked, attributed to the last send on
+  or before that date. Renders even with zero bookings.
+- **Rebooking motion**: `isRebookDue` (completed booking + nothing upcoming) drives
+  a green 🔁 Rebook filter chip + row badge, and `defaultTemplateFor` now returns
+  the new `postGig` template (thanks + rebook + testimonial ask) for those venues.
+- **Small fixes**: templates no longer claim an "attached" EPK (mailto can't
+  attach); compose warns when a draft exceeds ~1800 encoded chars (mailto
+  truncation risk — use Gmail/Copy); Prospector dedupes by phone digits as well as
+  name; booking form warns on date clashes with other live bookings; the venue
+  touch-log line expands into a full dated timeline (sends + status moves).
+
+Verification: Babel compile clean; `npm test` → 35/35; headless drive → 65/65
+(backup download event, rebook chip/badge + postGig default, timeline expand,
+dashboard reply attribution "100% of 1" for the seeded reply, double-booking
+warning); 0 page errors.
