@@ -1087,19 +1087,34 @@
       }
     };
 
+    // Preloaded with the Zemba Music brand profile so a fresh app starts pitch-ready.
+    // Media links, contact details, socials, riders, and testimonials stay blank until
+    // the user fills them in (the EPK completeness meter names what's missing).
     const EPK_SETTINGS_DEFAULT = {
       // 1 — Branding & bio
-      tagline: '', actType: '', elevatorPitch: '', bio: '',
-      location: '', targetAudience: '', milestone: '', showFeel: '', buyerConfidence: '',
-      members: '', genres: '', formats: '',
+      tagline: 'High-Energy Blues • Rock • Soul • R&B Entertainment',
+      actType: 'Zemba Music — Professional Live Band • Solo Acoustic Artist • Duo • Trio • Variety Entertainment',
+      elevatorPitch: 'Chris Zemba is a Las Vegas-based guitarist, vocalist, and bandleader delivering high-energy live entertainment ranging from intimate acoustic performances to full-band productions. With more than 25 years of professional experience, Chris performs an extensive repertoire of Classic Rock, Blues, Soul, R&B, Funk, Country, and Jazz tailored to each venue and audience.',
+      bio: 'Chris Zemba is a professional guitarist, vocalist, bandleader, and entertainer based in Las Vegas with over 25 years of live performance experience. Known for his versatile musicianship, engaging stage presence, and polished professionalism, Chris has built a reputation for delivering memorable performances in restaurants, casinos, breweries, resorts, festivals, corporate events, and private functions.\n\nWhether performing solo, leading a duo or trio, or fronting his full band, Chris offers an expansive repertoire of more than 100 songs spanning Classic Rock, Blues, Soul, Motown, R&B, Funk, Country, Jazz, and contemporary favorites. His performances are carefully tailored to each venue, creating the right atmosphere — from relaxed dinner music to energetic dance-floor entertainment.\n\nDrawing inspiration from artists such as Stevie Ray Vaughan, Jimi Hendrix, The Allman Brothers, Steely Dan, Stevie Wonder, Tom Petty, ZZ Top, Bill Withers, The Eagles, and many others, Chris blends musicianship with audience engagement to create an authentic live music experience.\n\nAll performances are offered under the Zemba Music banner — Chris Zemba (Solo), Chris Zemba Duo, The Chris Zemba Band, and Chris Zemba & The Late Shift Band — one recognizable brand that scales to fit any venue or budget. Venue owners consistently appreciate Chris’s reliability, professionalism, adaptable formats, and commitment to promoting every performance through social media and local marketing. Whether the goal is background ambiance or a packed room of dancing guests, Chris delivers live entertainment that keeps audiences engaged from the first song to the last.',
+      location: 'Las Vegas, Nevada',
+      targetAudience: 'Restaurants, Casinos, Breweries, Wineries, Lounges, Bars, Corporate Events, Hotels & Resorts, Country Clubs, Festivals, Community Events, Private Parties, Wedding Receptions',
+      milestone: 'Currently booking 2026–2027 performances throughout Las Vegas, Henderson, Summerlin, Southern Nevada, Arizona, Utah, and California.',
+      showFeel: 'High-energy, interactive, professional, dance-friendly, crowd-pleasing, versatile — from tasteful dinner music to a full party atmosphere',
+      buyerConfidence: '25+ years professional performance experience\nProfessional sound equipment — fully self-contained production\nFlexible lineups from solo to full band\nExtensive multi-genre repertoire (100+ songs)\nProfessional stage appearance\nVenue promotion & social media support\nReliable and easy to work with\nAvailable for recurring engagements\nInsured upon request',
+      members: 'Chris Zemba — Guitar / Lead Vocals / Bandleader',
+      genres: 'Classic Rock, Blues, Soul, R&B, Funk, Motown, Country, Jazz, Pop, Americana, Roots Rock, Southern Rock',
+      formats: 'Solo Acoustic, Solo Electric, Duo, Trio, 4-Piece, 5-Piece, 8-Piece with Horn Section — custom lineups available (Chris Zemba Solo · Chris Zemba Duo · The Chris Zemba Band · Chris Zemba & The Late Shift Band)',
       pressPhotoData: '', pressPhotoUrl: '', logoData: '',
-      // 2 — Media assets
+      // 2 — Media assets (add your reel, audio links, and gallery)
       demoVideoUrl: '', audioLinks: '', galleryUrl: '',
-      // 3 — Social proof & numbers
-      testimonials: '', demographics: '', stats: '',
-      // 4 — Booking essentials & logistics
-      techRiderUrl: '', hospitalityRiderUrl: '', pressNews: '', techAdvance: '',
-      // 5 — Contact & official links
+      // 3 — Social proof & numbers (collect testimonials, then add them)
+      testimonials: '',
+      demographics: 'Adults 30–75 · live music enthusiasts · restaurant & bar patrons · corporate and private event guests · festival attendees · Classic Rock, Blues, Soul & Country fans',
+      stats: 'Years Performing | 25+\nSongs Available | 100+\nPerformance Formats | Solo – 8-Piece Band\nTypical Performance Length | 2–4 Hours\nPrimary Market | Las Vegas\nEvents Performed | Hundreds',
+      // 4 — Booking essentials & logistics (rider links to come)
+      techRiderUrl: '', hospitalityRiderUrl: '', pressNews: '',
+      techAdvance: 'Professional PA available when required\nProfessional lighting available\nPower requirements provided in advance\nFlexible stage footprint — indoor & outdoor capable\nQuick load-in / load-out\nBackground music during breaks available\nPublic address announcements available',
+      // 5 — Contact & official links (add your booking email/phone, website, hub & socials)
       contactEmail: '', contactPhone: '', pressEmail: '',
       website: '', linktree: '', socials: '', epkUrl: '',
       templates: EMAIL_TEMPLATES_DEFAULT
@@ -9480,8 +9495,17 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       useEffect(() => {
         const stored = LS.get(LS_KEYS.epkSettings);
         if (stored) {
+          const merged = { ...EPK_SETTINGS_DEFAULT, ...stored };
+          // Backfill: fields the user never filled in pick up new/preloaded defaults,
+          // while anything they actually typed always wins.
+          Object.keys(EPK_SETTINGS_DEFAULT).forEach(k => {
+            if (k === 'templates') return;
+            if (typeof merged[k] === 'string' && !merged[k].trim() && EPK_SETTINGS_DEFAULT[k]) {
+              merged[k] = EPK_SETTINGS_DEFAULT[k];
+            }
+          });
           setEpkSettingsState({
-            ...EPK_SETTINGS_DEFAULT, ...stored,
+            ...merged,
             templates: { ...EMAIL_TEMPLATES_DEFAULT, ...(stored.templates || {}) }
           });
         }

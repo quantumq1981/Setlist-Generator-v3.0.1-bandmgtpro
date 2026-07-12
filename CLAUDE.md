@@ -475,3 +475,22 @@ live-music venue ranks first, chains score 0 and are flagged, in-pipeline names 
 disabled, selected prospects land with phone intact; 0 page errors. Live Overpass
 calls can't run from the sandbox (proxy 403) but the endpoints are CORS-open in a
 real browser.
+
+## 9h. Change log — 2026-07 preloaded Zemba Music EPK profile
+
+- **`EPK_SETTINGS_DEFAULT` now ships pitch-ready** with the Zemba Music brand
+  profile: tagline, act type (Zemba Music umbrella — Solo / Duo / The Chris Zemba
+  Band / Chris Zemba & The Late Shift Band), elevator pitch, ~200-word bio, location,
+  target buyers, 2026–27 booking milestone, buyer-confidence bullets, members,
+  genres, formats, show feel, stats grid, audience demographics, and tech-advance
+  bullets. Media links, gallery, testimonials, rider links, booking email/phone,
+  website/hub, and socials stay blank (the EPK completeness meter names them).
+- **Loader backfill** (App mount): stored EPK settings are merged so that *empty*
+  string fields pick up new/preloaded defaults while anything the user actually
+  typed always wins; `templates` keep their own merge. Existing installs see the
+  preload without losing edits.
+
+Verification: Babel compile clean; `npm test` → 35/35; headless drive extended to
+56/56 checks — a stored profile with an empty tagline + custom bio loads with the
+tagline backfilled from defaults, the custom bio preserved, genres preloaded, and
+the completeness meter at 40%; 0 page errors.
