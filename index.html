@@ -32,6 +32,7 @@
   </script>
 
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Manrope:wght@400;500;600;700&family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta name="theme-color" content="#ff6b35">
 
   <style>
     :root {
@@ -1063,12 +1064,12 @@
       outreach: {
         label: 'Initial Outreach',
         subject: 'Live Music Inquiry — {{band_name}}',
-        body: `Hi,\n\nMy name is Chris Zemba, and I'm a Las Vegas-based guitarist, vocalist, and bandleader with more than 25 years of professional performance experience throughout Southern Nevada.\n\nI noticed that your venue features live music, and I wanted to reach out because I believe my brand, repertoire, and performance style could be a strong fit for your audience.\n\nI currently perform in a variety of formats, ranging from solo acoustic shows to full-band productions. My song list covers a wide range of Classic Rock, Blues, Soul, R&B, Funk, Country, and crowd-favorite dance music, allowing each performance to be tailored to the venue, event, and audience.\n\nI've attached my EPK, which includes performance videos, photos, social media links, song list information, and additional details about the entertainment options I offer through {{band_name}}.\n\nIn addition to delivering a professional and high-energy live show, I'm also an active promoter for my events and stay engaged with a local fanbase that regularly supports my performances.\n\nI'd welcome the opportunity to discuss any available openings on your entertainment calendar and explore how I may be a good fit for your regular live music lineup.\n\nThank you for your time and consideration. I look forward to hearing from you.\n\nBest regards,\nChris Zemba\n{{band_name}}\nLas Vegas, Nevada\n{{contact_phone}}\n{{contact_email}}\n{{epk_link}}`
+        body: `Hi,\n\nMy name is Chris Zemba, and I'm a Las Vegas-based guitarist, vocalist, and bandleader with more than 25 years of professional performance experience throughout Southern Nevada.\n\nI noticed that your venue features live music, and I wanted to reach out because I believe my brand, repertoire, and performance style could be a strong fit for your audience.\n\nI currently perform in a variety of formats, ranging from solo acoustic shows to full-band productions. My song list covers a wide range of Classic Rock, Blues, Soul, R&B, Funk, Country, and crowd-favorite dance music, allowing each performance to be tailored to the venue, event, and audience.\n\nMy EPK is linked below — it includes performance videos, photos, social media links, song list information, and additional details about the entertainment options I offer through {{band_name}}.\n\nIn addition to delivering a professional and high-energy live show, I'm also an active promoter for my events and stay engaged with a local fanbase that regularly supports my performances.\n\nI'd welcome the opportunity to discuss any available openings on your entertainment calendar and explore how I may be a good fit for your regular live music lineup.\n\nThank you for your time and consideration. I look forward to hearing from you.\n\nBest regards,\nChris Zemba\n{{band_name}}\nLas Vegas, Nevada\n{{contact_phone}}\n{{contact_email}}\n{{epk_link}}`
       },
       followup: {
         label: 'Follow-Up',
         subject: 'Following Up – Live Music Booking Inquiry',
-        body: `Hi,\n\nI wanted to follow up on the email I sent regarding potential live music opportunities at your venue.\n\nI know entertainment calendars can fill quickly, so I just wanted to reconnect and see if there may be any upcoming openings where my solo acoustic act or full-band production could be a good fit.\n\nAs mentioned, I'm a Las Vegas-based guitarist, vocalist, and bandleader with over 25 years of professional performance experience throughout Southern Nevada. My repertoire covers Classic Rock, Blues, Soul, R&B, Funk, Country, and crowd-favorite dance music, with flexible formats that can be tailored to your venue, audience, and programming needs.\n\nI've included my EPK again for convenience, which contains performance videos, photos, song list information, social media links, and additional details about the entertainment options available through {{band_name}}.\n\nI'd be happy to discuss any available dates, open slots, or future opportunities to become part of your live entertainment lineup.\n\nThank you again for your time and consideration. I'd welcome the opportunity to connect.\n\nBest regards,\nChris Zemba\n{{band_name}}\nLas Vegas, Nevada\n{{contact_phone}}\n{{contact_email}}\n{{epk_link}}`
+        body: `Hi,\n\nI wanted to follow up on the email I sent regarding potential live music opportunities at your venue.\n\nI know entertainment calendars can fill quickly, so I just wanted to reconnect and see if there may be any upcoming openings where my solo acoustic act or full-band production could be a good fit.\n\nAs mentioned, I'm a Las Vegas-based guitarist, vocalist, and bandleader with over 25 years of professional performance experience throughout Southern Nevada. My repertoire covers Classic Rock, Blues, Soul, R&B, Funk, Country, and crowd-favorite dance music, with flexible formats that can be tailored to your venue, audience, and programming needs.\n\nMy EPK is linked again below for convenience — it contains performance videos, photos, song list information, social media links, and additional details about the entertainment options available through {{band_name}}.\n\nI'd be happy to discuss any available dates, open slots, or future opportunities to become part of your live entertainment lineup.\n\nThank you again for your time and consideration. I'd welcome the opportunity to connect.\n\nBest regards,\nChris Zemba\n{{band_name}}\nLas Vegas, Nevada\n{{contact_phone}}\n{{contact_email}}\n{{epk_link}}`
       },
       tailoredPitch: {
         label: 'Venue-Tailored Pitch',
@@ -1079,6 +1080,11 @@
         label: "Let's Connect",
         subject: "Quick call? — {{band_name}} at {{venue_name}}",
         body: `Hi {{contact_name}},\n\nThanks for your interest in {{band_name}}! I'd love to jump on a quick 10-minute call to talk through availability, logistics, and how we can make it a great night for your guests.\n\nWould any of these times work?\n- [Day 1], [Time]\n- [Day 2], [Time]\n\nOr feel free to call me at {{contact_phone}} anytime.\n\nLooking forward to it!\n\n[Your Name]\n{{band_name}}`
+      },
+      postGig: {
+        label: 'Post-Gig Thanks & Rebook',
+        subject: 'Thank you — and let\'s lock in the next one ({{band_name}})',
+        body: `Hi {{contact_name}},\n\nThank you again for having {{band_name}} at {{venue_name}} — we had a great time performing for your crowd and hope your team was as happy with the night as we were.\n\nI'd love to make this a regular thing. If the night worked for you, let's get the next date (or a recurring slot) on the calendar while it's fresh — I'll promote it through my socials and local channels just like this one.\n\nA quick review or a few words I can quote in my press kit would also mean a lot.\n\nWhat does your calendar look like over the next few weeks?\n\nBest regards,\nChris Zemba\n{{band_name}}\n{{contact_phone}} | {{contact_email}}\n{{epk_link}}`
       },
       bookingConfirmation: {
         label: 'Booking Confirmed',
@@ -7633,6 +7639,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [showDirectory, setShowDirectory] = useState(false);
       const [dirSelected, setDirSelected] = useState([]); // directory entry names picked for import
       const [prospector, setProspector] = useState(null); // Gig Prospector overlay state (null = closed)
+      const [expandedLogId, setExpandedLogId] = useState(null); // venue id with expanded touch timeline
       const venueCsvRef = React.useRef(null);
       const epkPhotoRef = React.useRef(null);
 
@@ -7752,8 +7759,19 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       const todayISO = () => new Date().toISOString().slice(0, 10);
 
+      // Farming motion: a venue you've played (completed booking) with nothing upcoming
+      // is a warm rebook target — the shortest path to the next gig.
+      const isRebookDue = (venue) => {
+        if (!venue) return false;
+        const today = new Date().toISOString().slice(0, 10);
+        const played = bookings.some(b => b.venueId === venue.id && b.status === 'completed');
+        const upcoming = bookings.some(b => b.venueId === venue.id && b.date >= today && (b.status === 'confirmed' || b.status === 'pending'));
+        return played && !upcoming;
+      };
+
       // Pick the template that matches where a venue sits in the pipeline.
       const defaultTemplateFor = (venue) => {
+        if (isRebookDue(venue)) return 'postGig';
         switch (venue?.status) {
           case 'contacted': return 'followup';
           case 'responded': case 'call_scheduled': return 'callRequest';
@@ -7802,7 +7820,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           email: to || venue.email,
           lastContactDate: todayISO(),
           status: venue.status === 'prospect' ? 'contacted' : venue.status,
-          contactLog: [...(venue.contactLog || []), { date: todayISO(), template: label }],
+          contactLog: [...(venue.contactLog || []), { date: todayISO(), kind: 'sent', template: label }],
         });
       };
 
@@ -8087,10 +8105,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         };
         const q = venueSearch.trim().toLowerCase();
         const matchesSearch = (v) => !q || [v.name, v.city, v.state, v.contactName, v.email, v.type].some(f => (f || '').toLowerCase().includes(q));
-        const matchesFilter = (v) => venueFilter === 'all' ? true : venueFilter === 'due' ? isFollowupDue(v) : v.status === venueFilter;
+        const matchesFilter = (v) => venueFilter === 'all' ? true : venueFilter === 'due' ? isFollowupDue(v) : venueFilter === 'rebook' ? isRebookDue(v) : v.status === venueFilter;
         const filtered = venues.filter(v => matchesSearch(v) && matchesFilter(v))
           .sort((a, b) => (VENUE_STATUS_ORDER[a.status] ?? 4) - (VENUE_STATUS_ORDER[b.status] ?? 4) || (a.name || '').localeCompare(b.name || ''));
         const dueCount = venues.filter(isFollowupDue).length;
+        const rebookCount = venues.filter(isRebookDue).length;
         const statusCounts = {};
         venues.forEach(v => { statusCounts[v.status] = (statusCounts[v.status] || 0) + 1; });
         const selectedSet = new Set(selectedIds);
@@ -8128,6 +8147,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     ⏰ Follow-up due <span className="chip-count">{dueCount}</span>
                   </button>
                 )}
+                {rebookCount > 0 && (
+                  <button className={`venue-filter-chip chip-due${venueFilter === 'rebook' ? ' active' : ''}`} style={{ borderColor: 'var(--success)', color: 'var(--success)' }} onClick={() => setVenueFilter(venueFilter === 'rebook' ? 'all' : 'rebook')} title="Rooms you've played with nothing upcoming — the warmest leads you have">
+                    🔁 Rebook <span className="chip-count">{rebookCount}</span>
+                  </button>
+                )}
               </div>
             )}
             {selectedIds.length > 0 && (
@@ -8157,9 +8181,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             )}
             {filtered.map(venue => {
               const si = statusInfo(venue.status);
-              const touches = (venue.contactLog || []).length;
-              const lastLog = touches ? venue.contactLog[touches - 1] : null;
+              const log = venue.contactLog || [];
+              const sentLog = log.filter(e => !e.kind || e.kind === 'sent');
+              const touches = sentLog.length;
+              const lastLog = touches ? sentLog[touches - 1] : null;
               const due = isFollowupDue(venue);
+              const rebook = isRebookDue(venue);
+              const logOpen = expandedLogId === venue.id;
               return (
                 <div key={venue.id} className="venue-item">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '.5rem' }}>
@@ -8169,6 +8197,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                         <span style={{ fontWeight: 700 }}>{venue.name}</span>
                         <span className="venue-status-badge" style={{ background: si.color, color: si.key === 'booked' || si.key === 'responded' || si.key === 'prospect' ? '#111' : '#fff' }}>{si.label}</span>
                         {due && <span className="followup-due-badge">⏰ follow-up due</span>}
+                        {rebook && <span className="followup-due-badge" style={{ borderColor: 'var(--success)', color: 'var(--success)', background: 'rgba(74,222,128,.12)' }}>🔁 rebook</span>}
                         <span style={{ fontSize: '.72rem', color: 'var(--text-muted)' }}>{venue.type}</span>
                       </div>
                       <div style={{ fontSize: '.75rem', color: 'var(--text-muted)' }}>
@@ -8176,10 +8205,26 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                           venue.city ? venue.city + (venue.state ? ', ' + venue.state : '') : '',
                           venue.email, venue.phone].filter(Boolean).join(' · ')}
                       </div>
-                      {(venue.lastContactDate || touches > 0) && (
-                        <div className="venue-touch-log">
+                      {(venue.lastContactDate || log.length > 0) && (
+                        <div className="venue-touch-log" style={{ cursor: log.length ? 'pointer' : 'default' }}
+                          title={log.length ? 'Click to see the full touch timeline' : undefined}
+                          onClick={() => log.length && setExpandedLogId(logOpen ? null : venue.id)}>
                           {touches > 0 && <span>{touches} touch{touches !== 1 ? 'es' : ''} · </span>}
                           Last contact: {venue.lastContactDate || (lastLog && lastLog.date)}{lastLog && lastLog.template ? ` (${lastLog.template})` : ''}
+                          {log.length > 0 && <span style={{ opacity: .7 }}> {logOpen ? '▾' : '▸'}</span>}
+                        </div>
+                      )}
+                      {logOpen && log.length > 0 && (
+                        <div style={{ marginTop: '.25rem', borderLeft: '2px solid var(--border)', paddingLeft: '.5rem', display: 'flex', flexDirection: 'column', gap: '.12rem' }}>
+                          {[...log].reverse().map((e, i) => (
+                            <div key={i} style={{ fontSize: '.7rem', color: 'var(--text-muted)' }}>
+                              <span style={{ fontFamily: 'Space Mono, monospace' }}>{e.date}</span>
+                              {' — '}
+                              {e.kind === 'status'
+                                ? <span style={{ color: (VENUE_STATUSES.find(s => s.key === e.status) || {}).color || 'var(--text)' }}>moved to {(VENUE_STATUSES.find(s => s.key === e.status) || {}).label || e.status}</span>
+                                : <span>✉ sent “{e.template || 'email'}”</span>}
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -8246,8 +8291,55 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           </div>
         );
 
+        // ── Outreach performance: which templates actually get replies ──
+        // A venue counts as "replied" when its log shows a move to responded/
+        // call_scheduled/booked; the reply is attributed to the last send before it.
+        const POSITIVE_STATUSES = ['responded', 'call_scheduled', 'booked'];
+        const tplStats = {};
+        let contactedVenues = 0, repliedVenues = 0, touchSum = 0, touchN = 0;
+        venues.forEach(v => {
+          const log = v.contactLog || [];
+          const sends = log.filter(e => !e.kind || e.kind === 'sent');
+          if (!sends.length) return;
+          contactedVenues++;
+          sends.forEach(s => { const l = s.template || 'Email'; (tplStats[l] = tplStats[l] || { sends: 0, replies: 0 }).sends++; });
+          const firstReply = log.find(e => e.kind === 'status' && POSITIVE_STATUSES.includes(e.status));
+          if (firstReply) {
+            repliedVenues++;
+            let idx = 0;
+            sends.forEach((s, i) => { if (s.date <= firstReply.date) idx = i; });
+            const l = sends[idx].template || 'Email';
+            (tplStats[l] = tplStats[l] || { sends: 0, replies: 0 }).replies++;
+            touchSum += idx + 1; touchN++;
+          }
+        });
+        const tplRows = Object.entries(tplStats).sort((a, b) => (b[1].replies / b[1].sends) - (a[1].replies / a[1].sends) || b[1].sends - a[1].sends);
+        const replyRate = contactedVenues ? Math.round((repliedVenues / contactedVenues) * 100) : 0;
+        const outreachSection = contactedVenues > 0 ? (
+          <div className="analytics-section">
+            <div className="analytics-section-title">Outreach Performance — aim, don't spray</div>
+            <div className="analytics-grid">
+              {stat('Venues Contacted', contactedVenues, 'via the composer')}
+              {stat('Reply Rate', replyRate + '%', `${repliedVenues} venue${repliedVenues !== 1 ? 's' : ''} responded`)}
+              {stat('Touches to Reply', touchN ? (touchSum / touchN).toFixed(1) : '—', 'avg sends before a response')}
+            </div>
+            <div className="analytics-bars">
+              {tplRows.map(([label, s]) => (
+                <div key={label} className="analytics-bar-row">
+                  <span className="analytics-bar-name" title={label}>{label}</span>
+                  <span className="analytics-bar-track">
+                    <span className="analytics-bar-fill" style={{ width: `${s.sends ? Math.round((s.replies / s.sends) * 100) : 0}%` }} />
+                  </span>
+                  <span className="analytics-bar-count" style={{ whiteSpace: 'nowrap' }}>{s.sends ? Math.round((s.replies / s.sends) * 100) : 0}% of {s.sends}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: '.66rem', color: 'var(--text-muted)', marginTop: '.35rem' }}>Bars show reply rate per template. Data accrues as you send from the composer and venues move to Responded / Call Scheduled / Booked.</div>
+          </div>
+        ) : null;
+
         if (!total) {
-          return <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2.5rem 1rem' }}>No bookings yet. Add bookings to see your analytics.</div>;
+          return outreachSection || <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2.5rem 1rem' }}>No bookings yet. Add bookings to see your analytics.</div>;
         }
 
         return (
@@ -8281,6 +8373,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 </div>
               )}
             </div>
+
+            {outreachSection}
           </div>
         );
       };
@@ -8318,6 +8412,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           const lastSetlist = withSet ? setlists.find(sl => sl.id === withSet.setlistId) : null;
           return { prior, withSet: withSet || null, lastSetlist };
         })();
+
+        // Double-booking guard: another live booking already sits on the chosen date.
+        const dateClash = bookingForm && bookingForm.date
+          ? bookings.find(b => b.id !== editBookingId && b.date === bookingForm.date && b.status !== 'cancelled' && b.status !== 'completed')
+          : null;
 
         return (
           <div>
@@ -8377,6 +8476,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       </div>
                     )}
                   </div>
+                  {dateClash && (
+                    <div className="repeat-venue-guard" style={{ borderColor: 'var(--error)', borderLeftColor: 'var(--error)', background: 'rgba(239,68,68,.08)' }}>
+                      <div className="repeat-venue-guard-head" style={{ color: 'var(--error)' }}>
+                        ⚠ Double-booking: you already have {dateClash.venueName || 'a gig'} on {dateClash.date}{dateClash.startTime ? ` at ${dateClash.startTime}` : ''} ({dateClash.status})
+                      </div>
+                    </div>
+                  )}
                   {venueHistory && (
                     <div className="repeat-venue-guard">
                       <div className="repeat-venue-guard-head">
@@ -8605,6 +8711,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       // Built-in Vegas venue directory: browse, pick, and bulk-add curated venues.
       const existingVenueNames = new Set(venues.map(v => (v.name || '').trim().toLowerCase()));
+      const phoneDigits = (s) => (s || '').replace(/\D/g, '');
+      const existingVenuePhones = new Set(venues.map(v => phoneDigits(v.phone)).filter(d => d.length >= 7));
+      // Prospector dedupe: match by name OR phone (map names often differ slightly).
+      const prospectIsAdded = (r) => existingVenueNames.has(r.name.trim().toLowerCase())
+        || (phoneDigits(r.phone).length >= 7 && existingVenuePhones.has(phoneDigits(r.phone)));
       const dirIsAdded = (d) => existingVenueNames.has(d.name.trim().toLowerCase());
       const openDirectory = () => {
         setDirSelected(VENUE_DIRECTORY.filter(d => !dirIsAdded(d)).map(d => d.name));
@@ -8712,7 +8823,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       };
       const prospectorAddSelected = () => {
         const p = prospector; if (!p || !p.results) return;
-        const picks = p.results.filter(r => p.selected.includes(r.key) && !existingVenueNames.has(r.name.trim().toLowerCase()));
+        const picks = p.results.filter(r => p.selected.includes(r.key) && !prospectIsAdded(r));
         if (!picks.length) { showToast('Nothing new selected', 'warning'); return; }
         onBulkAddVenues(picks.map(prospectToVenue));
         setProspector(null);
@@ -8722,7 +8833,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const p = prospector;
         const setP = (patch) => setProspector(prev => prev && { ...prev, ...patch });
         const scoreColor = (s) => s >= 7 ? 'var(--success)' : s >= 4 ? 'var(--accent)' : 'var(--text-muted)';
-        const newResults = (p.results || []).filter(r => !existingVenueNames.has(r.name.trim().toLowerCase()));
+        const newResults = (p.results || []).filter(r => !prospectIsAdded(r));
         const pickedNew = p.selected.filter(k => newResults.some(r => r.key === k)).length;
         return (
           <div className="compose-backdrop" onClick={() => setProspector(null)}>
@@ -8766,7 +8877,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   <div className="dir-list">
                     {p.results.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.2rem', fontSize: '.8rem' }}>No places found here — widen the radius or add more kinds.</div>}
                     {p.results.map(r => {
-                      const added = existingVenueNames.has(r.name.trim().toLowerCase());
+                      const added = prospectIsAdded(r);
                       return (
                         <div key={r.key} className={`dir-row${added ? ' dir-added' : ''}`}>
                           <input type="checkbox" className="venue-check" disabled={added}
@@ -8807,6 +8918,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const unresolved = [];
         if (c.body.includes('[EPK Link]')) unresolved.push('EPK link');
         if (c.body.includes('[Demo Link]')) unresolved.push('demo link');
+        const mailtoLen = 18 + encodeURIComponent(c.subject).length + encodeURIComponent(c.body).length;
+        const tooLongForMailto = mailtoLen > 1800;
         return (
           <div className="compose-backdrop" onClick={() => setCompose(null)}>
             <div className="compose-panel" onClick={e => e.stopPropagation()}>
@@ -8832,6 +8945,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               </div>
               {unresolved.length > 0 && (
                 <div className="compose-warn">⚠ Your {unresolved.join(' and ')} placeholder{unresolved.length > 1 ? 's are' : ' is'} unfilled — add the link{unresolved.length > 1 ? 's' : ''} in the EPK &amp; Templates tab so buyers get something to click.</div>
+              )}
+              {tooLongForMailto && (
+                <div className="compose-warn">⚠ Long draft — some email apps truncate messages this size when opened via “Email App”. Prefer <b>Gmail</b> or <b>Copy</b> to guarantee the full pitch arrives.</div>
               )}
               <div className="input-group" style={{ marginBottom: 0 }}>
                 <label>To{!(c.to || '').trim() && <span style={{ color: 'var(--warning)', fontWeight: 700 }}> — no email saved; type one and it's saved to the venue on send</span>}</label>
@@ -9530,7 +9646,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       // Venue & Booking CRUD
       const addVenue = (form) => { setVenues(prev => [...prev, { ...form, id: genId(), createdAt: Date.now() }]); showToast('Venue added', 'success'); };
-      const updateVenue = (v) => { setVenues(prev => prev.map(x => x.id === v.id ? v : x)); };
+      // Status transitions are logged into contactLog (kind:'status') so the outreach
+      // dashboard can attribute replies/bookings to the template that triggered them.
+      const updateVenue = (v) => setVenues(prev => prev.map(x => {
+        if (x.id !== v.id) return x;
+        if (x.status !== v.status) {
+          return { ...v, contactLog: [...(v.contactLog || []), { date: new Date().toISOString().slice(0, 10), kind: 'status', status: v.status }] };
+        }
+        return v;
+      }));
       const deleteVenue = (id) => { setVenues(prev => prev.filter(x => x.id !== id)); showToast('Venue removed', 'success'); };
       const bulkAddVenues = (newVenues) => {
         const currentNames = new Set(venues.map(v => v.name.trim().toLowerCase()));
@@ -9551,6 +9675,56 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const updateBooking = (b) => { setBookings(prev => prev.map(x => x.id === b.id ? b : x)); showToast('Booking updated', 'success'); };
       const deleteBooking = (id) => { setBookings(prev => prev.filter(x => x.id !== id)); showToast('Booking removed', 'success'); };
       const saveEpkSettings = (s) => { setEpkSettingsState(s); LS.set(LS_KEYS.epkSettings, s); };
+
+      // ── Full-app backup & restore ─────────────────────────────────────────────
+      // Everything lives in localStorage, so one JSON file IS the whole app state:
+      // bands, songs, settings, venues + contact history, bookings, EPK, roster.
+      const backupFileRef = React.useRef(null);
+      const exportBackup = () => {
+        const stores = {};
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('setlist_')) stores[k] = localStorage.getItem(k);
+        }
+        const payload = JSON.stringify({ app: 'setlist-generator-pro', kind: 'full-backup', exportedAt: new Date().toISOString(), stores }, null, 1);
+        const blob = new Blob([payload], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `setlist-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        localStorage.setItem('setlist_last_backup_at', String(Date.now()));
+        showToast('Backup downloaded — keep it somewhere safe (Drive, Dropbox…)', 'success');
+      };
+      const importBackup = (file) => {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          try {
+            const data = JSON.parse(ev.target.result);
+            if (!data || data.kind !== 'full-backup' || !data.stores) { showToast('Not a Setlist Generator backup file', 'error'); return; }
+            const n = Object.keys(data.stores).length;
+            if (!window.confirm(`Restore backup from ${(data.exportedAt || '').slice(0, 10)}?\n\nThis replaces ALL current app data (${n} stores) — bands, songs, venues, bookings, EPK. The app will reload.`)) return;
+            Object.keys(localStorage).filter(k => k.startsWith('setlist_')).forEach(k => localStorage.removeItem(k));
+            Object.entries(data.stores).forEach(([k, v]) => { if (k.startsWith('setlist_')) localStorage.setItem(k, v); });
+            localStorage.setItem('setlist_last_backup_at', String(Date.now()));
+            window.location.reload();
+          } catch (e) { showToast('Could not read backup file: ' + e.message, 'error'); }
+        };
+        reader.readAsText(file);
+      };
+      // Nudge: your pipeline is an asset — remind after 14 days without a backup.
+      useEffect(() => {
+        const t = setTimeout(() => {
+          const last = Number(localStorage.getItem('setlist_last_backup_at') || 0);
+          const hasData = Object.keys(localStorage).some(k => k.startsWith('setlist_band_'));
+          if (hasData && Date.now() - last > 14 * 86400000) {
+            showToast(last ? 'It\'s been 14+ days since your last backup — click 💾 Backup' : 'Protect your data — click 💾 Backup to save everything to a file', 'warning');
+          }
+        }, 4000);
+        return () => clearTimeout(t);
+      }, []);
 
       // Generate a professional EPK (electronic press kit) PDF from band data + EPK settings.
       // Structure follows the 2026 talent-buyer template: header/bio, media, social proof,
@@ -11622,6 +11796,10 @@ ${headerHtml}
                 <button className="btn btn-small" onClick={() => setRosterModal(true)} style={{ borderColor: '#a78bfa', color: '#a78bfa' }}>🎸 Roster</button>
               </div>
               <div className="toolbar">
+                <input ref={backupFileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
+                  onChange={e => { importBackup(e.target.files[0]); e.target.value = ''; }} />
+                <button className="btn btn-small" onClick={exportBackup} title="Download EVERYTHING — bands, songs, venues, contact history, bookings, EPK — as one restorable file">💾 Backup</button>
+                <button className="btn btn-small" onClick={() => backupFileRef.current?.click()} title="Restore a full backup file (replaces all current data)" style={{ color: 'var(--text-muted)' }}>↩ Restore</button>
                 <select value={activeBandId || ''} onChange={(e) => switchBand(e.target.value)}>
                   {bands.map(b => <option key={b.id} value={b.id}>{b.icon || '🎵'} {b.name}</option>)}
                 </select>
