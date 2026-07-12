@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-07-03.
+Last updated: 2026-07-12.
 
 ---
 
@@ -521,3 +521,74 @@ Verification: Babel compile clean; `npm test` → 35/35; headless drive → 65/6
 (backup download event, rebook chip/badge + postGig default, timeline expand,
 dashboard reply attribution "100% of 1" for the seeded reply, double-booking
 warning); 0 page errors.
+
+---
+
+## 10. NEXT UP — Gmail API integration (handoff spec, not yet built)
+
+**Goal.** Close the outreach loop: replace fire-and-forget `mailto:` with real sends
+through the user's Gmail, and detect replies automatically so the pipeline advances
+itself (contacted → responded) and follow-up nagging stops the moment a buyer answers.
+This is the top-priority unbuilt item from the 2026-07 recommendations pass (§9i built
+the measurement half; this builds the sending/detection half).
+
+### Architecture (respect the app's constraints)
+- **No backend, no build step.** Everything runs client-side in the single file.
+- **Auth**: Google Identity Services (GIS) token client —
+  `https://accounts.google.com/gsi/client`, `google.accounts.oauth2.initTokenClient`.
+  Load this script **lazily** (inject the tag only when the user clicks "Connect
+  Gmail") so the app keeps working fully offline/unconnected.
+- **API**: plain `fetch` against the Gmail REST API with the Bearer token — do NOT
+  pull in the heavy `gapi` client library.
+- **Scopes** (least privilege): `gmail.send` + `gmail.readonly`.
+- **User setup**: each user supplies their own OAuth **Client ID** (they create a free
+  Google Cloud project, enable the Gmail API, add an OAuth consent screen + a Web
+  client with their hosting origin). Ship a step-by-step help block in the UI.
+  Store `{ clientId, connectedEmail }` in a new LS key `setlist_gmail_v3`.
+- **Tokens**: keep the access token **in memory only** (≈1 h expiry); re-acquire via
+  `tokenClient.requestAccessToken({ prompt: '' })` for silent refresh. Never persist
+  tokens to localStorage.
+
+### Sending
+- Build an RFC 2822 message (To/Subject/body from the compose overlay state), UTF-8,
+  base64url-encode, `POST /gmail/v1/users/me/messages/send` with `{ raw }`.
+  Start with `text/plain`; HTML multipart is a later nicety.
+- On success, extend the venue's `contactLog` sent entry with `{ threadId, messageId }`
+  (schema is additive — older entries without these still work everywhere).
+- Compose overlay (`composeSend` in `VenueModal`): when connected, add a primary
+  "Send via Gmail" action; keep mailto/Gmail-web/Copy/Mark-sent as fallbacks.
+  The existing `recordOutreach` already handles status bump + logging — reuse it.
+
+### Reply detection
+- On venue-modal open (and/or app mount), for venues whose log has sent entries with
+  `threadId` and whose status is still `contacted`:
+  `GET /gmail/v1/users/me/threads/{threadId}?format=metadata&metadataHeaders=From`.
+  If the thread contains a message whose `From` is not the connected user → call
+  `onUpdateVenue` with `status: 'responded'`. The §9i status-event logging then feeds
+  the Outreach Performance dashboard automatically — no extra wiring.
+- Throttle: check at most ~50 threads per open, sequentially; skip venues checked in
+  the last few hours (stamp `lastReplyCheckAt` on the venue).
+
+### Where things live (current code map)
+- Compose machinery: `VenueModal` in `index.html` — `fillTemplate`, `openCompose`,
+  `composeSend`, `recordOutreach` (all near the top of the component).
+- Status-transition logging: `updateVenue` in the App component (search
+  `kind: 'status'`).
+- Dashboard that consumes the data: `renderAnalyticsTab` → `outreachSection`
+  (search `Outreach Performance`).
+- Settings UI candidates: the EPK & Templates tab (`renderSettingsTab`) or a small
+  "Gmail" block inside the compose overlay footer.
+
+### Verification recipe (sandbox cannot reach Google)
+The agent proxy 403s `accounts.google.com` / `googleapis.com`, so live OAuth cannot
+run here. Follow the established pattern (§2 + the 2026-07 passes): Babel
+compile-check, `npm test`, then the headless Playwright drive with
+`page.route('**/gmail/v1/**', …)` fixtures — assert (1) send POST carries a base64url
+`raw` and logs `threadId`, (2) a fixture thread containing a foreign `From` flips the
+venue to Responded and shows up in the dashboard, (3) disconnected state leaves every
+existing compose path untouched, 0 page errors. Screenshot the connected compose
+overlay for the PR.
+
+### Out of scope for the first PR
+Open/click tracking, HTML templates, attachments (link the EPK instead), scheduled
+sends, and multi-account support. Keep the first PR: connect → send → detect → done.
