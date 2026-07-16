@@ -134,6 +134,14 @@ pieces.push(extractDecl('_clamp01'));
 pieces.push(extractDecl('ENERGY_ARC_SHAPES'));
 pieces.push(extractDecl('SET_STRUCTURE_TEMPLATES'));
 
+// Gmail integration — pure message-building / reply-detection helpers (const arrow
+// functions, so dependency order matters: b64 first).
+for (const g of [
+  'GMAIL_REPLY_CHECK_COOLDOWN_MS',
+  'gmailB64Utf8', 'gmailBase64Url', 'gmailEncodeHeader', 'gmailBuildRfc2822',
+  'gmailThreadHasReply', 'gmailReplyCheckCandidates',
+]) pieces.push(extractDecl(g));
+
 // Pure functions. (Function declarations hoist, so order among them is not
 // significant — grouped by concern for readability.)
 for (const f of [
@@ -154,6 +162,8 @@ const EXPORTS = [
   'normalizeKey_TG', 'circleDistance_TG', 'determineAnchorKey_TG', 'calculateTonalTransitionScore_TG',
   'calculateSetlistQualityScore', 'generateTonalDiagnostics_TG', 'simulatedAnnealingOptimize',
   'generateSetlistsCore', 'generateSetlistsCore_WithTonalGravity', 'validateGenerationConstraints',
+  'GMAIL_REPLY_CHECK_COOLDOWN_MS', 'gmailB64Utf8', 'gmailBase64Url', 'gmailEncodeHeader',
+  'gmailBuildRfc2822', 'gmailThreadHasReply', 'gmailReplyCheckCandidates',
 ];
 
 // Minimal browser shims the algorithm touches (genId uses window.crypto).

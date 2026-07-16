@@ -522,9 +522,54 @@ Verification: Babel compile clean; `npm test` → 35/35; headless drive → 65/6
 dashboard reply attribution "100% of 1" for the seeded reply, double-booking
 warning); 0 page errors.
 
+## 9j. Change log — 2026-07 Gmail API integration (sends + reply detection)
+
+Implements §10 (connect → send → detect). Closes the outreach loop: real sends
+through the user's own Gmail and automatic reply detection, so the pipeline
+advances itself (contacted → responded) and the §9i dashboard measures ground
+truth instead of honor-system status bumps.
+
+- **Gmail module** (module scope, after `LS_KEYS`): GIS token client with the
+  script injected **lazily** on first use (app untouched when unconnected —
+  verified: no `gsi/client` tag and zero Gmail traffic while disconnected);
+  scopes `gmail.send` + `gmail.readonly`; `{ clientId, connectedEmail }` in LS
+  key `setlist_gmail_v3`; access token **memory-only** with silent refresh
+  (`prompt: ''`). Pure, unit-tested helpers: `gmailB64Utf8` / `gmailBase64Url` /
+  `gmailEncodeHeader` (RFC 2047) / `gmailBuildRfc2822` (text/plain, base64 body,
+  76-char wrap) / `gmailThreadHasReply` / `gmailReplyCheckCandidates`. `GmailAPI`
+  singleton: `connect` (consent + `/profile` → address), `send`
+  (`POST /messages/send` `{ raw }`), `threadHasReply` (metadata-only thread GET),
+  `disconnect` (revoke + clear). Plain `fetch` — no `gapi`.
+- **Compose**: when connected, "✉ Send via Gmail" becomes the primary action
+  (Email App demoted to fallback; mailto/Gmail-web/Copy/Mark-sent all retained
+  verbatim). Success routes through `recordOutreach` with `{ via: 'gmail',
+  threadId, messageId }` appended to the sent log entry (additive schema); the
+  touch timeline marks these "via Gmail ✓". Failures toast and keep the draft.
+- **Reply detection**: on venue-modal open, venues still `contacted` whose log
+  has a sent `threadId` (and not checked within a 3 h cooldown —
+  `lastReplyCheckAt`) are checked sequentially, ≤50 threads, via
+  `threads/{id}?format=metadata&metadataHeaders=From`; a foreign `From` flips the
+  venue to `responded` through `onUpdateVenue`, which auto-logs the `kind:'status'`
+  event that feeds Outreach Performance. Silent token only — never pops consent.
+- **Settings**: "📧 Gmail" block in EPK & Templates — Client ID input, Connect /
+  Disconnect, and a 6-step bring-your-own-Client-ID walkthrough (Cloud project →
+  enable Gmail API → consent screen + test user → Web client → JS origin —
+  http(s) only, not file:// → paste ID).
+
+Verification: Babel compile clean; `npm test` → 43/43 (8 new: base64url
+round-trip/url-safety, RFC 2047, RFC 2822 shape + 76-char body wrap + emoji
+round-trip, reply detection incl. display-name/case/malformed inputs, candidate
+filter incl. cooldown); headless drive → 32/32 with `**/gmail/v1/**` fixtures
+(GIS stubbed): send POST carries unpadded base64url `raw` decoding to a
+well-formed message, threadId/messageId logged, prospect→contacted; fixture
+thread with foreign From flips to Responded and lands in the dashboard ("1 venue
+responded"); own-messages-only thread stays Contacted; cooldown suppresses
+re-checks while a newly-sent thread is picked up; disconnected state leaves every
+legacy compose path untouched; 0 page errors.
+
 ---
 
-## 10. NEXT UP — Gmail API integration (handoff spec, not yet built)
+## 10. Gmail API integration (BUILT 2026-07 — see §9j; spec kept for reference)
 
 **Goal.** Close the outreach loop: replace fire-and-forget `mailto:` with real sends
 through the user's Gmail, and detect replies automatically so the pipeline advances
