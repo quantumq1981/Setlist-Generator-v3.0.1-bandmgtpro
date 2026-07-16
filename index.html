@@ -1585,6 +1585,167 @@
       epkSettings: 'setlist_epk_settings_v3'
     };
 
+    /******************* GMAIL INTEGRATION *******************/
+    // Real sends + automatic reply detection through the user's own Gmail (§10 spec).
+    // Auth is Google Identity Services (loaded lazily, only when the user connects);
+    // API calls are plain fetch against the Gmail REST API. Only { clientId,
+    // connectedEmail } is persisted — access tokens live in memory and die with the tab.
+    const GMAIL_LS_KEY = 'setlist_gmail_v3';
+    const GMAIL_SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly';
+    const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
+    const GMAIL_REPLY_CHECK_COOLDOWN_MS = 3 * 3600 * 1000;
+    const GMAIL_REPLY_CHECK_MAX_THREADS = 50;
+
+    // UTF-8 → standard base64.
+    const gmailB64Utf8 = (str) => {
+      const bytes = new TextEncoder().encode(String(str == null ? '' : str));
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      return btoa(bin);
+    };
+
+    // UTF-8 → base64url without padding (RFC 4648 §5) — the Gmail API's `raw` encoding.
+    const gmailBase64Url = (str) => gmailB64Utf8(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    // RFC 2047 header encoding for non-ASCII subjects ("Nöche Live" etc.).
+    const gmailEncodeHeader = (v) => {
+      const s = String(v == null ? '' : v);
+      return /^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${gmailB64Utf8(s)}?=`;
+    };
+
+    // Build an RFC 2822 text/plain message. The body is base64-encoded so any UTF-8
+    // content survives with safe line lengths.
+    const gmailBuildRfc2822 = ({ to, from, subject, body }) => {
+      const lines = [
+        `To: ${to || ''}`,
+        from ? `From: ${from}` : null,
+        `Subject: ${gmailEncodeHeader(subject)}`,
+        'MIME-Version: 1.0',
+        'Content-Type: text/plain; charset="UTF-8"',
+        'Content-Transfer-Encoding: base64',
+        '',
+        (gmailB64Utf8(body).match(/.{1,76}/g) || []).join('\r\n'),
+      ];
+      return lines.filter(l => l !== null).join('\r\n');
+    };
+
+    // True when a thread (Gmail metadata format) contains a message from anyone other
+    // than the connected account — i.e. the venue wrote back.
+    const gmailThreadHasReply = (thread, connectedEmail) => {
+      const me = String(connectedEmail || '').trim().toLowerCase();
+      if (!me || !thread || !Array.isArray(thread.messages)) return false;
+      return thread.messages.some(m => {
+        const from = (((m || {}).payload || {}).headers || []).find(h => /^from$/i.test((h && h.name) || ''));
+        if (!from || !from.value) return false;
+        const addr = ((from.value.match(/<([^>]+)>/) || [null, from.value])[1] || '').trim().toLowerCase();
+        return !!addr && addr !== me;
+      });
+    };
+
+    // Venues due for a reply check: still sitting in Contacted, have at least one
+    // Gmail-sent touch (threadId), and weren't checked within the cooldown window.
+    const gmailReplyCheckCandidates = (venues, now) => {
+      const t = now || Date.now();
+      return (venues || []).filter(v => v && v.status === 'contacted'
+        && (v.contactLog || []).some(e => e && e.kind === 'sent' && e.threadId)
+        && !(v.lastReplyCheckAt && t - v.lastReplyCheckAt < GMAIL_REPLY_CHECK_COOLDOWN_MS));
+    };
+
+    const GmailAPI = {
+      _token: null, _tokenExpiresAt: 0, _tokenClient: null, _tokenClientId: null, _gsiPromise: null,
+
+      getConfig() { return LS.get(GMAIL_LS_KEY) || {}; },
+      isConnected() { const c = this.getConfig(); return !!(c.clientId && c.connectedEmail); },
+
+      // Inject the GIS script only when the user acts — the app stays fully
+      // offline/unconnected otherwise. No-ops if GIS is already present.
+      loadGsi() {
+        if (window.google && window.google.accounts && window.google.accounts.oauth2) return Promise.resolve();
+        if (this._gsiPromise) return this._gsiPromise;
+        this._gsiPromise = new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://accounts.google.com/gsi/client';
+          s.async = true;
+          s.onload = () => resolve();
+          s.onerror = () => { this._gsiPromise = null; reject(new Error('could not load Google sign-in — check your connection')); };
+          document.head.appendChild(s);
+        });
+        return this._gsiPromise;
+      },
+
+      _requestToken(clientId, prompt) {
+        return this.loadGsi().then(() => new Promise((resolve, reject) => {
+          if (!this._tokenClient || this._tokenClientId !== clientId) {
+            this._tokenClient = window.google.accounts.oauth2.initTokenClient({ client_id: clientId, scope: GMAIL_SCOPES, callback: () => {} });
+            this._tokenClientId = clientId;
+          }
+          this._tokenClient.callback = (resp) => {
+            if (!resp || resp.error) { reject(new Error((resp && (resp.error_description || resp.error)) || 'authorization failed')); return; }
+            this._token = resp.access_token;
+            this._tokenExpiresAt = Date.now() + ((Number(resp.expires_in) || 3600) - 60) * 1000;
+            resolve(this._token);
+          };
+          this._tokenClient.error_callback = (err) => reject(new Error((err && err.message) || 'Google sign-in was closed'));
+          this._tokenClient.requestAccessToken({ prompt });
+        }));
+      },
+
+      // Valid access token, silently refreshed when consent already exists.
+      getToken() {
+        if (this._token && Date.now() < this._tokenExpiresAt) return Promise.resolve(this._token);
+        const cfg = this.getConfig();
+        if (!cfg.clientId) return Promise.reject(new Error('Gmail is not connected'));
+        return this._requestToken(cfg.clientId, '');
+      },
+
+      async _fetch(path, opts, token) {
+        const r = await fetch(GMAIL_API_BASE + path, {
+          ...(opts || {}),
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...((opts || {}).headers || {}) },
+        });
+        if (!r.ok) {
+          let msg = `Gmail API error ${r.status}`;
+          try { const j = await r.json(); msg = (j.error && j.error.message) || msg; } catch (_) {}
+          throw new Error(msg);
+        }
+        return r.json();
+      },
+
+      // First-time connect: full consent prompt, then resolve the account's address.
+      async connect(clientId) {
+        const token = await this._requestToken(clientId, 'consent');
+        const prof = await this._fetch('/profile', {}, token);
+        const cfg = { clientId, connectedEmail: prof.emailAddress || '' };
+        LS.set(GMAIL_LS_KEY, cfg);
+        return cfg;
+      },
+
+      disconnect() {
+        const t = this._token;
+        this._token = null; this._tokenExpiresAt = 0;
+        LS.remove(GMAIL_LS_KEY);
+        try {
+          if (t && window.google && window.google.accounts && window.google.accounts.oauth2 && window.google.accounts.oauth2.revoke) {
+            window.google.accounts.oauth2.revoke(t, () => {});
+          }
+        } catch (_) {}
+      },
+
+      // Send a plain-text message as the connected user; resolves { id, threadId }.
+      async send({ to, subject, body }) {
+        const token = await this.getToken();
+        const raw = gmailBase64Url(gmailBuildRfc2822({ to, from: this.getConfig().connectedEmail, subject, body }));
+        return this._fetch('/messages/send', { method: 'POST', body: JSON.stringify({ raw }) }, token);
+      },
+
+      // Metadata-only thread fetch (From headers) → did anyone else write in it?
+      async threadHasReply(threadId) {
+        const token = await this.getToken();
+        const thread = await this._fetch(`/threads/${encodeURIComponent(threadId)}?format=metadata&metadataHeaders=From`, {}, token);
+        return gmailThreadHasReply(thread, this.getConfig().connectedEmail);
+      },
+    };
+
     const storageHealth = {
       warningThreshold: 0.70,
       criticalThreshold: 0.85,
@@ -7640,6 +7801,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [dirSelected, setDirSelected] = useState([]); // directory entry names picked for import
       const [prospector, setProspector] = useState(null); // Gig Prospector overlay state (null = closed)
       const [expandedLogId, setExpandedLogId] = useState(null); // venue id with expanded touch timeline
+      // Gmail connection (config persists in LS; the access token itself is memory-only)
+      const [gmailCfg, setGmailCfg] = useState(() => GmailAPI.getConfig());
+      const [gmailBusy, setGmailBusy] = useState(false);
+      const [gmailClientIdInput, setGmailClientIdInput] = useState('');
+      const [showGmailHelp, setShowGmailHelp] = useState(false);
+      const gmailConnected = !!(gmailCfg.clientId && gmailCfg.connectedEmail);
       const venueCsvRef = React.useRef(null);
       const epkPhotoRef = React.useRef(null);
 
@@ -7691,6 +7858,40 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         setLocalEpk(epkSettings); setEpkDirty(false);
         setSelectedIds([]); setCompose(null); setVenueSearch(''); setVenueFilter('all');
         setShowDirectory(false); setProspector(null);
+        setGmailCfg(GmailAPI.getConfig());
+      }, [open]);
+
+      // Reply detection (§10): on modal open, quietly ask Gmail whether any venue still
+      // sitting in Contacted has written back on a thread we sent, and advance it to
+      // Responded. Silent-token only (never pops consent), sequential, capped, and
+      // throttled per venue via lastReplyCheckAt.
+      useEffect(() => {
+        if (!open || !GmailAPI.isConnected()) return;
+        let cancelled = false;
+        (async () => {
+          const candidates = gmailReplyCheckCandidates(venues);
+          if (!candidates.length) return;
+          try { await GmailAPI.getToken(); } catch (_) { return; } // no silent auth → skip quietly
+          let checked = 0, flipped = 0;
+          for (const venue of candidates) {
+            if (cancelled || checked >= GMAIL_REPLY_CHECK_MAX_THREADS) break;
+            const threadIds = [...new Set((venue.contactLog || []).filter(e => e && e.kind === 'sent' && e.threadId).map(e => e.threadId))];
+            let replied = false;
+            for (const tid of threadIds) {
+              if (cancelled || checked >= GMAIL_REPLY_CHECK_MAX_THREADS) break;
+              checked++;
+              try { if (await GmailAPI.threadHasReply(tid)) { replied = true; break; } }
+              catch (_) { /* deleted thread / transient error — skip this one */ }
+            }
+            if (cancelled) break;
+            onUpdateVenue(replied
+              ? { ...venue, status: 'responded', lastReplyCheckAt: Date.now() }
+              : { ...venue, lastReplyCheckAt: Date.now() });
+            if (replied) flipped++;
+          }
+          if (!cancelled && flipped) showToast(`📬 ${flipped} venue${flipped > 1 ? 's' : ''} replied — moved to Responded`, 'success');
+        })();
+        return () => { cancelled = true; };
       }, [open]);
       if (!open) return null;
 
@@ -7812,7 +8013,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       // Log the touch: stamp the date, bump prospects to Contacted, append to the contact log,
       // and save back an email typed into the To field so it sticks on the venue.
-      const recordOutreach = (venue, c) => {
+      const recordOutreach = (venue, c, extra) => {
         const to = (c.to || '').trim();
         const label = (EMAIL_TEMPLATES_DEFAULT[c.templateKey] || {}).label || c.templateKey;
         onUpdateVenue({
@@ -7820,11 +8021,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           email: to || venue.email,
           lastContactDate: todayISO(),
           status: venue.status === 'prospect' ? 'contacted' : venue.status,
-          contactLog: [...(venue.contactLog || []), { date: todayISO(), kind: 'sent', template: label }],
+          contactLog: [...(venue.contactLog || []), { date: todayISO(), kind: 'sent', template: label, ...(extra || {}) }],
         });
       };
 
-      const composeAdvance = (c, didSend) => {
+      const composeAdvance = (c, didSend, quiet) => {
         const sent = c.sent + (didSend ? 1 : 0);
         const skipped = c.skipped + (didSend ? 0 : 1);
         const next = c.index + 1;
@@ -7834,7 +8035,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           if (c.ids.length > 1) {
             setSelectedIds([]);
             showToast(`Outreach run done — ${sent} sent, ${skipped} skipped`, sent ? 'success' : 'warning');
-          } else if (didSend) {
+          } else if (didSend && !quiet) {
             showToast('Draft opened — finish and send from your email app', 'success');
           }
           return;
@@ -7854,6 +8055,51 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         }
         if (composeVenue) recordOutreach(composeVenue, c);
         composeAdvance(c, true);
+      };
+
+      // Real send through the connected Gmail account. Logs threadId/messageId on the
+      // venue's sent entry so reply detection can watch the conversation.
+      const composeSendGmail = async () => {
+        const c = compose; if (!c || !composeVenue || gmailBusy) return;
+        const to = (c.to || '').trim();
+        if (!to) { showToast('Add a To address first', 'warning'); return; }
+        setGmailBusy(true);
+        try {
+          const res = await GmailAPI.send({ to, subject: c.subject, body: c.body });
+          recordOutreach(composeVenue, c, { via: 'gmail', threadId: res.threadId, messageId: res.id });
+          showToast(`Sent to ${composeVenue.name} via Gmail ✓`, 'success');
+          composeAdvance(c, true, true);
+        } catch (err) {
+          showToast(`Gmail send failed — ${err.message}`, 'error');
+        } finally {
+          setGmailBusy(false);
+        }
+      };
+
+      // Gmail connect/disconnect (settings block in the EPK & Templates tab).
+      const gmailConnect = async () => {
+        const cid = gmailClientIdInput.trim();
+        if (!/\.apps\.googleusercontent\.com$/.test(cid)) {
+          showToast('That doesn’t look like an OAuth Client ID (should end in .apps.googleusercontent.com)', 'warning');
+          return;
+        }
+        setGmailBusy(true);
+        try {
+          const cfg = await GmailAPI.connect(cid);
+          setGmailCfg(cfg);
+          setGmailClientIdInput('');
+          showToast(`Gmail connected — ${cfg.connectedEmail}`, 'success');
+        } catch (err) {
+          showToast(`Gmail connect failed — ${err.message}`, 'error');
+        } finally {
+          setGmailBusy(false);
+        }
+      };
+
+      const gmailDisconnect = () => {
+        GmailAPI.disconnect();
+        setGmailCfg({});
+        showToast('Gmail disconnected — compose falls back to your email app', 'success');
       };
 
       const composeCopy = () => {
@@ -8222,7 +8468,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                               {' — '}
                               {e.kind === 'status'
                                 ? <span style={{ color: (VENUE_STATUSES.find(s => s.key === e.status) || {}).color || 'var(--text)' }}>moved to {(VENUE_STATUSES.find(s => s.key === e.status) || {}).label || e.status}</span>
-                                : <span>✉ sent “{e.template || 'email'}”</span>}
+                                : <span>✉ sent “{e.template || 'email'}”{e.via === 'gmail' ? <span style={{ color: 'var(--success)' }}> · via Gmail ✓</span> : ''}</span>}
                             </div>
                           ))}
                         </div>
@@ -8704,6 +8950,41 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <button className="btn btn-small" onClick={() => { const def = EMAIL_TEMPLATES_DEFAULT[tplKey]; setLocalEpk({...localEpk, templates: { ...tpls, [tplKey]: { ...def } }}); setEpkDirty(true); }}>Reset to Default</button>
                 {epkDirty && <button className="btn btn-primary btn-small" onClick={() => { onSaveEpkSettings(localEpk); setEpkDirty(false); showToast('Templates saved', 'success'); }}>Save</button>}
               </div>
+
+              <div style={{ borderTop: '1px solid var(--border)', marginTop: '.9rem', paddingTop: '.7rem' }} data-testid="gmail-settings">
+                <div style={{ fontWeight: 700, fontSize: '.85rem', marginBottom: '.35rem' }}>📧 Gmail — real sends &amp; reply detection</div>
+                {gmailConnected ? (
+                  <div>
+                    <div style={{ fontSize: '.75rem', marginBottom: '.4rem' }}>
+                      Connected as <b style={{ color: 'var(--success)' }}>{gmailCfg.connectedEmail}</b>
+                    </div>
+                    <div style={hint}>Compose now sends directly from your Gmail (no email app hand-off), and venues you've contacted are auto-advanced to <b>Responded</b> the moment the buyer writes back on the thread. Access tokens are never stored — only your Client ID and address.</div>
+                    <button className="btn btn-small" onClick={gmailDisconnect}>Disconnect Gmail</button>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={hint}>Connect your own Gmail so outreach sends for real and replies automatically move venues to <b>Responded</b> (no more manual status bumps — the Outreach dashboard becomes ground truth). Free; you bring your own Google OAuth Client ID.</div>
+                    <div className="input-group" style={{ marginBottom: '.4rem' }}>
+                      <label>OAuth Client ID</label>
+                      <input value={gmailClientIdInput} onChange={e => setGmailClientIdInput(e.target.value)} placeholder="1234567890-xxxx.apps.googleusercontent.com" />
+                    </div>
+                    <div style={{ display: 'flex', gap: '.4rem', flexWrap: 'wrap' }}>
+                      <button className="btn btn-small btn-primary" disabled={gmailBusy || !gmailClientIdInput.trim()} onClick={gmailConnect}>{gmailBusy ? 'Connecting…' : '🔗 Connect Gmail'}</button>
+                      <button className="btn btn-small" onClick={() => setShowGmailHelp(!showGmailHelp)}>{showGmailHelp ? 'Hide setup steps' : 'How do I get a Client ID?'}</button>
+                    </div>
+                    {showGmailHelp && (
+                      <ol style={{ fontSize: '.72rem', color: 'var(--text-muted)', lineHeight: 1.7, margin: '.5rem 0 0 1.1rem', padding: 0 }}>
+                        <li>Go to <b>console.cloud.google.com</b> and create a (free) project.</li>
+                        <li><b>APIs &amp; Services → Library</b> → search "Gmail API" → Enable.</li>
+                        <li><b>OAuth consent screen</b> → External → fill the app name → add your own Gmail address as a <b>Test user</b>.</li>
+                        <li><b>Credentials → Create credentials → OAuth client ID</b> → type <b>Web application</b>.</li>
+                        <li>Under <b>Authorized JavaScript origins</b>, add the address this app runs at (the URL in your browser bar, e.g. <code>https://yourname.github.io</code>). It must be http(s) — Google sign-in won't work from a <code>file://</code> page.</li>
+                        <li>Copy the Client ID (ends in <code>.apps.googleusercontent.com</code>), paste it above, and Connect. Google will ask to allow <b>send</b> and <b>read</b> access for your account only.</li>
+                      </ol>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         );
@@ -8962,12 +9243,22 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <textarea className="compose-body-textarea" rows={11} value={c.body} onChange={e => setCompose({ ...c, body: e.target.value })} />
               </div>
               <div className="compose-actions">
-                <span className="compose-queue-meta">Sending logs the touch &amp; moves prospects to Contacted.</span>
+                <span className="compose-queue-meta">
+                  {gmailConnected
+                    ? <span>Gmail: <b>{gmailCfg.connectedEmail}</b> — sends log the touch &amp; watch the thread for a reply.</span>
+                    : 'Sending logs the touch & moves prospects to Contacted.'}
+                </span>
                 <button className="btn btn-small" onClick={composeCopy} title="Copy To / Subject / Message to the clipboard">{composeCopied ? '✓ Copied' : '📋 Copy'}</button>
                 <button className="btn btn-small" onClick={() => composeSend('gmail')} title="Open this draft in Gmail (new tab)">Gmail ↗</button>
                 {many && <button className="btn btn-small" onClick={() => composeAdvance(c, false)} title="Skip this venue without logging a touch">Skip →</button>}
                 <button className="btn btn-small" onClick={composeMarkSent} title="Log the touch without opening an email app (e.g. after Copy)">✓ Mark sent{many ? ' →' : ''}</button>
-                <button className="btn btn-small btn-primary" onClick={() => composeSend('mailto')} title="Open this draft in your default email app">📨 Email App</button>
+                <button className={`btn btn-small${gmailConnected ? '' : ' btn-primary'}`} onClick={() => composeSend('mailto')} title="Open this draft in your default email app">📨 Email App</button>
+                {gmailConnected && (
+                  <button className="btn btn-small btn-primary" disabled={gmailBusy} onClick={composeSendGmail}
+                    title={`Send now from ${gmailCfg.connectedEmail} — no email app hand-off, and replies auto-advance this venue`}>
+                    {gmailBusy ? 'Sending…' : `✉ Send via Gmail${many ? ' →' : ''}`}
+                  </button>
+                )}
               </div>
             </div>
           </div>
