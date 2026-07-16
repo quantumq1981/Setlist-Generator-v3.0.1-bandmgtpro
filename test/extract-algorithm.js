@@ -142,6 +142,11 @@ for (const g of [
   'gmailThreadHasReply', 'gmailReplyCheckCandidates',
 ]) pieces.push(extractDecl(g));
 
+// Contact enrichment + phone-first outreach helpers (CALL_OUTCOMES before its users).
+for (const g of [
+  'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
+]) pieces.push(extractDecl(g));
+
 // Pure functions. (Function declarations hoist, so order among them is not
 // significant — grouped by concern for readability.)
 for (const f of [
@@ -164,6 +169,7 @@ const EXPORTS = [
   'generateSetlistsCore', 'generateSetlistsCore_WithTonalGravity', 'validateGenerationConstraints',
   'GMAIL_REPLY_CHECK_COOLDOWN_MS', 'gmailB64Utf8', 'gmailBase64Url', 'gmailEncodeHeader',
   'gmailBuildRfc2822', 'gmailThreadHasReply', 'gmailReplyCheckCandidates',
+  'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
 ];
 
 // Minimal browser shims the algorithm touches (genId uses window.crypto).

@@ -588,6 +588,18 @@
       border-radius: 10px; text-transform: uppercase; letter-spacing: .04em;
     }
     .venue-email-actions { display: flex; gap: .3rem; flex-wrap: wrap; margin-top: .45rem; align-items: center; }
+    /* Contact enrichment (find-email) + call-script overlay */
+    .venue-enrich-panel {
+      display: flex; gap: .35rem; flex-wrap: wrap; align-items: center;
+      margin-top: .4rem; padding: .45rem .5rem; border: 1px dashed var(--warning);
+      border-radius: 8px; background: rgba(251,191,36,.06);
+    }
+    .venue-enrich-panel input { font-size: .75rem; padding: .3rem .45rem; }
+    .call-script {
+      white-space: pre-wrap; font-family: inherit; font-size: .78rem; line-height: 1.55;
+      background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 8px;
+      padding: .6rem .7rem; margin: .5rem 0; max-height: 46vh; overflow-y: auto;
+    }
     /* Venue outreach: search, filter chips, bulk select, compose queue */
     .venue-toolbar { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; margin-bottom: .5rem; }
     .venue-search { flex: 1 1 170px; min-width: 150px; font-size: .8rem; padding: .4rem .55rem; }
@@ -1127,6 +1139,82 @@
     };
 
     const BLANK_VENUE = { name: '', email: '', phone: '', contactName: '', type: 'Bar', city: '', state: '', website: '', notes: '', status: 'prospect', lastContactDate: '' };
+
+    // ── Contact enrichment + phone-first outreach ─────────────────────────────
+    // Prospector/OSM venues usually arrive phone-only; the outreach engine is
+    // email-centric. These close that gap: a "needs email" work queue with
+    // assisted lookup, and a call path with logged outcomes so phone-only rooms
+    // are first-class pipeline citizens instead of dead ends.
+    const venueNeedsEmail = (v) => !!v && !String(v.email || '').trim();
+
+    // Deep-link a Google hunt for the venue's booking address.
+    const googleEmailSearchUrl = (v) => {
+      const q = [`"${String((v && v.name) || '').trim()}"`, (v && v.city) || '', (v && v.state) || '', 'booking email contact']
+        .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      return 'https://www.google.com/search?q=' + encodeURIComponent(q);
+    };
+
+    // Call outcomes: `status` is the pipeline stage the outcome implies (never
+    // applied as a downgrade), `touch` marks outcomes the buyer actually heard
+    // (stamps lastContactDate; a ring-out doesn't).
+    const CALL_OUTCOMES = [
+      { key: 'interested', label: '🎯 Spoke — interested', status: 'responded', touch: true },
+      { key: 'callback',   label: '🔁 Call back later',    status: 'contacted', touch: true },
+      { key: 'voicemail',  label: '📼 Left voicemail',     status: 'contacted', touch: true },
+      { key: 'no_answer',  label: '📵 No answer',          status: null,        touch: false },
+      { key: 'pass',       label: '✋ Not booking now',    status: 'pass',      touch: true },
+    ];
+
+    // Apply a call outcome to a venue: log it (kind:'call'), stamp the touch,
+    // and advance — never regress — the pipeline status. Pure.
+    const applyCallOutcome = (venue, outcomeKey, dateISO) => {
+      const oc = CALL_OUTCOMES.find(o => o.key === outcomeKey);
+      if (!venue || !oc) return venue;
+      const RANK = { prospect: 0, pass: 0, contacted: 1, responded: 2, call_scheduled: 3, booked: 4 };
+      let status = venue.status;
+      if (oc.status === 'pass') { if (status !== 'booked') status = 'pass'; }
+      else if (oc.status && (RANK[oc.status] || 0) > (RANK[status] || 0)) status = oc.status;
+      return {
+        ...venue,
+        status,
+        lastContactDate: oc.touch ? dateISO : (venue.lastContactDate || ''),
+        contactLog: [...(venue.contactLog || []), { date: dateISO, kind: 'call', outcome: oc.key }],
+      };
+    };
+
+    // Personalized phone script. The "send me something" branch is deliberate
+    // enrichment: it captures the booking email mid-call. Pure.
+    const buildCallScript = ({ bandName, epk, venue, pitch }) => {
+      const e = epk || {};
+      const v = venue || {};
+      const contact = (v.contactName || '').trim() || 'whoever books your entertainment';
+      const room = (v.name || '').trim() || 'your venue';
+      const act = (e.actType || '').trim() || 'a professional live act';
+      const where = (e.location || '').trim() || 'the area';
+      const genres = (e.genres || '').trim() || 'crowd-favorite covers';
+      const formats = (e.formats || '').trim() || 'solo acoustic up to full band';
+      const hook = (e.tagline || '').trim() || (e.elevatorPitch || '').trim() || `We keep rooms full with ${genres}.`;
+      const body = (pitch || '').trim() || (e.elevatorPitch || '').trim() || `We tailor every set to the room — ${genres}, in formats from ${formats}, so the night fits ${room} exactly.`;
+      return [
+        `OPENER`,
+        `"Hi! Could I speak with ${contact}? … My name's [your name] with ${bandName || 'my band'} — we're ${act} based in ${where}."`,
+        ``,
+        `THE HOOK (10 seconds)`,
+        `"${hook} I'm calling to ask how ${room} books its live music."`,
+        ``,
+        `THE PITCH (if they're listening)`,
+        `"${body}"`,
+        ``,
+        `IF THEY SAY "SEND ME SOMETHING" (say yes — then capture the email)`,
+        `"Absolutely — what's the best email for booking? I'll send our press kit with live videos and the song list right after this call." → type it into the box below so it saves to this venue.`,
+        ``,
+        `CLOSE (ask for something specific)`,
+        `"How far out are you booking right now? Is there a slow night you'd like to build up? We can do ${formats}."`,
+        ``,
+        `VOICEMAIL VERSION (15 seconds)`,
+        `"Hi, this is [your name] with ${bandName || 'my band'} — ${act} in ${where}. ${hook} I'd love to talk about live music at ${room}. You can reach me at ${(e.contactPhone || '[your phone]')}${e.contactEmail ? `, or ${e.contactEmail}` : ''}. Thanks!"`,
+      ].join('\n');
+    };
     const BLANK_BOOKING = { venueId: '', venueName: '', date: '', startTime: '', endTime: '', fee: '', status: 'pending', setlistId: '', notes: '' };
 
     // Built-in Las Vegas / Henderson / Boulder City live-music venue directory.
@@ -7801,6 +7889,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [dirSelected, setDirSelected] = useState([]); // directory entry names picked for import
       const [prospector, setProspector] = useState(null); // Gig Prospector overlay state (null = closed)
       const [expandedLogId, setExpandedLogId] = useState(null); // venue id with expanded touch timeline
+      // Contact enrichment + phone-first outreach
+      const [enrichVenueId, setEnrichVenueId] = useState(null); // venue id with the find-email panel open
+      const [enrichEmailInput, setEnrichEmailInput] = useState('');
+      const [callVenueId, setCallVenueId] = useState(null);     // venue id with the call-script overlay open
+      const [callCopied, setCallCopied] = useState(false);
       // Gmail connection (config persists in LS; the access token itself is memory-only)
       const [gmailCfg, setGmailCfg] = useState(() => GmailAPI.getConfig());
       const [gmailBusy, setGmailBusy] = useState(false);
@@ -7858,6 +7951,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         setLocalEpk(epkSettings); setEpkDirty(false);
         setSelectedIds([]); setCompose(null); setVenueSearch(''); setVenueFilter('all');
         setShowDirectory(false); setProspector(null);
+        setEnrichVenueId(null); setEnrichEmailInput(''); setCallVenueId(null);
         setGmailCfg(GmailAPI.getConfig());
       }, [open]);
 
@@ -8005,6 +8099,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       };
 
       const composeVenue = compose ? venues.find(v => v.id === compose.ids[compose.index]) : null;
+      const callVenue = callVenueId ? venues.find(v => v.id === callVenueId) : null;
 
       const composeSetTemplate = (tk) => {
         if (!compose || !composeVenue) return;
@@ -8100,6 +8195,23 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         GmailAPI.disconnect();
         setGmailCfg({});
         showToast('Gmail disconnected — compose falls back to your email app', 'success');
+      };
+
+      // Save a booking email found via the enrichment panel or captured on a call.
+      const saveVenueEmail = (venue, raw) => {
+        const email = String(raw || '').trim();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showToast('That doesn’t look like an email address', 'warning'); return false; }
+        onUpdateVenue({ ...venue, email });
+        showToast(`Email saved to ${venue.name} ✓`, 'success');
+        setEnrichVenueId(null); setEnrichEmailInput('');
+        return true;
+      };
+
+      const logCallOutcome = (venue, outcomeKey) => {
+        const oc = CALL_OUTCOMES.find(o => o.key === outcomeKey);
+        onUpdateVenue(applyCallOutcome(venue, outcomeKey, todayISO()));
+        showToast(`📞 ${venue.name} — logged “${oc ? oc.label.replace(/^[^\s]+\s/, '') : outcomeKey}”`, 'success');
+        setCallVenueId(null); setEnrichEmailInput('');
       };
 
       const composeCopy = () => {
@@ -8351,11 +8463,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         };
         const q = venueSearch.trim().toLowerCase();
         const matchesSearch = (v) => !q || [v.name, v.city, v.state, v.contactName, v.email, v.type].some(f => (f || '').toLowerCase().includes(q));
-        const matchesFilter = (v) => venueFilter === 'all' ? true : venueFilter === 'due' ? isFollowupDue(v) : venueFilter === 'rebook' ? isRebookDue(v) : v.status === venueFilter;
+        const matchesFilter = (v) => venueFilter === 'all' ? true : venueFilter === 'due' ? isFollowupDue(v) : venueFilter === 'rebook' ? isRebookDue(v) : venueFilter === 'noemail' ? venueNeedsEmail(v) : v.status === venueFilter;
         const filtered = venues.filter(v => matchesSearch(v) && matchesFilter(v))
           .sort((a, b) => (VENUE_STATUS_ORDER[a.status] ?? 4) - (VENUE_STATUS_ORDER[b.status] ?? 4) || (a.name || '').localeCompare(b.name || ''));
         const dueCount = venues.filter(isFollowupDue).length;
         const rebookCount = venues.filter(isRebookDue).length;
+        const noEmailCount = venues.filter(venueNeedsEmail).length;
         const statusCounts = {};
         venues.forEach(v => { statusCounts[v.status] = (statusCounts[v.status] || 0) + 1; });
         const selectedSet = new Set(selectedIds);
@@ -8398,6 +8511,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     🔁 Rebook <span className="chip-count">{rebookCount}</span>
                   </button>
                 )}
+                {noEmailCount > 0 && (
+                  <button className={`venue-filter-chip${venueFilter === 'noemail' ? ' active' : ''}`} style={{ borderColor: '#60a5fa', color: '#60a5fa' }} onClick={() => setVenueFilter(venueFilter === 'noemail' ? 'all' : 'noemail')} title="Venues with no booking email yet — work this queue with 🔎 Find email or a 📞 call">
+                    📇 No email <span className="chip-count">{noEmailCount}</span>
+                  </button>
+                )}
               </div>
             )}
             {selectedIds.length > 0 && (
@@ -8428,7 +8546,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             {filtered.map(venue => {
               const si = statusInfo(venue.status);
               const log = venue.contactLog || [];
-              const sentLog = log.filter(e => !e.kind || e.kind === 'sent');
+              const sentLog = log.filter(e => !e.kind || e.kind === 'sent' || (e.kind === 'call' && e.outcome !== 'no_answer'));
               const touches = sentLog.length;
               const lastLog = touches ? sentLog[touches - 1] : null;
               const due = isFollowupDue(venue);
@@ -8468,6 +8586,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                               {' — '}
                               {e.kind === 'status'
                                 ? <span style={{ color: (VENUE_STATUSES.find(s => s.key === e.status) || {}).color || 'var(--text)' }}>moved to {(VENUE_STATUSES.find(s => s.key === e.status) || {}).label || e.status}</span>
+                                : e.kind === 'call'
+                                ? <span>📞 call — {(CALL_OUTCOMES.find(o => o.key === e.outcome) || {}).label || e.outcome}</span>
                                 : <span>✉ sent “{e.template || 'email'}”{e.via === 'gmail' ? <span style={{ color: 'var(--success)' }}> · via Gmail ✓</span> : ''}</span>}
                             </div>
                           ))}
@@ -8486,8 +8606,35 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       title={`Preview & edit before sending — starts from "${(EMAIL_TEMPLATES_DEFAULT[defaultTemplateFor(venue)] || {}).label}" based on this venue's status`}>
                       ✉ Compose Email
                     </button>
-                    {!(venue.email || '').trim() && <span style={{ fontSize: '.68rem', color: 'var(--warning)' }}>no email saved — add one in the composer</span>}
+                    {(venue.phone || '').trim() && (
+                      <button className="btn btn-small"
+                        onClick={() => { setCallVenueId(venue.id); setCallCopied(false); setEnrichEmailInput(''); }}
+                        style={{ fontSize: '.7rem', borderColor: 'var(--success)', color: 'var(--success)' }}
+                        title="Open a personalized call script with one-tap outcome logging — phone-only venues are pipeline citizens too">
+                        📞 Call
+                      </button>
+                    )}
+                    {venueNeedsEmail(venue) && (
+                      <button className="btn btn-small"
+                        onClick={() => { setEnrichVenueId(enrichVenueId === venue.id ? null : venue.id); setEnrichEmailInput(''); }}
+                        style={{ fontSize: '.7rem', borderColor: 'var(--warning)', color: 'var(--warning)' }}
+                        title="No booking email saved — hunt it down (website + Google) and save it in ~30 seconds">
+                        🔎 Find email
+                      </button>
+                    )}
                   </div>
+                  {enrichVenueId === venue.id && (
+                    <div className="venue-enrich-panel">
+                      {(venue.website || '').trim() && (
+                        <a className="btn btn-small" style={{ textDecoration: 'none' }} href={/^https?:\/\//i.test(venue.website) ? venue.website : 'https://' + venue.website} target="_blank" rel="noopener" title="Check the site's Contact / Book / Entertainment page">🌐 Website ↗</a>
+                      )}
+                      <a className="btn btn-small" style={{ textDecoration: 'none' }} href={googleEmailSearchUrl(venue)} target="_blank" rel="noopener" title="Google the venue's booking email">🔍 Google it ↗</a>
+                      <input type="email" value={enrichEmailInput} onChange={e => setEnrichEmailInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') saveVenueEmail(venue, enrichEmailInput); }}
+                        placeholder="paste booking email…" style={{ flex: 1, minWidth: 150 }} />
+                      <button className="btn btn-small btn-primary" onClick={() => saveVenueEmail(venue, enrichEmailInput)}>Save</button>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -9265,6 +9412,53 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         );
       };
 
+      // Phone-first outreach: personalized script + one-tap outcome logging, with
+      // mid-call email capture (the enrichment moment: "send me something" → save it).
+      const renderCallOverlay = () => {
+        const venue = callVenue;
+        const script = buildCallScript({ bandName, epk: localEpk, venue, pitch: suggestForVenue(venue).pitch });
+        const telHref = 'tel:' + String(venue.phone || '').replace(/[^\d+]/g, '');
+        const copyScript = () => {
+          const done = () => { setCallCopied(true); setTimeout(() => setCallCopied(false), 1600); };
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(script).then(done, done);
+          else done();
+        };
+        return (
+          <div className="compose-backdrop" onClick={() => setCallVenueId(null)}>
+            <div className="compose-panel" onClick={e => e.stopPropagation()} data-testid="call-overlay">
+              <div className="compose-head">
+                <div className="compose-title">📞 {venue.name}{venue.contactName ? ` · ${venue.contactName}` : ''}</div>
+                <button className="btn btn-small" onClick={() => setCallVenueId(null)} title="Close without logging">✕</button>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', flexWrap: 'wrap' }}>
+                {(venue.phone || '').trim()
+                  ? <a href={telHref} style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--success)', textDecoration: 'none' }} title="Tap to dial on mobile">📱 {venue.phone}</a>
+                  : <span style={{ color: 'var(--warning)', fontSize: '.75rem' }}>No phone saved — edit the venue to add one</span>}
+                <button className="btn btn-small" onClick={copyScript} title="Copy the whole script">{callCopied ? '✓ Copied' : '📋 Copy script'}</button>
+              </div>
+              <pre className="call-script" data-testid="call-script">{script}</pre>
+              <div className="venue-enrich-panel" style={{ marginTop: 0 }}>
+                <span style={{ fontSize: '.7rem', color: 'var(--text-muted)' }}>Got an email on the call?</span>
+                <input type="email" value={enrichEmailInput} onChange={e => setEnrichEmailInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveVenueEmail(venue, enrichEmailInput); }}
+                  placeholder="booking@venue.com" style={{ flex: 1, minWidth: 150 }} />
+                <button className="btn btn-small" onClick={() => saveVenueEmail(venue, enrichEmailInput)}>Save email</button>
+              </div>
+              <div className="compose-actions" style={{ flexWrap: 'wrap' }}>
+                <span className="compose-queue-meta">How did it go? Logging stamps the touch &amp; moves the pipeline.</span>
+                {CALL_OUTCOMES.map(oc => (
+                  <button key={oc.key} className={`btn btn-small${oc.key === 'interested' ? ' btn-primary' : ''}`}
+                    onClick={() => logCallOutcome(venue, oc.key)}
+                    title={oc.status ? `Logs the call and moves the venue toward ${oc.status.replace('_', ' ')}` : 'Logs the attempt without changing status'}>
+                    {oc.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      };
+
       return (
         <div className="modal-backdrop" onClick={onClose}>
           <div className="venue-modal" onClick={e => e.stopPropagation()}>
@@ -9288,6 +9482,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           {showDirectory && renderDirectoryOverlay()}
           {prospector && renderProspectorOverlay()}
           {compose && composeVenue && renderComposeOverlay()}
+          {callVenue && renderCallOverlay()}
         </div>
       );
     }
