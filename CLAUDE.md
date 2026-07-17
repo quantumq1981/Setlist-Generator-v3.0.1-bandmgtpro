@@ -567,6 +567,41 @@ responded"); own-messages-only thread stays Contacted; cooldown suppresses
 re-checks while a newly-sent thread is picked up; disconnected state leaves every
 legacy compose path untouched; 0 page errors.
 
+## 9k. Change log — 2026-07 contact enrichment + phone-first outreach
+
+Closes the discovery→outreach gap: Prospector/OSM venues usually arrive
+phone-only while the outreach engine is email-centric. Adds a "needs email" work
+queue with assisted lookup, and a call path with logged outcomes so phone-only
+rooms are first-class pipeline citizens.
+
+- **Pure helpers** (module scope, after `BLANK_VENUE`; extracted + unit-tested):
+  `venueNeedsEmail`, `googleEmailSearchUrl` (quoted-name + city/state + booking
+  terms deep-link), `CALL_OUTCOMES` (interested/callback/voicemail/no_answer/pass,
+  each with an implied pipeline `status` and a `touch` flag — a ring-out is not a
+  touch), `applyCallOutcome` (logs `{kind:'call', outcome}`, stamps
+  `lastContactDate` on touches, advances but **never regresses** status; booked
+  rooms are immune to `pass`), `buildCallScript` (personalized from EPK + venue +
+  the venue-tailored pitch; includes an email-capture branch and a 15-second
+  voicemail version; safe fallbacks on empty input).
+- **"📇 No email" work-queue chip** in the venue toolbar (live count, filters the
+  list) + a per-row **"🔎 Find email"** button that expands an inline enrich panel:
+  Website ↗ (https-normalized), "Google it ↗" (booking-email search), and a
+  paste-and-save input (validated; saves via `onUpdateVenue`, Enter submits).
+- **"📞 Call" row button** (any venue with a phone) opens a call overlay:
+  tap-to-dial `tel:` link, copyable personalized script, mid-call email capture
+  (same save-back), and one-tap outcome buttons driving `applyCallOutcome`
+  through `onUpdateVenue` (so status transitions auto-log for the dashboard).
+- **Touch timeline** renders `kind:'call'` entries ("📞 call — 📼 Left
+  voicemail"); the row touch counter counts sends + call touches (not ring-outs).
+
+Verification: Babel compile clean; `npm test` → 53/53 (10 new); headless drive →
+18/18 (chip count/filtering, https-normalized website link, Google deep-link
+content, junk-email rejection + save-back + live queue-count drop, phone-less
+rows get no Call button, personalized script + tel: digits, voicemail →
+contacted + touch + auto status event, interested → responded, no_answer
+log-only, timeline entries, touch-count semantics); Gmail drive re-run → 32/32
+(no regression); 0 page errors.
+
 ---
 
 ## 10. Gmail API integration (BUILT 2026-07 — see §9j; spec kept for reference)
