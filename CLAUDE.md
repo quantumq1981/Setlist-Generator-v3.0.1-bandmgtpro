@@ -669,6 +669,45 @@ body carries `…/epk?ref=test-tavern`, no placeholder warning; unhosted: 3-step
 walkthrough renders, body keeps `[EPK Link]`, composer warns); full regression
 re-run → sequences 17/17, Gmail 32/32, enrichment 18/18; 0 page errors.
 
+## 9n. Change log — 2026-07 feedback-driven scoring (the learning loop)
+
+Completes the 2026-07 outreach roadmap (§9j → §9m). The Prospector's fit
+heuristics were static guesses; the contact log is ground truth. Every send,
+call, and detected reply now recalibrates targeting.
+
+- **Outcome engine** (module scope, before the EPK helpers; pure, extracted,
+  unit-tested): `venueOutcome` distills one venue's log into
+  attempted/replied/type/template-attribution (replied = a logged status move
+  into responded/call_scheduled/booked — or currently sitting there, for
+  legacy manual bumps; the reply is attributed to the last send on/before the
+  move, §9i's rule; a `no_answer` ring-out is not an attempt).
+  `collectOutreachStats` aggregates by room `type` and by template.
+  `smoothedRate` (Laplace) + `MIN_LEARN_SAMPLE` (3) + a 0.6–1.4 clamp in
+  `typeScoreMultiplier` keep small samples honest — everything stays neutral
+  (×1) until a category has real data. `bestStatInsight` picks the top
+  performer in any stats map, min-sample gated.
+- **Prospector re-ranking**: search results multiply their heuristic score by
+  the learned type multiplier (chains stay zeroed; 0–10 preserved, one
+  decimal), re-sort, and carry a `📈/📉 <type>s reply above/below your average
+  (×N)` signal chip. A header note (`data-testid="learned-note"`) lists the
+  active multipliers. Under-sampled pipelines see identical-to-before
+  behavior.
+- **"🎯 What's working" panel** (Analytics, `data-testid="whats-working"`):
+  best room type and best template by smoothed reply rate with sample counts,
+  plus a pointer that the Prospector now weights discoveries by these rates.
+  Renders as soon as either insight clears the sample gate — with or without
+  bookings.
+
+Verification: Babel compile clean; `npm test` → 72/72 (7 new: outcome
+extraction incl. ring-out/legacy-status/attribution-order, aggregation,
+smoothing, multiplier gate + clamps + unseen-type neutrality, insight picker
+incl. under-sample null); headless drive → 11/11 (Overpass intercepted: hot
+bars + cold restaurants → What's-working shows Bar 80% + Tailored Pitch 100%,
+Prospector note lists ×1.4/×0.6, a lower-heuristic bar outranks a
+higher-heuristic restaurant at 4.2 vs 2.4 with 📈/📉 chips; under-sampled
+pipeline → no panel, no note, heuristic order preserved); full regression →
+Gmail 32/32, enrichment 18/18, sequences 17/17, EPK 9/9; 0 page errors.
+
 ---
 
 ## 10. Gmail API integration (BUILT 2026-07 — see §9j; spec kept for reference)
