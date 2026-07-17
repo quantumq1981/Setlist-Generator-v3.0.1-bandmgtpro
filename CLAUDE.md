@@ -602,6 +602,47 @@ contacted + touch + auto status event, interested → responded, no_answer
 log-only, timeline entries, touch-count semantics); Gmail drive re-run → 32/32
 (no regression); 0 page errors.
 
+## 9l. Change log — 2026-07 outreach sequences ("Today's Outreach")
+
+Turns the pipeline into a daily operating system. The passive follow-up chip
+relied on the user noticing it; now every venue resolves to *today's next
+action* and the whole day runs in one pass.
+
+- **Sequence brain** (module scope, after `buildCallScript`; pure, extracted,
+  unit-tested): `nextActionFor(venue, {today, rebookDue})` →
+  `{action, template}` or null. Routing: prospect → first outreach (email) /
+  call (phone-only) / find_email (neither); contacted → follow-up when
+  `SEQUENCE_STEP_DAYS` (=`FOLLOWUP_DUE_DAYS`) have passed, `exhausted` after
+  `MAX_SEQUENCE_SENDS` (4) sends with no reply, falling back to call/find_email
+  if the address is missing; rebook-due rooms outrank everything but only
+  re-queue once per step interval. **Halts on reply**: responded /
+  call_scheduled / booked / pass all return null — so §9j's automatic reply
+  detection silences a sequence the moment the buyer answers. `snoozedUntil`
+  (stamped via `addDaysISO`) hides a venue until the date passes.
+  `sendsToday` counts today's sends across the pipeline (calls excluded) for
+  the `DAILY_OUTREACH_CAP` (25/day — Gmail deliverability + focus).
+- **"📆 Today" toolbar button** (live due-count badge) opens the queue overlay:
+  cap meter (sent today / 25), groups for ✉ Ready to send (warmest-first:
+  rebook → follow-ups → fresh, each row naming its auto template), 📞 Calls to
+  make (opens the §9k call overlay), 🔎 Needs a contact (jumps to the §9k
+  enrich panel), and ⛔ Sequence complete (suggests the call path). Every row
+  snoozes 7 days with one tap.
+- **"▶ Start send run (N)"** — capped to the day's remaining sends — feeds the
+  existing bulk-compose queue in **auto-template mode** (new: `openCompose`
+  with no explicit template marks the run `auto`, and `composeAdvance`
+  re-resolves `defaultTemplateFor` per venue), so one pass sends a rebook ask,
+  follow-ups, and first outreaches each with the right template.
+
+Verification: Babel compile clean; `npm test` → 62/62 (9 new sequence tests:
+prospect routing, step-interval due dates, exhaustion, halt-on-reply, snooze
+expiry, rebook precedence + once-per-interval, sendsToday semantics, calendar
+math); headless drive → 17/17 (badge count, group composition + warmest-first
+ordering + per-row template labels, waiting/snoozed/responded exclusion, live
+snooze drop + persisted `snoozedUntil`, a 3-venue send run stepping Post-Gig →
+Follow-Up → Initial Outreach automatically, wrap-up tally, cap meter 3/25,
+queue re-resolution); Gmail 32/32 + enrichment 18/18 re-runs green; 0 page
+errors.
+
 ---
 
 ## 10. Gmail API integration (BUILT 2026-07 — see §9j; spec kept for reference)
