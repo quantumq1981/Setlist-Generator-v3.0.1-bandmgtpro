@@ -147,6 +147,9 @@ for (const g of [
   'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
 ]) pieces.push(extractDecl(g));
 
+// EPK link infrastructure (slug before the link builder).
+for (const g of ['epkVenueSlug', 'epkLinkForVenue']) pieces.push(extractDecl(g));
+
 // Outreach sequences ("Today's Outreach") — constants before the brain that uses them.
 for (const g of [
   'FOLLOWUP_DUE_DAYS', 'DAILY_OUTREACH_CAP', 'MAX_SEQUENCE_SENDS', 'SEQUENCE_STEP_DAYS',
@@ -177,6 +180,7 @@ const EXPORTS = [
   'gmailBuildRfc2822', 'gmailThreadHasReply', 'gmailReplyCheckCandidates',
   'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
   'DAILY_OUTREACH_CAP', 'MAX_SEQUENCE_SENDS', 'SEQUENCE_STEP_DAYS', 'addDaysISO', 'sendsToday', 'nextActionFor',
+  'epkVenueSlug', 'epkLinkForVenue',
 ];
 
 // Minimal browser shims the algorithm touches (genId uses window.crypto).
