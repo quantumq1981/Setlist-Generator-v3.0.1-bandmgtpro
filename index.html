@@ -1216,6 +1216,20 @@
       ].join('\n');
     };
 
+    // ── EPK link infrastructure ───────────────────────────────────────────────
+    // Every outgoing pitch tags the hosted EPK link per venue (?ref=<slug>), so any
+    // host with analytics (Netlify, GitHub Pages + counter, linktree) shows *which
+    // buyer actually clicked* — the first engagement signal without a backend.
+    const epkVenueSlug = (venue) => String((venue && venue.name) || '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'venue';
+
+    const epkLinkForVenue = (epkUrl, venue) => {
+      const url = String(epkUrl || '').trim();
+      if (!url) return '';
+      if (!venue) return url;
+      return url + (url.includes('?') ? '&' : '?') + 'ref=' + epkVenueSlug(venue);
+    };
+
     // ── Outreach sequences ("Today's Outreach") ───────────────────────────────
     // Gigs are won on touches 2–4, and a passive "follow-up due" chip still relies
     // on the user noticing it. The sequence engine turns the pipeline into a daily
@@ -8088,7 +8102,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           '{{band_name}}': bandName || '',
           '{{venue_name}}': venue?.name || '',
           '{{contact_name}}': venue?.contactName || venue?.name || '',
-          '{{epk_link}}': localEpk.epkUrl || '[EPK Link]',
+          '{{epk_link}}': localEpk.epkUrl ? epkLinkForVenue(localEpk.epkUrl, venue) : '[EPK Link]',
           '{{demo_link}}': localEpk.demoVideoUrl || '[Demo Link]',
           '{{linktree}}': localEpk.linktree || '',
           '{{website}}': localEpk.website || '',
@@ -9060,6 +9074,38 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 </div>
               </div>
               <div style={hint}>🌐 Web EPK opens the designed page (Print → Save as PDF). ⬇ .html downloads a self-contained file you can host as your shareable link. Generate uses current edits — Save to keep them.</div>
+
+              {(() => {
+                const url = (localEpk.epkUrl || '').trim();
+                const boxStyle = { border: `1px ${url ? 'solid var(--success)' : 'dashed var(--warning)'} `, borderRadius: 8, padding: '.5rem .6rem', margin: '.4rem 0 .5rem', background: url ? 'rgba(74,222,128,.05)' : 'rgba(251,191,36,.05)' };
+                return (
+                  <div style={boxStyle} data-testid="epk-publish">
+                    {url ? (
+                      <div>
+                        <div style={{ fontSize: '.75rem', fontWeight: 700, marginBottom: '.25rem' }}>🔗 EPK is live — every pitch links it automatically</div>
+                        <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <code style={{ fontSize: '.7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '18rem' }}>{url}</code>
+                          <button className="btn btn-small" onClick={() => { const done = () => showToast('EPK link copied', 'success'); if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, done); else done(); }}>📋 Copy</button>
+                          <a className="btn btn-small" style={{ textDecoration: 'none' }} href={/^https?:\/\//i.test(url) ? url : 'https://' + url} target="_blank" rel="noopener">Open ↗</a>
+                        </div>
+                        <div style={{ fontSize: '.66rem', color: 'var(--text-muted)', marginTop: '.25rem' }}>
+                          Emails tag the link per venue (<code>?ref=venue-name</code>) — check your host's analytics to see <b>which buyer clicked</b>.
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={{ fontSize: '.75rem', fontWeight: 700, marginBottom: '.25rem', color: 'var(--warning)' }}>📡 Publish your EPK — 5 minutes, free, and every template lights up</div>
+                        <ol style={{ fontSize: '.7rem', color: 'var(--text-muted)', lineHeight: 1.7, margin: '0 0 .3rem 1.1rem', padding: 0 }}>
+                          <li><b>⬇ .html</b> (above) downloads your self-contained EPK — rename it <code>index.html</code>.</li>
+                          <li>Host it free: drag the file onto <b>app.netlify.com/drop</b>, or push it to a <b>GitHub Pages</b> repo.</li>
+                          <li>Paste the resulting URL into <b>EPK URL (hosted)</b> below — instantly, every email template links your EPK, tagged per venue (<code>?ref=…</code>) so your host's analytics show who clicked.</li>
+                        </ol>
+                        <div style={{ fontSize: '.66rem', color: 'var(--text-muted)' }}>Until then, outgoing emails show an unfilled <code>[EPK Link]</code> placeholder (the composer warns you).</div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {(() => {
                 const checks = [

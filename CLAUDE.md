@@ -643,6 +643,32 @@ Follow-Up → Initial Outreach automatically, wrap-up tally, cap meter 3/25,
 queue re-resolution); Gmail 32/32 + enrichment 18/18 re-runs green; 0 page
 errors.
 
+## 9m. Change log — 2026-07 EPK publish flow + per-venue tagged links
+
+The templates referenced `[EPK Link]` but the app never helped the user get one,
+and a bare link says nothing about who clicked. Closes both gaps without a
+backend.
+
+- **Per-venue link tagging** (module scope, before the sequence engine; pure,
+  extracted, unit-tested): `epkVenueSlug` (url-safe, capped, `'venue'`
+  fallback) + `epkLinkForVenue(epkUrl, venue)` appends `?ref=<slug>` (`&ref=`
+  when a query exists; empty url → ''). `fillTemplate`'s `{{epk_link}}` now
+  resolves through it, so **every outgoing pitch carries a venue-tagged EPK
+  link** — any host with analytics (Netlify, GitHub Pages + counter) shows
+  *which buyer clicked*: the first engagement signal, no backend required.
+- **Publish block** in EPK & Templates (under the export buttons,
+  `data-testid="epk-publish"`): unhosted → a 3-step walkthrough (⬇ .html →
+  rename `index.html` → drag onto app.netlify.com/drop or GitHub Pages → paste
+  the URL into EPK URL (hosted)); hosted → "EPK is live" with the URL, 📋 Copy,
+  Open ↗, and a note that emails are ref-tagged per venue.
+
+Verification: Babel compile clean; `npm test` → 65/65 (3 new: slug
+sanitization/cap/fallback, `?ref`/`&ref` composition, empty-url + no-venue
+edges); headless drive → 9/9 (hosted: link tools + tagging note render, compose
+body carries `…/epk?ref=test-tavern`, no placeholder warning; unhosted: 3-step
+walkthrough renders, body keeps `[EPK Link]`, composer warns); full regression
+re-run → sequences 17/17, Gmail 32/32, enrichment 18/18; 0 page errors.
+
 ---
 
 ## 10. Gmail API integration (BUILT 2026-07 — see §9j; spec kept for reference)
