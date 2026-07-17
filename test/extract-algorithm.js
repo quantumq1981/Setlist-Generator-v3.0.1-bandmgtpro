@@ -147,6 +147,12 @@ for (const g of [
   'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
 ]) pieces.push(extractDecl(g));
 
+// Feedback-driven scoring (constants before the functions that use them).
+for (const g of [
+  'REPLY_STATUSES', 'MIN_LEARN_SAMPLE', 'venueOutcome', 'collectOutreachStats',
+  'smoothedRate', 'typeScoreMultiplier', 'bestStatInsight',
+]) pieces.push(extractDecl(g));
+
 // EPK link infrastructure (slug before the link builder).
 for (const g of ['epkVenueSlug', 'epkLinkForVenue']) pieces.push(extractDecl(g));
 
@@ -181,6 +187,7 @@ const EXPORTS = [
   'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
   'DAILY_OUTREACH_CAP', 'MAX_SEQUENCE_SENDS', 'SEQUENCE_STEP_DAYS', 'addDaysISO', 'sendsToday', 'nextActionFor',
   'epkVenueSlug', 'epkLinkForVenue',
+  'MIN_LEARN_SAMPLE', 'venueOutcome', 'collectOutreachStats', 'smoothedRate', 'typeScoreMultiplier', 'bestStatInsight',
 ];
 
 // Minimal browser shims the algorithm touches (genId uses window.crypto).

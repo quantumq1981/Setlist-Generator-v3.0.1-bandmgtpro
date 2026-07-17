@@ -1216,6 +1216,74 @@
       ].join('\n');
     };
 
+    // ── Feedback-driven scoring ───────────────────────────────────────────────
+    // The Prospector's fit heuristics are static guesses; the contact log is
+    // ground truth. These distill every venue's outcome (did the buyer answer?)
+    // into per-room-type and per-template reply rates, which re-weight new
+    // prospect scores and surface "what's working" — the loop that gets smarter
+    // with every send. Laplace smoothing + a minimum sample keep tiny data honest.
+    const REPLY_STATUSES = ['responded', 'call_scheduled', 'booked'];
+    const MIN_LEARN_SAMPLE = 3; // venues of a kind before the signal is trusted
+
+    // One venue's outcome: attempted (any real touch), replied (logged move into a
+    // reply status — or sitting in one, for legacy manual bumps), and the template
+    // the reply is attributed to (last send on/before the status move; §9i rule).
+    const venueOutcome = (venue) => {
+      const log = (venue && venue.contactLog) || [];
+      const touches = log.filter(e => e && (!e.kind || e.kind === 'sent' || (e.kind === 'call' && e.outcome !== 'no_answer')));
+      const attempted = touches.length > 0;
+      const replied = attempted && (log.some(e => e && e.kind === 'status' && REPLY_STATUSES.includes(e.status))
+        || REPLY_STATUSES.includes((venue && venue.status) || ''));
+      const sends = log.filter(e => e && (!e.kind || e.kind === 'sent') && e.template);
+      let repliedTemplate = null;
+      if (replied && sends.length) {
+        const statusEv = log.find(e => e && e.kind === 'status' && REPLY_STATUSES.includes(e.status));
+        const cutoff = (statusEv && statusEv.date) || '9999-12-31';
+        const before = sends.filter(e => (e.date || '') <= cutoff);
+        repliedTemplate = (before.length ? before : sends)[Math.max(0, (before.length ? before : sends).length - 1)].template;
+      }
+      return { attempted, replied, repliedTemplate, type: (venue && venue.type) || 'Other',
+        templates: [...new Set(sends.map(e => e.template))] };
+    };
+
+    const collectOutreachStats = (venues) => {
+      const byType = {}, byTemplate = {};
+      let attempted = 0, replied = 0;
+      (venues || []).forEach(v => {
+        const o = venueOutcome(v);
+        if (!o.attempted) return;
+        attempted++; if (o.replied) replied++;
+        const t = byType[o.type] || (byType[o.type] = { attempted: 0, replied: 0 });
+        t.attempted++; if (o.replied) t.replied++;
+        o.templates.forEach(tpl => {
+          const s = byTemplate[tpl] || (byTemplate[tpl] = { attempted: 0, replied: 0 });
+          s.attempted++;
+          if (o.replied && o.repliedTemplate === tpl) s.replied++;
+        });
+      });
+      return { attempted, replied, byType, byTemplate };
+    };
+
+    const smoothedRate = (replied, attempted) => (replied + 1) / (attempted + 2);
+
+    // Learned multiplier for a room type vs the overall baseline, clamped 0.6–1.4.
+    // 1 (no adjustment) until the type has MIN_LEARN_SAMPLE attempted venues.
+    const typeScoreMultiplier = (stats, type) => {
+      const t = stats && stats.byType && stats.byType[type];
+      if (!t || t.attempted < MIN_LEARN_SAMPLE || !stats.attempted) return 1;
+      const rel = smoothedRate(t.replied, t.attempted) / smoothedRate(stats.replied, stats.attempted);
+      return Math.max(0.6, Math.min(1.4, Math.round(rel * 100) / 100));
+    };
+
+    // Best performer in a byType/byTemplate stats map (min-sample gated), or null.
+    const bestStatInsight = (byKey) => {
+      const rows = Object.entries(byKey || {}).filter(([, s]) => s.attempted >= MIN_LEARN_SAMPLE);
+      if (!rows.length) return null;
+      rows.sort((a, b) => smoothedRate(b[1].replied, b[1].attempted) - smoothedRate(a[1].replied, a[1].attempted));
+      const [key, s] = rows[0];
+      return { key, replied: s.replied, attempted: s.attempted, rate: Math.round((s.replied / s.attempted) * 100) };
+    };
+
     // ── EPK link infrastructure ───────────────────────────────────────────────
     // Every outgoing pitch tags the hosted EPK link per venue (?ref=<slug>), so any
     // host with analytics (Netlify, GitHub Pages + counter, linktree) shows *which
@@ -8826,8 +8894,31 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           </div>
         ) : null;
 
+        // ── What's working: learned insights that steer the Prospector ──
+        const learnStats = collectOutreachStats(venues);
+        const bestType = bestStatInsight(learnStats.byType);
+        const bestTpl = bestStatInsight(learnStats.byTemplate);
+        const whatsWorkingSection = (bestType || bestTpl) ? (
+          <div className="analytics-section" data-testid="whats-working">
+            <div className="analytics-section-title">🎯 What's working — your data, steering your targeting</div>
+            <div style={{ fontSize: '.78rem', lineHeight: 1.7 }}>
+              {bestType && (
+                <div>Best room type: <b style={{ color: 'var(--success)' }}>{bestType.key}</b> — {bestType.replied} of {bestType.attempted} replied ({bestType.rate}%).</div>
+              )}
+              {bestTpl && (
+                <div>Best template: <b style={{ color: 'var(--success)' }}>{bestTpl.key}</b> — {bestTpl.rate}% reply rate over {bestTpl.attempted} venue{bestTpl.attempted !== 1 ? 's' : ''}.</div>
+              )}
+            </div>
+            <div style={{ fontSize: '.66rem', color: 'var(--text-muted)', marginTop: '.3rem' }}>
+              The 🔎 Prospector now weights new discoveries by these reply rates (shown as 📈/📉 on each result), so your next search leans toward the rooms that actually answer you. Insights unlock per category after {MIN_LEARN_SAMPLE}+ contacted venues.
+            </div>
+          </div>
+        ) : null;
+
         if (!total) {
-          return outreachSection || <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2.5rem 1rem' }}>No bookings yet. Add bookings to see your analytics.</div>;
+          return (outreachSection || whatsWorkingSection)
+            ? <div>{outreachSection}{whatsWorkingSection}</div>
+            : <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2.5rem 1rem' }}>No bookings yet. Add bookings to see your analytics.</div>;
         }
 
         return (
@@ -8863,6 +8954,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             </div>
 
             {outreachSection}
+            {whatsWorkingSection}
           </div>
         );
       };
@@ -9367,10 +9459,24 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const json = await res.json();
             const seen = new Set();
+            // Re-weight the heuristic score by the user's own reply history per room
+            // type (feedback loop) — chains stay zeroed, everything stays 0–10.
+            const stats = collectOutreachStats(venues);
+            const learnedTypes = [...new Set(overpassToProspects(json, area.city).map(r => r.type))]
+              .map(t => [t, typeScoreMultiplier(stats, t)]).filter(([, m]) => m !== 1);
             const results = overpassToProspects(json, area.city)
               .filter(r => { const k = r.name.trim().toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
+              .map(r => {
+                const mult = r.score > 0 ? typeScoreMultiplier(stats, r.type) : 1;
+                if (mult === 1) return r;
+                return {
+                  ...r,
+                  score: Math.max(0, Math.min(10, Math.round(r.score * mult * 10) / 10)),
+                  signals: [...r.signals, mult > 1 ? `📈 ${r.type}s reply above your average (×${mult})` : `📉 ${r.type}s reply below your average (×${mult})`],
+                };
+              })
               .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
-            setProspector(prev => prev && { ...prev, loading: false, results, selected: [] });
+            setProspector(prev => prev && { ...prev, loading: false, results, selected: [], learnedTypes });
             return;
           } catch (e) { lastErr = e; }
         }
@@ -9423,6 +9529,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               {p.loading && <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.2rem', fontSize: '.8rem' }}>Scanning the map… this can take ~10–20 seconds.</div>}
               {p.results && !p.loading && (
                 <React.Fragment>
+                  {(p.learnedTypes || []).length > 0 && (
+                    <div style={{ fontSize: '.68rem', color: 'var(--accent)', fontWeight: 600 }} data-testid="learned-note">
+                      📊 Scores weighted by your reply history: {p.learnedTypes.map(([t, m]) => `${t} ×${m}`).join(' · ')}
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap', fontSize: '.72rem', color: 'var(--text-muted)' }}>
                     <span>{p.results.length} places found · {newResults.length} not in your list</span>
                     <span style={{ flex: 1 }} />
