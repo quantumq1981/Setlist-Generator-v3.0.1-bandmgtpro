@@ -1215,6 +1215,62 @@
         `"Hi, this is [your name] with ${bandName || 'my band'} — ${act} in ${where}. ${hook} I'd love to talk about live music at ${room}. You can reach me at ${(e.contactPhone || '[your phone]')}${e.contactEmail ? `, or ${e.contactEmail}` : ''}. Thanks!"`,
       ].join('\n');
     };
+
+    // ── Outreach sequences ("Today's Outreach") ───────────────────────────────
+    // Gigs are won on touches 2–4, and a passive "follow-up due" chip still relies
+    // on the user noticing it. The sequence engine turns the pipeline into a daily
+    // queue: each venue resolves to today's next action, sends are capped per day
+    // (deliverability + focus), and a sequence halts the moment the venue leaves
+    // prospect/contacted — which Gmail reply detection does automatically.
+    const DAILY_OUTREACH_CAP = 25;   // max sends/day: protects Gmail deliverability
+    const MAX_SEQUENCE_SENDS = 4;    // sends before the sequence parks the venue
+    const SEQUENCE_STEP_DAYS = FOLLOWUP_DUE_DAYS;
+
+    const addDaysISO = (iso, days) => {
+      const t = Date.parse((iso || '') + 'T00:00:00Z');
+      if (!isFinite(t)) return iso || '';
+      return new Date(t + days * 86400000).toISOString().slice(0, 10);
+    };
+
+    // Emails sent today across the whole pipeline (calls don't count toward the cap).
+    const sendsToday = (venues, todayISO) => (venues || []).reduce((n, v) =>
+      n + ((v && v.contactLog) || []).filter(e => e && (!e.kind || e.kind === 'sent') && e.date === todayISO).length, 0);
+
+    // The sequence brain: what does this venue need today? Returns
+    // { action, template } or null (nothing due / not in an automated sequence).
+    // Actions: first_outreach | followup | rebook (email, template set) ·
+    // call | find_email (non-email motions) · exhausted (sequence parked).
+    const nextActionFor = (venue, { today, rebookDue }) => {
+      if (!venue) return null;
+      if (venue.snoozedUntil && today < venue.snoozedUntil) return null;
+      if (rebookDue) {
+        // Ask once per step interval — a rebook nudge sent this week doesn't re-queue.
+        const last = venue.lastContactDate;
+        const recent = last && (Date.parse(today + 'T00:00:00Z') - Date.parse(last + 'T00:00:00Z')) / 86400000 < SEQUENCE_STEP_DAYS;
+        return recent ? null : { action: 'rebook', template: 'postGig' };
+      }
+      const hasEmail = !!String(venue.email || '').trim();
+      const hasPhone = !!String(venue.phone || '').trim();
+      switch (venue.status) {
+        case 'prospect':
+          if (hasEmail) return { action: 'first_outreach', template: 'outreach' };
+          if (hasPhone) return { action: 'call', template: null };
+          return { action: 'find_email', template: null };
+        case 'contacted': {
+          const sends = ((venue.contactLog) || []).filter(e => e && (!e.kind || e.kind === 'sent')).length;
+          if (sends >= MAX_SEQUENCE_SENDS) return { action: 'exhausted', template: null };
+          if (!hasEmail) return hasPhone ? { action: 'call', template: null } : { action: 'find_email', template: null };
+          const last = venue.lastContactDate;
+          if (!last) return { action: 'followup', template: 'followup' };
+          const days = (Date.parse(today + 'T00:00:00Z') - Date.parse(last + 'T00:00:00Z')) / 86400000;
+          return days >= SEQUENCE_STEP_DAYS ? { action: 'followup', template: 'followup' } : null;
+        }
+        default:
+          // responded / call_scheduled: the buyer moved — it's the human's play.
+          // booked / pass: sequence over. Either way the automation stands down.
+          return null;
+      }
+    };
     const BLANK_BOOKING = { venueId: '', venueName: '', date: '', startTime: '', endTime: '', fee: '', status: 'pending', setlistId: '', notes: '' };
 
     // Built-in Las Vegas / Henderson / Boulder City live-music venue directory.
@@ -7894,6 +7950,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [enrichEmailInput, setEnrichEmailInput] = useState('');
       const [callVenueId, setCallVenueId] = useState(null);     // venue id with the call-script overlay open
       const [callCopied, setCallCopied] = useState(false);
+      const [todayOpen, setTodayOpen] = useState(false);        // Today's Outreach queue overlay
       // Gmail connection (config persists in LS; the access token itself is memory-only)
       const [gmailCfg, setGmailCfg] = useState(() => GmailAPI.getConfig());
       const [gmailBusy, setGmailBusy] = useState(false);
@@ -7951,7 +8008,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         setLocalEpk(epkSettings); setEpkDirty(false);
         setSelectedIds([]); setCompose(null); setVenueSearch(''); setVenueFilter('all');
         setShowDirectory(false); setProspector(null);
-        setEnrichVenueId(null); setEnrichEmailInput(''); setCallVenueId(null);
+        setEnrichVenueId(null); setEnrichEmailInput(''); setCallVenueId(null); setTodayOpen(false);
         setGmailCfg(GmailAPI.getConfig());
       }, [open]);
 
@@ -8085,7 +8142,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         (bookingId && bookings.find(b => b.id === bookingId)) ||
         bookings.find(b => b.venueId === venue?.id && b.status === 'confirmed') || null;
 
-      // Open the compose overlay for one or many venues; each draft is personalized per venue.
+      // Open the compose overlay for one or many venues; each draft is personalized per
+      // venue. With no explicit templateKey the run is "auto": every venue in the queue
+      // gets its own status-appropriate template (first outreach vs follow-up vs rebook).
       const openCompose = (venueIds, templateKey, bookingId) => {
         const ids = venueIds.filter(id => venues.some(v => v.id === id));
         if (!ids.length) { showToast('No venues to message', 'warning'); return; }
@@ -8093,13 +8152,33 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const tk = templateKey || defaultTemplateFor(venue);
         setComposeCopied(false);
         setCompose({
-          ids, index: 0, templateKey: tk, bookingId: bookingId || null, sent: 0, skipped: 0,
+          ids, index: 0, templateKey: tk, auto: !templateKey, bookingId: bookingId || null, sent: 0, skipped: 0,
           ...fillTemplate(tk, venue, bookingFor(venue, bookingId)),
         });
       };
 
       const composeVenue = compose ? venues.find(v => v.id === compose.ids[compose.index]) : null;
       const callVenue = callVenueId ? venues.find(v => v.id === callVenueId) : null;
+
+      // Today's Outreach: resolve every venue to its due action, grouped for the queue.
+      const todayActions = (() => {
+        const today = todayISO();
+        const map = { rebook: [], followup: [], first_outreach: [], call: [], find_email: [], exhausted: [] };
+        venues.forEach(v => {
+          const na = nextActionFor(v, { today, rebookDue: isRebookDue(v) });
+          if (na && map[na.action]) map[na.action].push({ venue: v, ...na });
+        });
+        return map;
+      })();
+      // Warmest first: rebooks, then follow-ups, then fresh outreach.
+      const todayEmailQueue = [...todayActions.rebook, ...todayActions.followup, ...todayActions.first_outreach];
+      const todaySentCount = sendsToday(venues, todayISO());
+      const todayDueCount = todayEmailQueue.length + todayActions.call.length + todayActions.find_email.length;
+
+      const snoozeVenue = (venue, days) => {
+        onUpdateVenue({ ...venue, snoozedUntil: addDaysISO(todayISO(), days) });
+        showToast(`😴 ${venue.name} snoozed ${days} days`, 'success');
+      };
 
       const composeSetTemplate = (tk) => {
         if (!compose || !composeVenue) return;
@@ -8137,7 +8216,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         }
         const venue = venues.find(v => v.id === c.ids[next]);
         if (!venue) { composeAdvance({ ...c, index: next, sent, skipped }, false); return; }
-        setCompose({ ...c, index: next, sent, skipped, ...fillTemplate(c.templateKey, venue, bookingFor(venue, c.bookingId)) });
+        const tk = c.auto ? defaultTemplateFor(venue) : c.templateKey;
+        setCompose({ ...c, index: next, sent, skipped, templateKey: tk, ...fillTemplate(tk, venue, bookingFor(venue, c.bookingId)) });
       };
 
       const composeSend = (via) => {
@@ -8491,6 +8571,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               <button className="btn btn-small" onClick={() => venueCsvRef.current?.click()} title="Bulk-import venues from a CSV file" style={{ fontSize: '.68rem' }}>⬆ Import CSV</button>
               <button className="btn btn-small" onClick={openDirectory} title={`Browse ${VENUE_DIRECTORY.length} Las Vegas / Henderson / Boulder City live-music venues with booking contacts and add them to your pipeline`} style={{ fontSize: '.68rem', borderColor: 'var(--accent)', color: 'var(--accent)' }}>📂 Vegas Directory</button>
               <button className="btn btn-small" onClick={openProspector} title="Search the open map for bars, restaurants & clubs in an area — even ones that don't advertise entertainment — scored for solo/duo potential" style={{ fontSize: '.68rem', borderColor: 'var(--success)', color: 'var(--success)' }}>🔎 Prospector</button>
+              <button className="btn btn-small" onClick={() => setTodayOpen(true)} data-testid="today-btn" title="Your daily queue — every venue whose sequence is due today, ready to run in one pass" style={{ fontSize: '.68rem', borderColor: 'var(--warning)', color: 'var(--warning)', fontWeight: 700 }}>📆 Today{todayDueCount > 0 ? ` (${todayDueCount})` : ''}</button>
               <button className="btn btn-small btn-primary" onClick={() => setVenueForm({...BLANK_VENUE})}>+ Add Venue</button>
             </div>
             {venues.length > 0 && (
@@ -9412,6 +9493,90 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         );
       };
 
+      // Today's Outreach: the daily operating view. One overlay listing everything the
+      // sequence engine says is due, a capped one-click send run, and snooze controls.
+      const renderTodayOverlay = () => {
+        const remainingCap = Math.max(0, DAILY_OUTREACH_CAP - todaySentCount);
+        const runList = todayEmailQueue.slice(0, remainingCap);
+        const ACTION_META = {
+          rebook: ['🔁', 'Rebook ask'], followup: ['✉', 'Follow-up'], first_outreach: ['✉', 'First outreach'],
+          call: ['📞', 'Call'], find_email: ['🔎', 'Needs email'], exhausted: ['⛔', 'Sequence complete'],
+        };
+        const row = (item, actions) => (
+          <div key={item.venue.id} style={{ display: 'flex', alignItems: 'center', gap: '.5rem', padding: '.3rem 0', borderBottom: '1px solid var(--border)', fontSize: '.78rem' }}>
+            <span style={{ flexShrink: 0 }}>{ACTION_META[item.action][0]}</span>
+            <span style={{ fontWeight: 700, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.venue.name}</span>
+            <span style={{ color: 'var(--text-muted)', fontSize: '.68rem', flexShrink: 0 }}>{ACTION_META[item.action][1]}{item.template ? ` · ${(EMAIL_TEMPLATES_DEFAULT[item.template] || {}).label}` : ''}</span>
+            {actions}
+            <button className="btn btn-small" onClick={() => snoozeVenue(item.venue, 7)} title="Hide from the queue for 7 days">😴 7d</button>
+          </div>
+        );
+        return (
+          <div className="compose-backdrop" onClick={() => setTodayOpen(false)}>
+            <div className="compose-panel" onClick={e => e.stopPropagation()} data-testid="today-overlay" style={{ maxHeight: '85vh', overflowY: 'auto' }}>
+              <div className="compose-head">
+                <div className="compose-title">📆 Today's Outreach</div>
+                <button className="btn btn-small" onClick={() => setTodayOpen(false)}>✕</button>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.72rem', color: 'var(--text-muted)', marginBottom: '.15rem' }}>
+                <span>Sent today: <b style={{ color: todaySentCount >= DAILY_OUTREACH_CAP ? 'var(--warning)' : 'var(--text)' }}>{todaySentCount}</b> / {DAILY_OUTREACH_CAP} daily cap</span>
+                <span>{todayDueCount} action{todayDueCount !== 1 ? 's' : ''} due</span>
+              </div>
+              <div className="compose-progress-track"><div className="compose-progress-fill" style={{ width: `${Math.min(100, (todaySentCount / DAILY_OUTREACH_CAP) * 100)}%`, background: todaySentCount >= DAILY_OUTREACH_CAP ? 'var(--warning)' : 'var(--accent)' }} /></div>
+
+              {todayDueCount === 0 && todayActions.exhausted.length === 0 && (
+                <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem .5rem', fontSize: '.8rem' }}>
+                  ✅ Queue is clear — nothing due today. Sequences resume automatically as follow-ups come due, buyers reply, or new prospects land.
+                </div>
+              )}
+
+              {todayEmailQueue.length > 0 && (
+                <div style={{ marginTop: '.6rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 700, fontSize: '.8rem' }}>✉ Ready to send ({todayEmailQueue.length})</div>
+                    <button className="btn btn-small btn-primary" data-testid="start-run"
+                      disabled={runList.length === 0}
+                      onClick={() => { setTodayOpen(false); openCompose(runList.map(x => x.venue.id)); }}
+                      title={runList.length < todayEmailQueue.length ? `Daily cap leaves room for ${runList.length} of ${todayEmailQueue.length} — the rest keep until tomorrow` : 'Step through a personalized draft for each venue — each gets its own status-appropriate template'}>
+                      ▶ Start send run ({runList.length})
+                    </button>
+                  </div>
+                  {todayEmailQueue.map(item => row(item,
+                    <button className="btn btn-small" onClick={() => { setTodayOpen(false); openCompose([item.venue.id], item.template); }}>Compose</button>))}
+                </div>
+              )}
+
+              {todayActions.call.length > 0 && (
+                <div style={{ marginTop: '.6rem' }}>
+                  <div style={{ fontWeight: 700, fontSize: '.8rem' }}>📞 Calls to make ({todayActions.call.length})</div>
+                  {todayActions.call.map(item => row(item,
+                    <button className="btn btn-small" style={{ borderColor: 'var(--success)', color: 'var(--success)' }} onClick={() => { setTodayOpen(false); setCallVenueId(item.venue.id); setCallCopied(false); setEnrichEmailInput(''); }}>Open script</button>))}
+                </div>
+              )}
+
+              {todayActions.find_email.length > 0 && (
+                <div style={{ marginTop: '.6rem' }}>
+                  <div style={{ fontWeight: 700, fontSize: '.8rem' }}>🔎 Needs a contact ({todayActions.find_email.length})</div>
+                  {todayActions.find_email.map(item => row(item,
+                    <button className="btn btn-small" style={{ borderColor: 'var(--warning)', color: 'var(--warning)' }} onClick={() => { setTodayOpen(false); setVenueFilter('noemail'); setEnrichVenueId(item.venue.id); setEnrichEmailInput(''); }}>Find email</button>))}
+                </div>
+              )}
+
+              {todayActions.exhausted.length > 0 && (
+                <div style={{ marginTop: '.6rem' }}>
+                  <div style={{ fontWeight: 700, fontSize: '.8rem' }}>⛔ Sequence complete ({todayActions.exhausted.length})</div>
+                  <div style={{ fontSize: '.68rem', color: 'var(--text-muted)', marginBottom: '.2rem' }}>{MAX_SEQUENCE_SENDS} sends with no reply — email has had its shot. Try a call, or snooze and circle back next season.</div>
+                  {todayActions.exhausted.map(item => row(item,
+                    (item.venue.phone || '').trim()
+                      ? <button className="btn btn-small" style={{ borderColor: 'var(--success)', color: 'var(--success)' }} onClick={() => { setTodayOpen(false); setCallVenueId(item.venue.id); setCallCopied(false); setEnrichEmailInput(''); }}>📞 Call instead</button>
+                      : <span style={{ fontSize: '.66rem', color: 'var(--text-muted)' }}>no phone</span>))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      };
+
       // Phone-first outreach: personalized script + one-tap outcome logging, with
       // mid-call email capture (the enrichment moment: "send me something" → save it).
       const renderCallOverlay = () => {
@@ -9483,6 +9648,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           {prospector && renderProspectorOverlay()}
           {compose && composeVenue && renderComposeOverlay()}
           {callVenue && renderCallOverlay()}
+          {todayOpen && renderTodayOverlay()}
         </div>
       );
     }

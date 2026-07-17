@@ -147,6 +147,12 @@ for (const g of [
   'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
 ]) pieces.push(extractDecl(g));
 
+// Outreach sequences ("Today's Outreach") — constants before the brain that uses them.
+for (const g of [
+  'FOLLOWUP_DUE_DAYS', 'DAILY_OUTREACH_CAP', 'MAX_SEQUENCE_SENDS', 'SEQUENCE_STEP_DAYS',
+  'addDaysISO', 'sendsToday', 'nextActionFor',
+]) pieces.push(extractDecl(g));
+
 // Pure functions. (Function declarations hoist, so order among them is not
 // significant — grouped by concern for readability.)
 for (const f of [
@@ -170,6 +176,7 @@ const EXPORTS = [
   'GMAIL_REPLY_CHECK_COOLDOWN_MS', 'gmailB64Utf8', 'gmailBase64Url', 'gmailEncodeHeader',
   'gmailBuildRfc2822', 'gmailThreadHasReply', 'gmailReplyCheckCandidates',
   'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
+  'DAILY_OUTREACH_CAP', 'MAX_SEQUENCE_SENDS', 'SEQUENCE_STEP_DAYS', 'addDaysISO', 'sendsToday', 'nextActionFor',
 ];
 
 // Minimal browser shims the algorithm touches (genId uses window.crypto).
