@@ -1050,9 +1050,11 @@
     // ?act= param — a quiet lounge tags differently than a high-energy casino room).
     const VENUE_FORMATS = ['solo', 'duo', 'trio', 'band', 'late_shift'];
     const VENUE_FORMAT_LABELS = { solo: 'Solo', duo: 'Duo', trio: 'Trio', band: 'Full Band', late_shift: 'Late Shift Band' };
-    // The band's actual hosted EPK — the default tagged-link target until/unless a
-    // different EPK URL is configured in the EPK & Templates tab.
-    const EPK_LIVE_URL = 'https://quantumq1981.github.io/chriszemba-EPK/';
+    // The band's shareable EPK link (a bit.ly redirect to the hosted GitHub Pages
+    // site) — the default tagged-link target until/unless a different EPK URL is
+    // configured in the EPK & Templates tab. Bitly forwards query params through
+    // to the destination, so ?act=&track= tagging still reaches the live EPK.
+    const EPK_LIVE_URL = 'https://bit.ly/Chris-Zemba-EPK';
     // Short per-venue tracking token (base36, 6 chars), generated once when a venue
     // enters the pipeline and carried on every EPK link tagged for it.
     const genTrackingToken = () => Math.random().toString(36).slice(2, 8).padEnd(6, '0').slice(0, 6);
