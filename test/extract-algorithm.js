@@ -153,8 +153,9 @@ for (const g of [
   'smoothedRate', 'typeScoreMultiplier', 'bestStatInsight',
 ]) pieces.push(extractDecl(g));
 
-// EPK link infrastructure (slug before the link builder).
-for (const g of ['epkVenueSlug', 'epkLinkForVenue']) pieces.push(extractDecl(g));
+// EPK link infrastructure (VENUE_FORMATS + slug before the link builder, which
+// consults both to decide between the ?act=&track= and legacy ?ref= schemes).
+for (const g of ['VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'epkLinkForVenue']) pieces.push(extractDecl(g));
 
 // Outreach sequences ("Today's Outreach") — constants before the brain that uses them.
 for (const g of [
@@ -186,7 +187,7 @@ const EXPORTS = [
   'gmailBuildRfc2822', 'gmailThreadHasReply', 'gmailReplyCheckCandidates',
   'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
   'DAILY_OUTREACH_CAP', 'MAX_SEQUENCE_SENDS', 'SEQUENCE_STEP_DAYS', 'addDaysISO', 'sendsToday', 'nextActionFor',
-  'epkVenueSlug', 'epkLinkForVenue',
+  'VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'epkLinkForVenue',
   'MIN_LEARN_SAMPLE', 'venueOutcome', 'collectOutreachStats', 'smoothedRate', 'typeScoreMultiplier', 'bestStatInsight',
 ];
 

@@ -708,6 +708,47 @@ higher-heuristic restaurant at 4.2 vs 2.4 with 📈/📉 chips; under-sampled
 pipeline → no panel, no note, heuristic order preserved); full regression →
 Gmail 32/32, enrichment 18/18, sequences 17/17, EPK 9/9; 0 page errors.
 
+## 9o. Change log — 2026-07 EPK tracking links: per-venue act + token
+
+The EPK (`quantumq1981/chriszemba-EPK`) is now genuinely live at GitHub Pages, and
+`?ref=<slug>` only identified *who* clicked — not which act was pitched or which
+outreach run sent it. This pass makes the live URL the default target and layers a
+richer, per-venue tag on top.
+
+- **`EPK_LIVE_URL`** (module scope, before `EPK_SETTINGS_DEFAULT`/`BLANK_VENUE`,
+  which both consume it) = `https://quantumq1981.github.io/chriszemba-EPK/`. It is
+  now `EPK_SETTINGS_DEFAULT.epkUrl`'s default, so the existing empty-field backfill
+  (§9h) fills it in for both fresh installs and existing ones that never set a
+  custom EPK URL — the "EPK is live" state (§9m) now shows out of the box.
+- **Venue schema**: `BLANK_VENUE` gains `preferredFormat` (`'solo'|'duo'|'trio'|
+  'band'|'late_shift'`, `VENUE_FORMATS`/`VENUE_FORMAT_LABELS`) and `trackingToken`
+  (short base36 string from `genTrackingToken()`). Every venue-creating path stamps
+  a token exactly once: `addVenue`, `bulkAddVenues` (covers CSV import, the Vegas
+  Directory, and the Gig Prospector, which all funnel through it), and a one-time
+  load-time backfill for venues that predate this field. Tokens are never
+  regenerated afterward, so a venue's link stays stable across every touch.
+  "Preferred Act / Format" is a new dropdown in the Add/Edit Venue form.
+- **`epkLinkForVenue` extended** (not replaced): a venue with a `trackingToken` now
+  gets `?act=<format>&track=<token>` (format falls back to `band` if unset/invalid);
+  a venue with no token (pre-PR-128 data, absent from a hand-built test fixture)
+  keeps the original `?ref=<slug>`. Since `fillTemplate`'s `{{epk_link}}` already
+  calls `epkLinkForVenue`, every template — outreach, follow-up, tailored pitch,
+  post-gig, Gmail sends — picks up the new tag with no call-site changes.
+- **"🔗 Preview link" toggle** on each venue row (`VenueModal`, next to Compose/
+  Call/Find email): expands an inline panel showing the format label, the raw
+  token, the full tagged URL, and a Copy button — so the exact link a venue's
+  emails will carry is visible before hitting send. The EPK & Templates publish
+  block's copy was updated to describe the new tag shape.
+
+Verification: Babel compile clean; `npm test` → 77/77 (5 new: token shape/
+variance, `?act=&track=` composition incl. existing-query `&`, default-to-band
+on blank/invalid format, legacy `?ref=` fallback with no token, URL-encoding);
+headless drive (vendored libs): added a venue with format "Late Shift Band",
+🔗 Preview link showed `…chriszemba-EPK/?act=late_shift&track=<token>`; a second
+drive confirmed the Compose Email draft for a "Trio" venue ends with
+`…chriszemba-EPK/?act=trio&track=<token>`; EPK & Templates tab shows "EPK is
+live" against the real URL with no user action; 0 page errors.
+
 ---
 
 ## 10. Gmail API integration (BUILT 2026-07 — see §9j; spec kept for reference)
