@@ -1046,6 +1046,16 @@
 
     /******************* VENUE CRM CONSTANTS *******************/
     const VENUE_TYPES = ['Bar','Restaurant','Club','Event Space','Casino','Festival','Corporate','Hotel','Theater','Other'];
+    // Which Zemba Music act to pitch/tag a venue for (drives the EPK tracking link's
+    // ?act= param — a quiet lounge tags differently than a high-energy casino room).
+    const VENUE_FORMATS = ['solo', 'duo', 'trio', 'band', 'late_shift'];
+    const VENUE_FORMAT_LABELS = { solo: 'Solo', duo: 'Duo', trio: 'Trio', band: 'Full Band', late_shift: 'Late Shift Band' };
+    // The band's actual hosted EPK — the default tagged-link target until/unless a
+    // different EPK URL is configured in the EPK & Templates tab.
+    const EPK_LIVE_URL = 'https://quantumq1981.github.io/chriszemba-EPK/';
+    // Short per-venue tracking token (base36, 6 chars), generated once when a venue
+    // enters the pipeline and carried on every EPK link tagged for it.
+    const genTrackingToken = () => Math.random().toString(36).slice(2, 8).padEnd(6, '0').slice(0, 6);
     // Per venue-type tuning for tailored outreach repertoire suggestions.
     // vibe: high (energetic/danceable), balanced (broad crowd-pleasers), dynamic (showcase range).
     const VENUE_TUNING = {
@@ -1134,11 +1144,11 @@
       techAdvance: 'Professional PA available when required\nProfessional lighting available\nPower requirements provided in advance\nFlexible stage footprint — indoor & outdoor capable\nQuick load-in / load-out\nBackground music during breaks available\nPublic address announcements available',
       // 5 — Contact & official links (add your booking email/phone, website, hub & socials)
       contactEmail: '', contactPhone: '', pressEmail: '',
-      website: '', linktree: '', socials: '', epkUrl: '',
+      website: '', linktree: '', socials: '', epkUrl: EPK_LIVE_URL,
       templates: EMAIL_TEMPLATES_DEFAULT
     };
 
-    const BLANK_VENUE = { name: '', email: '', phone: '', contactName: '', type: 'Bar', city: '', state: '', website: '', notes: '', status: 'prospect', lastContactDate: '' };
+    const BLANK_VENUE = { name: '', email: '', phone: '', contactName: '', type: 'Bar', city: '', state: '', website: '', notes: '', status: 'prospect', lastContactDate: '', preferredFormat: '', trackingToken: '' };
 
     // ── Contact enrichment + phone-first outreach ─────────────────────────────
     // Prospector/OSM venues usually arrive phone-only; the outreach engine is
@@ -1285,9 +1295,11 @@
     };
 
     // ── EPK link infrastructure ───────────────────────────────────────────────
-    // Every outgoing pitch tags the hosted EPK link per venue (?ref=<slug>), so any
-    // host with analytics (Netlify, GitHub Pages + counter, linktree) shows *which
-    // buyer actually clicked* — the first engagement signal without a backend.
+    // Every outgoing pitch tags the hosted EPK link per venue, so any host with
+    // analytics (Netlify, GitHub Pages + counter, linktree) shows *which buyer
+    // actually clicked* — the first engagement signal without a backend. Venues
+    // carrying a trackingToken (every venue added since PR #128) get the richer
+    // ?act=<format>&track=<token> tag; older venues fall back to ?ref=<slug>.
     const epkVenueSlug = (venue) => String((venue && venue.name) || '')
       .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'venue';
 
@@ -1295,7 +1307,12 @@
       const url = String(epkUrl || '').trim();
       if (!url) return '';
       if (!venue) return url;
-      return url + (url.includes('?') ? '&' : '?') + 'ref=' + epkVenueSlug(venue);
+      const sep = url.includes('?') ? '&' : '?';
+      if (venue.trackingToken) {
+        const format = VENUE_FORMATS.includes(venue.preferredFormat) ? venue.preferredFormat : 'band';
+        return url + sep + 'act=' + encodeURIComponent(format) + '&track=' + encodeURIComponent(venue.trackingToken);
+      }
+      return url + sep + 'ref=' + epkVenueSlug(venue);
     };
 
     // ── Outreach sequences ("Today's Outreach") ───────────────────────────────
@@ -8027,6 +8044,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [dirSelected, setDirSelected] = useState([]); // directory entry names picked for import
       const [prospector, setProspector] = useState(null); // Gig Prospector overlay state (null = closed)
       const [expandedLogId, setExpandedLogId] = useState(null); // venue id with expanded touch timeline
+      const [previewLinkId, setPreviewLinkId] = useState(null); // venue id with the tracking-link preview open
       // Contact enrichment + phone-first outreach
       const [enrichVenueId, setEnrichVenueId] = useState(null); // venue id with the find-email panel open
       const [enrichEmailInput, setEnrichEmailInput] = useState('');
@@ -8091,6 +8109,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         setSelectedIds([]); setCompose(null); setVenueSearch(''); setVenueFilter('all');
         setShowDirectory(false); setProspector(null);
         setEnrichVenueId(null); setEnrichEmailInput(''); setCallVenueId(null); setTodayOpen(false);
+        setPreviewLinkId(null);
         setGmailCfg(GmailAPI.getConfig());
       }, [open]);
 
@@ -8534,6 +8553,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     {VENUE_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                   </select>
                 </div>
+                <div className="input-group"><label>Preferred Act / Format</label>
+                  <select value={venueForm.preferredFormat || ''} onChange={e => setVenueForm({...venueForm, preferredFormat: e.target.value})}>
+                    <option value="">Auto (Full Band)</option>
+                    {VENUE_FORMATS.map(f => <option key={f} value={f}>{VENUE_FORMAT_LABELS[f]}</option>)}
+                  </select>
+                </div>
               </div>
               <div className="input-group"><label>Website</label><input value={venueForm.website} onChange={e => setVenueForm({...venueForm, website: e.target.value})} placeholder="https://venue.com" /></div>
               <div className="input-group"><label>Notes</label><textarea value={venueForm.notes} onChange={e => setVenueForm({...venueForm, notes: e.target.value})} rows={2} placeholder="Capacity, parking, preferred genres..." style={{ resize: 'vertical' }} /></div>
@@ -8785,7 +8810,29 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                         🔎 Find email
                       </button>
                     )}
+                    <button className="btn btn-small"
+                      onClick={() => setPreviewLinkId(previewLinkId === venue.id ? null : venue.id)}
+                      style={{ fontSize: '.7rem', borderColor: '#a78bfa', color: '#a78bfa' }}
+                      title="See the exact tagged EPK link this venue's emails will carry — act + tracking token — before you hit send">
+                      🔗 Preview link
+                    </button>
                   </div>
+                  {previewLinkId === venue.id && (() => {
+                    const trackedLink = epkLinkForVenue(localEpk.epkUrl || EPK_LIVE_URL, venue);
+                    const format = VENUE_FORMATS.includes(venue.preferredFormat) ? venue.preferredFormat : 'band';
+                    return (
+                      <div className="venue-enrich-panel">
+                        <span style={{ fontSize: '.68rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                          {VENUE_FORMAT_LABELS[format]} · token <code>{venue.trackingToken || '—'}</code>
+                        </span>
+                        <code style={{ fontSize: '.7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 120 }} title={trackedLink}>{trackedLink}</code>
+                        <button className="btn btn-small" onClick={() => {
+                          const done = () => showToast('Tracking link copied', 'success');
+                          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(trackedLink).then(done, done); else done();
+                        }}>📋 Copy</button>
+                      </div>
+                    );
+                  })()}
                   {enrichVenueId === venue.id && (
                     <div className="venue-enrich-panel">
                       {(venue.website || '').trim() && (
@@ -9181,7 +9228,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                           <a className="btn btn-small" style={{ textDecoration: 'none' }} href={/^https?:\/\//i.test(url) ? url : 'https://' + url} target="_blank" rel="noopener">Open ↗</a>
                         </div>
                         <div style={{ fontSize: '.66rem', color: 'var(--text-muted)', marginTop: '.25rem' }}>
-                          Emails tag the link per venue (<code>?ref=venue-name</code>) — check your host's analytics to see <b>which buyer clicked</b>.
+                          Emails tag the link per venue with its pitched act and a tracking token (<code>?act=band&amp;track=v7x9p2</code>) — check your host's analytics, or use 🔗 Preview link on a venue row, to see <b>which buyer clicked</b>.
                         </div>
                       </div>
                     ) : (
@@ -9190,7 +9237,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                         <ol style={{ fontSize: '.7rem', color: 'var(--text-muted)', lineHeight: 1.7, margin: '0 0 .3rem 1.1rem', padding: 0 }}>
                           <li><b>⬇ .html</b> (above) downloads your self-contained EPK — rename it <code>index.html</code>.</li>
                           <li>Host it free: drag the file onto <b>app.netlify.com/drop</b>, or push it to a <b>GitHub Pages</b> repo.</li>
-                          <li>Paste the resulting URL into <b>EPK URL (hosted)</b> below — instantly, every email template links your EPK, tagged per venue (<code>?ref=…</code>) so your host's analytics show who clicked.</li>
+                          <li>Paste the resulting URL into <b>EPK URL (hosted)</b> below — instantly, every email template links your EPK, tagged per venue with its act and tracking token (<code>?act=…&amp;track=…</code>) so your host's analytics show who clicked.</li>
                         </ol>
                         <div style={{ fontSize: '.66rem', color: 'var(--text-muted)' }}>Until then, outgoing emails show an unfilled <code>[EPK Link]</code> placeholder (the composer warns you).</div>
                       </div>
@@ -10398,7 +10445,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const storedImports = LS.get(LS_KEYS.bandImports(activeBandId)) || [];
         const storedGigs = LS.get(LS_KEYS.bandGigs(activeBandId)) || [];
         const storedWatermark = LS.get(LS_KEYS.bandWatermark(activeBandId)) || null;
-        const storedVenues = LS.get(LS_KEYS.bandVenues(activeBandId)) || [];
+        // Backfill: venues added before per-venue tracking tokens existed get one now
+        // (stable per venue thereafter — never regenerated on subsequent loads).
+        const storedVenues = (LS.get(LS_KEYS.bandVenues(activeBandId)) || [])
+          .map(v => v.trackingToken ? v : { ...v, trackingToken: genTrackingToken() });
         const storedBookings = LS.get(LS_KEYS.bandBookings(activeBandId)) || [];
         const storedRoster = LS.get(LS_KEYS.bandRoster(activeBandId)) || [];
 
@@ -10454,7 +10504,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       }, [bookings, activeBandId]);
 
       // Venue & Booking CRUD
-      const addVenue = (form) => { setVenues(prev => [...prev, { ...form, id: genId(), createdAt: Date.now() }]); showToast('Venue added', 'success'); };
+      const addVenue = (form) => { setVenues(prev => [...prev, { ...form, id: genId(), createdAt: Date.now(), trackingToken: form.trackingToken || genTrackingToken() }]); showToast('Venue added', 'success'); };
       // Status transitions are logged into contactLog (kind:'status') so the outreach
       // dashboard can attribute replies/bookings to the template that triggered them.
       const updateVenue = (v) => setVenues(prev => prev.map(x => {
@@ -10472,7 +10522,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           const key = (v.name || '').trim().toLowerCase();
           if (!key || currentNames.has(key)) { skipped++; return; }
           currentNames.add(key);
-          toAdd.push({ ...BLANK_VENUE, ...v, id: genId(), createdAt: Date.now() });
+          toAdd.push({ ...BLANK_VENUE, ...v, id: genId(), createdAt: Date.now(), trackingToken: v.trackingToken || genTrackingToken() });
         });
         if (toAdd.length) setVenues(prev => [...prev, ...toAdd]);
         const msg = toAdd.length
