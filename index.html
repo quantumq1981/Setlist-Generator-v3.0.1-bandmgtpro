@@ -1094,33 +1094,33 @@
     const EMAIL_TEMPLATES_DEFAULT = {
       outreach: {
         label: 'Initial Outreach',
-        subject: 'Live Music Inquiry — {{band_name}}',
-        body: `Hi,\n\nMy name is Chris Zemba, and I'm a Las Vegas-based guitarist, vocalist, and bandleader with more than 25 years of professional performance experience throughout Southern Nevada.\n\nI noticed that your venue features live music, and I wanted to reach out because I believe my brand, repertoire, and performance style could be a strong fit for your audience.\n\nI currently perform in a variety of formats, ranging from solo acoustic shows to full-band productions. My song list covers a wide range of Classic Rock, Blues, Soul, R&B, Funk, Country, and crowd-favorite dance music, allowing each performance to be tailored to the venue, event, and audience.\n\nMy EPK is linked below — it includes performance videos, photos, social media links, song list information, and additional details about the entertainment options I offer through {{band_name}}.\n\nIn addition to delivering a professional and high-energy live show, I'm also an active promoter for my events and stay engaged with a local fanbase that regularly supports my performances.\n\nI'd welcome the opportunity to discuss any available openings on your entertainment calendar and explore how I may be a good fit for your regular live music lineup.\n\nThank you for your time and consideration. I look forward to hearing from you.\n\nBest regards,\nChris Zemba\n{{band_name}}\nLas Vegas, Nevada\n{{contact_phone}}\n{{contact_email}}\n{{epk_link}}`
+        subject: 'Live music for {{venue_name}} — Chris Zemba (Las Vegas)',
+        body: `Hi {{contact_name}},\n\nI'm Chris Zemba — a Las Vegas guitarist, vocalist, and bandleader with 25+ years bringing live music to bars, restaurants, casinos, and lounges around the valley. I'd love to play {{venue_name}}.\n\n{{tailored_pitch}}\n\nI scale from solo acoustic to a full band, run my own professional sound, and I promote every show through my own channels — so I help fill the room, not just play it. Video, photos, and the full song list are here:\n{{epk_link}}\nOne-page overview (PDF): {{one_sheet}}\n\nAre you booking live music right now? I'd love to be considered for an open date.\n\nBest,\nChris Zemba\n{{band_name}} · Las Vegas, NV\n{{contact_phone}} | {{contact_email}}`
       },
       followup: {
         label: 'Follow-Up',
-        subject: 'Following Up – Live Music Booking Inquiry',
-        body: `Hi,\n\nI wanted to follow up on the email I sent regarding potential live music opportunities at your venue.\n\nI know entertainment calendars can fill quickly, so I just wanted to reconnect and see if there may be any upcoming openings where my solo acoustic act or full-band production could be a good fit.\n\nAs mentioned, I'm a Las Vegas-based guitarist, vocalist, and bandleader with over 25 years of professional performance experience throughout Southern Nevada. My repertoire covers Classic Rock, Blues, Soul, R&B, Funk, Country, and crowd-favorite dance music, with flexible formats that can be tailored to your venue, audience, and programming needs.\n\nMy EPK is linked again below for convenience — it contains performance videos, photos, song list information, social media links, and additional details about the entertainment options available through {{band_name}}.\n\nI'd be happy to discuss any available dates, open slots, or future opportunities to become part of your live entertainment lineup.\n\nThank you again for your time and consideration. I'd welcome the opportunity to connect.\n\nBest regards,\nChris Zemba\n{{band_name}}\nLas Vegas, Nevada\n{{contact_phone}}\n{{contact_email}}\n{{epk_link}}`
+        subject: 'Following up — live music for {{venue_name}}',
+        body: `Hi {{contact_name}},\n\nJust circling back in case my note got buried — I know booking calendars move fast.\n\nI'm Chris Zemba, the Las Vegas guitarist and bandleader who reached out about live music for {{venue_name}}. Solo acoustic through full band, fully self-contained, and tailored to your room and crowd.\n\nEverything's in one place here:\n{{epk_link}}\n\nEven a quick "not right now, check back later" helps me time things well. Any openings coming up?\n\nBest,\nChris Zemba\n{{band_name}} · Las Vegas, NV\n{{contact_phone}} | {{contact_email}}`
       },
       tailoredPitch: {
         label: 'Venue-Tailored Pitch',
-        subject: 'Live Music for {{venue_name}} — {{band_name}}',
-        body: `Hi {{contact_name}},\n\nI'm Chris Zemba, a Las Vegas-based guitarist, vocalist, and bandleader with {{band_name}}. I came across {{venue_name}} and believe we'd be a strong fit for your stage.\n\n{{tailored_pitch}}\n\nWe scale from solo acoustic to full band and tailor every set to the room, crowd, and run-of-show. My full EPK — performance video, photos, complete song list, and references — is here:\n{{epk_link}}\nOne-page overview (PDF): {{one_sheet}}\n\nI'd welcome the chance to talk through open dates on your calendar.\n\nBest regards,\nChris Zemba\n{{band_name}} — Las Vegas, NV\n{{contact_phone}} | {{contact_email}}`
+        subject: 'A live-music fit for {{venue_name}} — Chris Zemba',
+        body: `Hi {{contact_name}},\n\nI'm Chris Zemba, a Las Vegas guitarist, vocalist, and bandleader. I came across {{venue_name}} and think I'd be a great fit for your stage.\n\n{{tailored_pitch}}\n\nI scale from solo acoustic to full band and tailor every set to the room, crowd, and run-of-show. Video, photos, complete song list, and references:\n{{epk_link}}\nOne-page overview (PDF): {{one_sheet}}\n\nCould we talk through open dates on your calendar?\n\nBest,\nChris Zemba\n{{band_name}} · Las Vegas, NV\n{{contact_phone}} | {{contact_email}}`
       },
       callRequest: {
         label: "Let's Connect",
-        subject: "Quick call? — {{band_name}} at {{venue_name}}",
-        body: `Hi {{contact_name}},\n\nThanks for your interest in {{band_name}}! I'd love to jump on a quick 10-minute call to talk through availability, logistics, and how we can make it a great night for your guests.\n\nWould any of these times work?\n- [Day 1], [Time]\n- [Day 2], [Time]\n\nOr feel free to call me at {{contact_phone}} anytime.\n\nLooking forward to it!\n\n[Your Name]\n{{band_name}}`
+        subject: 'Quick call about {{venue_name}}?',
+        body: `Hi {{contact_name}},\n\nThanks for getting back to me — glad there's interest! The easiest next step is a quick 10-minute call to talk dates, format, and logistics so I can make this an easy yes for you.\n\nWhat's a good time in the next few days? Or call or text me anytime at {{contact_phone}} and we'll sort it fast.\n\nIf it helps beforehand, everything's here:\n{{epk_link}}\n\nTalk soon,\nChris Zemba\n{{band_name}} · Las Vegas, NV\n{{contact_phone}} | {{contact_email}}`
       },
       postGig: {
         label: 'Post-Gig Thanks & Rebook',
-        subject: 'Thank you — and let\'s lock in the next one ({{band_name}})',
-        body: `Hi {{contact_name}},\n\nThank you again for having {{band_name}} at {{venue_name}} — we had a great time performing for your crowd and hope your team was as happy with the night as we were.\n\nI'd love to make this a regular thing. If the night worked for you, let's get the next date (or a recurring slot) on the calendar while it's fresh — I'll promote it through my socials and local channels just like this one.\n\nA quick review or a few words I can quote in my press kit would also mean a lot.\n\nWhat does your calendar look like over the next few weeks?\n\nBest regards,\nChris Zemba\n{{band_name}}\n{{contact_phone}} | {{contact_email}}\n{{epk_link}}`
+        subject: "Thank you — let's do it again ({{venue_name}})",
+        body: `Hi {{contact_name}},\n\nThank you for having me at {{venue_name}} — I had a great time, and I hope your team and your guests did too.\n\nI'd love to make this a regular thing. If the night worked for you, let's lock in the next date (or a recurring slot) while it's fresh — I'll promote it just like last time.\n\nAnd if you have a minute, a short review or a line I can quote would mean a lot.\n\nWhat does your calendar look like over the next few weeks?\n\nBest,\nChris Zemba\n{{band_name}} · Las Vegas, NV\n{{contact_phone}} | {{contact_email}}`
       },
       bookingConfirmation: {
         label: 'Booking Confirmed',
-        subject: 'Booking Confirmed — {{band_name}} at {{venue_name}}, {{date}}',
-        body: `Hi {{contact_name}},\n\nWe're officially locked in — here's a summary:\n\nBand: {{band_name}}\nVenue: {{venue_name}}\nDate: {{date}}\nStart Time: {{start_time}}\nAgreed Fee: {{fee}}\n\nTech rider (stage plot, input list, power) for your team: {{tech_rider}}\n\nI'll follow up closer to the date with load-in details. Don't hesitate to reach out if anything changes.\n\nLooking forward to a great night!\n\n[Your Name]\n{{band_name}}\n{{contact_email}} | {{contact_phone}}`
+        subject: 'Confirmed — Chris Zemba at {{venue_name}}, {{date}}',
+        body: `Hi {{contact_name}},\n\nWe're locked in — here are the details:\n\nAct: {{band_name}}\nVenue: {{venue_name}}\nDate: {{date}}\nStart time: {{start_time}}\nFee: {{fee}}\n\nTech rider (stage plot, input list, power) for your team: {{tech_rider}}\n\nI'll follow up closer to the date with load-in details. If anything changes on your end, just let me know.\n\nLooking forward to a great night!\n\nBest,\nChris Zemba\n{{band_name}} · Las Vegas, NV\n{{contact_email}} | {{contact_phone}}`
       }
     };
 
@@ -8214,7 +8214,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const repl = {
           '{{band_name}}': bandName || '',
           '{{venue_name}}': venue?.name || '',
-          '{{contact_name}}': venue?.contactName || venue?.name || '',
+          '{{contact_name}}': (venue?.contactName || '').trim() || 'there',
           '{{epk_link}}': localEpk.epkUrl ? epkLinkForVenue(localEpk.epkUrl, venue, { utm: true, campaign: templateKey }) : '[EPK Link]',
           '{{demo_link}}': localEpk.demoVideoUrl || '[Demo Link]',
           '{{one_sheet}}': localEpk.oneSheetUrl || '',
@@ -8235,6 +8235,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         let subj = tpl.subject; let body = tpl.body;
         Object.entries(repl).forEach(([k, v]) => { subj = subj.split(k).join(v); body = body.split(k).join(v); });
         subj = subj.replace(/[,\s]+$/, ''); // tidy dangling punctuation from unfilled placeholders (e.g. no booking date)
+        // Foolproofing: if an inline "Label: {{tag}}" line's tag resolved to empty (no one-sheet,
+        // rider, fee, or start time), drop the whole line so a bare dangling label never ships.
+        // Line counts stay aligned because no replacement value contains a newline.
+        const tplLines = tpl.body.split('\n');
+        body = body.split('\n')
+          .filter((line, i) => !(/:\s*\{\{\w+\}\}\s*$/.test(tplLines[i] || '') && /:\s*$/.test(line)))
+          .join('\n')
+          .replace(/[ \t]+$/gm, '')   // trim trailing spaces
+          .replace(/\n{3,}/g, '\n\n'); // collapse the blank gap a dropped line could leave
         return { to: venue?.email || '', subject: subj, body };
       };
 
@@ -9415,8 +9424,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               <div className="input-group"><label>Body</label>
                 <textarea className="tpl-body-textarea" value={curTpl.body} onChange={e => updTpl('body', e.target.value)} rows={10} />
               </div>
-              <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
-                <button className="btn btn-small" onClick={() => { const def = EMAIL_TEMPLATES_DEFAULT[tplKey]; setLocalEpk({...localEpk, templates: { ...tpls, [tplKey]: { ...def } }}); setEpkDirty(true); }}>Reset to Default</button>
+              <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                <button className="btn btn-small" data-testid="tpl-restore-all" onClick={() => {
+                  if (!window.confirm('Replace ALL templates with the latest recommended versions? Any wording you’ve customized will be overwritten.')) return;
+                  setLocalEpk({ ...localEpk, templates: { ...EMAIL_TEMPLATES_DEFAULT } });
+                  setEpkDirty(true);
+                  showToast('All templates restored to the latest — review and Save', 'success');
+                }} title="Load the latest recommended wording for every template at once">↻ Restore all to latest</button>
+                <button className="btn btn-small" onClick={() => { const def = EMAIL_TEMPLATES_DEFAULT[tplKey]; setLocalEpk({...localEpk, templates: { ...tpls, [tplKey]: { ...def } }}); setEpkDirty(true); }}>Reset this to Default</button>
                 {epkDirty && <button className="btn btn-primary btn-small" onClick={() => { onSaveEpkSettings(localEpk); setEpkDirty(false); showToast('Templates saved', 'success'); }}>Save</button>}
               </div>
 
