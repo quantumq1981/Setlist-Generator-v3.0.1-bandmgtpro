@@ -71,3 +71,26 @@ test('epkLinkForVenue URL-encodes act/track values that need it', () => {
   const v = { name: 'X', preferredFormat: 'band', trackingToken: 'a b&c' };
   assert.equal(epkLinkForVenue('https://a.com', v), 'https://a.com?act=band&track=a%20b%26c');
 });
+
+// ── opt-in UTM tagging (fillTemplate passes { utm:true, campaign:<templateKey> }) ──
+
+test('epkLinkForVenue leaves the base tag untouched unless opts.utm is set', () => {
+  const v = { name: 'X', preferredFormat: 'duo', trackingToken: 'abc123' };
+  // No opts, or opts without utm → identical to the two-arg form (stable link identity).
+  assert.equal(epkLinkForVenue('https://a.com', v), 'https://a.com?act=duo&track=abc123');
+  assert.equal(epkLinkForVenue('https://a.com', v, {}), 'https://a.com?act=duo&track=abc123');
+  assert.equal(epkLinkForVenue('https://a.com', v, { campaign: 'outreach' }), 'https://a.com?act=duo&track=abc123',
+    'campaign alone (no utm flag) does not tag');
+});
+
+test('epkLinkForVenue appends utm_source/medium (+ optional utm_campaign) when opts.utm is set', () => {
+  const tokenVenue = { name: 'X', preferredFormat: 'band', trackingToken: 'abc123' };
+  assert.equal(epkLinkForVenue('https://a.com', tokenVenue, { utm: true }),
+    'https://a.com?act=band&track=abc123&utm_source=outreach&utm_medium=email');
+  assert.equal(epkLinkForVenue('https://a.com', tokenVenue, { utm: true, campaign: 'tailoredPitch' }),
+    'https://a.com?act=band&track=abc123&utm_source=outreach&utm_medium=email&utm_campaign=tailoredPitch');
+  // Also applies on the legacy ?ref= path, and URL-encodes the campaign.
+  const legacyVenue = { name: 'Test Tavern' };
+  assert.equal(epkLinkForVenue('https://a.com', legacyVenue, { utm: true, campaign: 'follow up' }),
+    'https://a.com?ref=test-tavern&utm_source=outreach&utm_medium=email&utm_campaign=follow%20up');
+});

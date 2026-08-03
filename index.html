@@ -1050,11 +1050,18 @@
     // ?act= param — a quiet lounge tags differently than a high-energy casino room).
     const VENUE_FORMATS = ['solo', 'duo', 'trio', 'band', 'late_shift'];
     const VENUE_FORMAT_LABELS = { solo: 'Solo', duo: 'Duo', trio: 'Trio', band: 'Full Band', late_shift: 'Late Shift Band' };
-    // The band's shareable EPK link (a bit.ly redirect to the hosted GitHub Pages
-    // site) — the default tagged-link target until/unless a different EPK URL is
-    // configured in the EPK & Templates tab. Bitly forwards query params through
-    // to the destination, so ?act=&track= tagging still reaches the live EPK.
-    const EPK_LIVE_URL = 'https://bit.ly/Chris-Zemba-EPK';
+    // The band's shareable EPK link — the venue-tailored cut of the live EPK
+    // (budget ladder hidden, booker-first hero copy), on the branded domain with
+    // no redirect hop so ?act/&track/&utm_* tagging reaches Plausible cleanly and
+    // the EPK's capture script (chriszemba-EPK) can attribute the click + any
+    // booking-form inquiry back to this venue. Overridable in EPK & Templates.
+    const EPK_LIVE_URL = 'https://zembamusicco.com/venues/';
+    // The full EPK front door + the public sync manifest the EPK build publishes.
+    const EPK_SITE_URL = 'https://zembamusicco.com';
+    const EPK_SYNC_URL = 'https://zembamusicco.com/epk.json';
+    // Prior default EPK/hub links, upgraded to the branded targets on load for
+    // installs that stored them before this change (see the EPK settings loader).
+    const EPK_LEGACY_URLS = ['https://bit.ly/Chris-Zemba-EPK'];
     // Short per-venue tracking token (base36, 6 chars), generated once when a venue
     // enters the pipeline and carried on every EPK link tagged for it.
     const genTrackingToken = () => Math.random().toString(36).slice(2, 8).padEnd(6, '0').slice(0, 6);
@@ -1098,7 +1105,7 @@
       tailoredPitch: {
         label: 'Venue-Tailored Pitch',
         subject: 'Live Music for {{venue_name}} — {{band_name}}',
-        body: `Hi {{contact_name}},\n\nI'm Chris Zemba, a Las Vegas-based guitarist, vocalist, and bandleader with {{band_name}}. I came across {{venue_name}} and believe we'd be a strong fit for your stage.\n\n{{tailored_pitch}}\n\nWe scale from solo acoustic to full band and tailor every set to the room, crowd, and run-of-show. My full EPK — performance video, photos, complete song list, and references — is here:\n{{epk_link}}\nLink hub: {{linktree}}\n\nI'd welcome the chance to talk through open dates on your calendar.\n\nBest regards,\nChris Zemba\n{{band_name}} — Las Vegas, NV\n{{contact_phone}} | {{contact_email}}`
+        body: `Hi {{contact_name}},\n\nI'm Chris Zemba, a Las Vegas-based guitarist, vocalist, and bandleader with {{band_name}}. I came across {{venue_name}} and believe we'd be a strong fit for your stage.\n\n{{tailored_pitch}}\n\nWe scale from solo acoustic to full band and tailor every set to the room, crowd, and run-of-show. My full EPK — performance video, photos, complete song list, and references — is here:\n{{epk_link}}\nOne-page overview (PDF): {{one_sheet}}\n\nI'd welcome the chance to talk through open dates on your calendar.\n\nBest regards,\nChris Zemba\n{{band_name}} — Las Vegas, NV\n{{contact_phone}} | {{contact_email}}`
       },
       callRequest: {
         label: "Let's Connect",
@@ -1113,7 +1120,7 @@
       bookingConfirmation: {
         label: 'Booking Confirmed',
         subject: 'Booking Confirmed — {{band_name}} at {{venue_name}}, {{date}}',
-        body: `Hi {{contact_name}},\n\nWe're officially locked in — here's a summary:\n\nBand: {{band_name}}\nVenue: {{venue_name}}\nDate: {{date}}\nStart Time: {{start_time}}\nAgreed Fee: {{fee}}\n\nI'll follow up closer to the date with load-in details and tech requirements. Don't hesitate to reach out if anything changes.\n\nLooking forward to a great night!\n\n[Your Name]\n{{band_name}}\n{{contact_email}} | {{contact_phone}}`
+        body: `Hi {{contact_name}},\n\nWe're officially locked in — here's a summary:\n\nBand: {{band_name}}\nVenue: {{venue_name}}\nDate: {{date}}\nStart Time: {{start_time}}\nAgreed Fee: {{fee}}\n\nTech rider (stage plot, input list, power) for your team: {{tech_rider}}\n\nI'll follow up closer to the date with load-in details. Don't hesitate to reach out if anything changes.\n\nLooking forward to a great night!\n\n[Your Name]\n{{band_name}}\n{{contact_email}} | {{contact_phone}}`
       }
     };
 
@@ -1141,12 +1148,17 @@
       testimonials: '',
       demographics: 'Adults 30–75 · live music enthusiasts · restaurant & bar patrons · corporate and private event guests · festival attendees · Classic Rock, Blues, Soul & Country fans',
       stats: 'Years Performing | 25+\nSongs Available | 100+\nPerformance Formats | Solo – 8-Piece Band\nTypical Performance Length | 2–4 Hours\nPrimary Market | Las Vegas\nEvents Performed | Hundreds',
-      // 4 — Booking essentials & logistics (rider links to come)
-      techRiderUrl: '', hospitalityRiderUrl: '', pressNews: '',
+      // 4 — Booking essentials & logistics (seeded from the live EPK's published assets)
+      techRiderUrl: 'https://zembamusicco.com/assets/downloads/zemba-music-tech-rider.pdf',
+      oneSheetUrl: 'https://zembamusicco.com/assets/downloads/chris-zemba-one-sheet.pdf',
+      hospitalityRiderUrl: '', pressNews: '',
+      // Compact social-proof line pulled into venue-tailored pitches (see suggestForVenue).
+      credibility: "Featured on FOX5 Las Vegas and in the Las Vegas Review-Journal; casino-lounge residencies including Sam's Town, Planet Hollywood, and Bally's.",
       techAdvance: 'Professional PA available when required\nProfessional lighting available\nPower requirements provided in advance\nFlexible stage footprint — indoor & outdoor capable\nQuick load-in / load-out\nBackground music during breaks available\nPublic address announcements available',
-      // 5 — Contact & official links (add your booking email/phone, website, hub & socials)
-      contactEmail: '', contactPhone: '', pressEmail: '',
-      website: '', linktree: 'https://bit.ly/Chris-Zemba-EPK', socials: '', epkUrl: EPK_LIVE_URL,
+      // 5 — Contact & official links (seeded from the live EPK; pressEmail/socials optional)
+      contactEmail: 'booking@zembamusicco.com', contactPhone: '(702) 706-2145', pressEmail: '',
+      website: EPK_SITE_URL,
+      linktree: 'https://linktr.ee/chriszemba', socials: '', epkUrl: EPK_LIVE_URL,
       templates: EMAIL_TEMPLATES_DEFAULT
     };
 
@@ -1297,24 +1309,34 @@
     };
 
     // ── EPK link infrastructure ───────────────────────────────────────────────
-    // Every outgoing pitch tags the hosted EPK link per venue, so any host with
-    // analytics (Netlify, GitHub Pages + counter, linktree) shows *which buyer
-    // actually clicked* — the first engagement signal without a backend. Venues
-    // carrying a trackingToken (every venue added since PR #128) get the richer
-    // ?act=<format>&track=<token> tag; older venues fall back to ?ref=<slug>.
+    // Every outgoing pitch tags the hosted EPK link per venue, so the live EPK's
+    // capture script (chriszemba-EPK) can name *which buyer clicked* in Plausible
+    // and stamp any resulting booking-form inquiry with the same tag — real
+    // click→booking attribution without a backend. Venues carrying a trackingToken
+    // (every venue added since PR #128) get the richer ?act=<format>&track=<token>
+    // tag; older venues fall back to ?ref=<slug>. Pass opts.utm (and opts.campaign,
+    // typically the template key) to add utm_source/medium/campaign for per-template
+    // reporting — kept opt-in so the base tagged-link identity is stable.
     const epkVenueSlug = (venue) => String((venue && venue.name) || '')
       .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'venue';
 
-    const epkLinkForVenue = (epkUrl, venue) => {
+    const epkLinkForVenue = (epkUrl, venue, opts) => {
       const url = String(epkUrl || '').trim();
       if (!url) return '';
       if (!venue) return url;
       const sep = url.includes('?') ? '&' : '?';
+      let tagged;
       if (venue.trackingToken) {
         const format = VENUE_FORMATS.includes(venue.preferredFormat) ? venue.preferredFormat : 'band';
-        return url + sep + 'act=' + encodeURIComponent(format) + '&track=' + encodeURIComponent(venue.trackingToken);
+        tagged = url + sep + 'act=' + encodeURIComponent(format) + '&track=' + encodeURIComponent(venue.trackingToken);
+      } else {
+        tagged = url + sep + 'ref=' + epkVenueSlug(venue);
       }
-      return url + sep + 'ref=' + epkVenueSlug(venue);
+      if (opts && opts.utm) {
+        tagged += '&utm_source=outreach&utm_medium=email';
+        if (opts.campaign) tagged += '&utm_campaign=' + encodeURIComponent(opts.campaign);
+      }
+      return tagged;
     };
 
     // ── Outreach sequences ("Today's Outreach") ───────────────────────────────
@@ -8180,6 +8202,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         } else {
           pitch = `For a ${t.label}, I'd build the night around ${vibeWord} material tailored to your room and run-of-show, drawing on a deep multi-genre catalog.`;
         }
+        // Lead the pitch with social proof from the EPK so every tailored message carries credibility.
+        if (localEpk.credibility && localEpk.credibility.trim()) pitch += ` ${localEpk.credibility.trim()}`;
         return { typeLabel: t.label, songs: top, pitch };
       };
 
@@ -8191,8 +8215,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           '{{band_name}}': bandName || '',
           '{{venue_name}}': venue?.name || '',
           '{{contact_name}}': venue?.contactName || venue?.name || '',
-          '{{epk_link}}': localEpk.epkUrl ? epkLinkForVenue(localEpk.epkUrl, venue) : '[EPK Link]',
+          '{{epk_link}}': localEpk.epkUrl ? epkLinkForVenue(localEpk.epkUrl, venue, { utm: true, campaign: templateKey }) : '[EPK Link]',
           '{{demo_link}}': localEpk.demoVideoUrl || '[Demo Link]',
+          '{{one_sheet}}': localEpk.oneSheetUrl || '',
+          '{{tech_rider}}': localEpk.techRiderUrl || '',
           '{{linktree}}': localEpk.linktree || '',
           '{{website}}': localEpk.website || '',
           '{{genres}}': localEpk.genres || '',
@@ -9200,6 +9226,32 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const curTpl = tpls[tplKey] || EMAIL_TEMPLATES_DEFAULT[tplKey];
         const upd = (field, val) => { setLocalEpk({...localEpk, [field]: val}); setEpkDirty(true); };
         const updTpl = (field, val) => { setLocalEpk({...localEpk, templates: { ...tpls, [tplKey]: { ...curTpl, [field]: val } }}); setEpkDirty(true); };
+        // Pull canonical booking data from the live EPK's published manifest (epk.json) so the two
+        // projects stay in lockstep. Link/asset URLs are the EPK's to own (always updated); typed
+        // contact/credibility is preserved when already filled. Marks dirty for review + Save.
+        const keep = (mine, theirs) => (mine && String(mine).trim() ? mine : (theirs || mine));
+        const syncFromEpk = async () => {
+          try {
+            const r = await fetch(EPK_SYNC_URL, { cache: 'no-store' });
+            if (!r.ok) throw new Error('http ' + r.status);
+            const d = await r.json();
+            const dl = d.downloads || {};
+            setLocalEpk(prev => ({ ...prev,
+              epkUrl: d.venueCut || prev.epkUrl,
+              website: d.website || prev.website,
+              linktree: d.linktree || prev.linktree,
+              oneSheetUrl: dl.oneSheet || prev.oneSheetUrl,
+              techRiderUrl: dl.techRider || prev.techRiderUrl,
+              contactEmail: keep(prev.contactEmail, d.contactEmail),
+              contactPhone: keep(prev.contactPhone, d.contactPhone),
+              credibility: keep(prev.credibility, d.credibility),
+            }));
+            setEpkDirty(true);
+            showToast('Synced from your live EPK — review and Save', 'success');
+          } catch (e) {
+            showToast('Couldn’t reach the EPK manifest — make sure the EPK is published', 'warning');
+          }
+        };
         const subHead = { fontWeight: 700, fontSize: '.78rem', color: 'var(--accent)', margin: '.7rem 0 .4rem', textTransform: 'uppercase', letterSpacing: '.04em' };
         const hint = { fontSize: '.68rem', color: 'var(--text-muted)', margin: '-.15rem 0 .4rem' };
         return (
@@ -9228,9 +9280,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                           <code style={{ fontSize: '.7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '18rem' }}>{url}</code>
                           <button className="btn btn-small" onClick={() => { const done = () => showToast('EPK link copied', 'success'); if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, done); else done(); }}>📋 Copy</button>
                           <a className="btn btn-small" style={{ textDecoration: 'none' }} href={/^https?:\/\//i.test(url) ? url : 'https://' + url} target="_blank" rel="noopener">Open ↗</a>
+                          <button className="btn btn-small" data-testid="epk-sync" onClick={syncFromEpk} title="Pull booking email, phone, links, and one-sheet/rider from your live EPK so the two stay in sync">🔄 Sync from EPK</button>
                         </div>
                         <div style={{ fontSize: '.66rem', color: 'var(--text-muted)', marginTop: '.25rem' }}>
-                          Emails tag the link per venue with its pitched act and a tracking token (<code>?act=band&amp;track=v7x9p2</code>) — check your host's analytics, or use 🔗 Preview link on a venue row, to see <b>which buyer clicked</b>.
+                          Emails tag the link per venue with its pitched act and a tracking token (<code>?act=band&amp;track=v7x9p2</code>) plus <code>utm_*</code> — the live EPK records an <b>EPK Visit</b> and stamps any booking-form inquiry with the same tag, so you see <b>which buyer clicked and who booked</b>. 🔄 Sync pulls contact + asset links from the EPK so they never drift.
                         </div>
                       </div>
                     ) : (
@@ -9323,7 +9376,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
               <div style={subHead}>4 · Stage &amp; Logistics</div>
               <div className="set-config">
-                <div className="input-group"><label>Technical Rider (link)</label><input value={localEpk.techRiderUrl || ''} onChange={e => upd('techRiderUrl', e.target.value)} placeholder="Link to stage plot / input list PDF" /></div>
+                <div className="input-group"><label>One-Sheet (PDF link) — <code>{'{{one_sheet}}'}</code></label><input value={localEpk.oneSheetUrl || ''} onChange={e => upd('oneSheetUrl', e.target.value)} placeholder="Link to your one-page overview PDF" /></div>
+                <div className="input-group"><label>Technical Rider (link) — <code>{'{{tech_rider}}'}</code></label><input value={localEpk.techRiderUrl || ''} onChange={e => upd('techRiderUrl', e.target.value)} placeholder="Link to stage plot / input list PDF" /></div>
                 <div className="input-group"><label>Hospitality Rider (link)</label><input value={localEpk.hospitalityRiderUrl || ''} onChange={e => upd('hospitalityRiderUrl', e.target.value)} placeholder="Link to hospitality rider PDF" /></div>
               </div>
               <div className="input-group"><label>Press / News</label><textarea value={localEpk.pressNews || ''} onChange={e => upd('pressNews', e.target.value)} rows={2} placeholder="Recent milestones, upcoming dates, releases..." style={{ resize: 'vertical' }} /></div>
@@ -9355,7 +9409,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 ))}
               </div>
               <div style={{ fontSize: '.7rem', color: 'var(--text-muted)', marginBottom: '.5rem', lineHeight: 1.6 }}>
-                Placeholders: <code>{'{{band_name}}'}</code> <code>{'{{venue_name}}'}</code> <code>{'{{contact_name}}'}</code> <code>{'{{epk_link}}'}</code> <code>{'{{demo_link}}'}</code> <code>{'{{linktree}}'}</code> <code>{'{{website}}'}</code> <code>{'{{genres}}'}</code> <code>{'{{best_for}}'}</code> <code>{'{{venue_type}}'}</code> <code>{'{{suggested_songs}}'}</code> <code>{'{{tailored_pitch}}'}</code> <code>{'{{date}}'}</code> <code>{'{{start_time}}'}</code> <code>{'{{fee}}'}</code> <code>{'{{contact_email}}'}</code> <code>{'{{contact_phone}}'}</code>
+                Placeholders: <code>{'{{band_name}}'}</code> <code>{'{{venue_name}}'}</code> <code>{'{{contact_name}}'}</code> <code>{'{{epk_link}}'}</code> <code>{'{{demo_link}}'}</code> <code>{'{{one_sheet}}'}</code> <code>{'{{tech_rider}}'}</code> <code>{'{{linktree}}'}</code> <code>{'{{website}}'}</code> <code>{'{{genres}}'}</code> <code>{'{{best_for}}'}</code> <code>{'{{venue_type}}'}</code> <code>{'{{suggested_songs}}'}</code> <code>{'{{tailored_pitch}}'}</code> <code>{'{{date}}'}</code> <code>{'{{start_time}}'}</code> <code>{'{{fee}}'}</code> <code>{'{{contact_email}}'}</code> <code>{'{{contact_phone}}'}</code>
               </div>
               <div className="input-group"><label>Subject</label><input value={curTpl.subject} onChange={e => updTpl('subject', e.target.value)} /></div>
               <div className="input-group"><label>Body</label>
@@ -10481,6 +10535,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               merged[k] = EPK_SETTINGS_DEFAULT[k];
             }
           });
+          // Migrate the EPK/hub link off the old bit.ly redirect (a non-empty value the
+          // plain backfill above would preserve) onto the branded venue cut / Linktree,
+          // so existing installs get clean ?act/&track/&utm attribution without a hop.
+          if (EPK_LEGACY_URLS.includes((merged.epkUrl || '').trim())) merged.epkUrl = EPK_LIVE_URL;
+          if (EPK_LEGACY_URLS.includes((merged.linktree || '').trim())) merged.linktree = EPK_SETTINGS_DEFAULT.linktree;
           setEpkSettingsState({
             ...merged,
             templates: { ...EMAIL_TEMPLATES_DEFAULT, ...(stored.templates || {}) }
