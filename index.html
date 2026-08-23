@@ -10563,21 +10563,32 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       }, []);
 
       // SAVE ACTIVE BAND DATA
+      // Persist per-band data ONLY when the data slice itself changes — never merely
+      // because activeBandId changed. On a band switch the transition render still holds
+      // the previous band's data in state (the LOAD effect's setState has not been applied
+      // yet); firing on activeBandId here would flush the old band's data into the new
+      // band's storage key. The LOAD effect always assigns a fresh array/object, so the
+      // reconciling render re-runs this effect and persists the correct band. activeBandId
+      // is read from the reconciled render's closure, so the key is always correct.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       useEffect(() => {
         if (activeBandId) LS.set(LS_KEYS.bandSongs(activeBandId), songs);
-      }, [songs, activeBandId]);
+      }, [songs]);
 
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       useEffect(() => {
         if (activeBandId) LS.set(LS_KEYS.bandSettings(activeBandId), settings);
-      }, [settings, activeBandId]);
+      }, [settings]);
 
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       useEffect(() => {
         if (activeBandId) LS.set(LS_KEYS.bandVenues(activeBandId), venues);
-      }, [venues, activeBandId]);
+      }, [venues]);
 
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       useEffect(() => {
         if (activeBandId) LS.set(LS_KEYS.bandBookings(activeBandId), bookings);
-      }, [bookings, activeBandId]);
+      }, [bookings]);
 
       // Venue & Booking CRUD
       const addVenue = (form) => { setVenues(prev => [...prev, { ...form, id: genId(), createdAt: Date.now(), trackingToken: form.trackingToken || genTrackingToken() }]); showToast('Venue added', 'success'); };
