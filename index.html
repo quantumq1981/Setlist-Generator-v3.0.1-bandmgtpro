@@ -10901,7 +10901,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const techBullets = bullets(e.techAdvance, DEF_TECH);
         const bcBullets = bullets(e.buyerConfidence, DEF_BC);
 
-        const metaLine = [e.location, e.actType, e.targetAudience].filter(Boolean).join(' &nbsp;|&nbsp; ');
+        const metaLine = [e.location, e.actType, e.targetAudience].filter(Boolean).map(esc).join(' &nbsp;|&nbsp; ');
         const tagline = e.tagline || e.actType || '';
         const photo = e.pressPhotoData && /^data:image\//.test(e.pressPhotoData) ? e.pressPhotoData : '';
         const logo = e.logoData && /^data:image\//.test(e.logoData) ? e.logoData : '';
