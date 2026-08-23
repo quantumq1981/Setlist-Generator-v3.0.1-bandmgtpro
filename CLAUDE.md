@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-07-12.
+Last updated: 2026-08-23.
 
 ---
 
@@ -748,6 +748,66 @@ headless drive (vendored libs): added a venue with format "Late Shift Band",
 drive confirmed the Compose Email draft for a "Trio" venue ends with
 `…chriszemba-EPK/?act=trio&track=<token>`; EPK & Templates tab shows "EPK is
 live" against the real URL with no user action; 0 page errors.
+
+## 9p. Change log — 2026-08 audit remediation (v3.8.0 audit spec)
+
+Applied the four direct-edit fixes from the v3.8.0 code audit. Structural
+tasks (TASK-2/6/7) are **deferred** with rationale below. One commit per task,
+each referencing its task ID.
+
+**Completed (direct edits):**
+
+- **TASK-1 🔴 Band-switch persistence race.** The four per-band SAVE effects
+  (songs/settings/venues/bookings) depended on `[dataSlice, activeBandId]`. On a
+  band switch the transition render still held the outgoing band's data while
+  `activeBandId` already pointed at the incoming band, so the effect wrote
+  `LS.set(bandSongs(B), A_songs)` — self-healing in the common single-switch case
+  but corrupting under rapid/interrupted switches or a mid-write quota throw. Fix:
+  depend on the **data slice only** (`[songs]`, `[settings]`, `[venues]`,
+  `[bookings]`); the transition render doesn't change the slice so the stale write
+  never fires, and the LOAD effect assigns fresh arrays so the reconciling render
+  re-runs each effect with the correct band. `activeBandId` read from the
+  reconciled closure keeps the key correct. Grep confirmed no other
+  `LS.set(LS_KEYS.band*(activeBandId))` effects need the treatment — the debounced
+  snapshot autosave (`[songs,setlists,settings,locked,activeBandId]`) legitimately
+  depends on the data slices and is cleanup-protected, and the direct-`LS.set`
+  handlers (imports/gigs/roster/watermark) are out of scope per the spec.
+- **TASK-4 🟡 Non-functional setState.** Converted addSong/updateSong/deleteSong/
+  shelfSong/restoreSong and both band-creation sites (createBand, duplicateBand) to
+  functional updaters so React 18 batching can't drop a coalesced write. All 7 sites.
+- **TASK-5 🟡 EPK metaLine escaping.** `buildEPKHtml`'s `metaLine` now `.map(esc)`
+  before joining location/actType/targetAudience, closing the one unescaped
+  user-field path into the EPK header.
+- **TASK-3 🟠 Reliability & mobile phases.** Flipped
+  `FEATURE_FLAGS.phase1ReliabilityDataSafety` and `phase2MobileCompatibility` to
+  `true` (after TASK-1 landed as the recovery net). Activates snapshot autosave,
+  storage-health monitoring, backup-before-risky-action, and the app's own
+  touch-drag fallback on the iPad target.
+
+**Deferred (structural — recorded per audit guidance, code left unchanged):**
+
+- **TASK-2 🔴 Babel Standalone at runtime.** Requires a build step and would change
+  the project's core single-file / no-build distribution model (CLAUDE.md §1),
+  which the audit forbids doing silently. Not undertaken this pass. Recommendation
+  stands: pre-compile the inline `text/babel` block + the three companion files to
+  one ES2018 bundle (esbuild), then inline the compiled output to preserve the
+  single-file distribution, dropping the `@babel/standalone` CDN tag and all
+  `type="text/babel"` scripts. Should be scoped as its own PR with a
+  time-to-interactive before/after measurement.
+- **TASK-6 🟡 Web Worker generation.** Large structural migration of the generator
+  engine into a worker with `isGenerating`/spinner/Cancel and a fallback path;
+  needs an output-parity harness (seeded randomness). Deferred to a dedicated PR.
+- **TASK-7 🟢 SA delta evaluation.** The audit explicitly gates this on TASK-6 (or
+  an equivalent parity harness) since SA is stochastic and easy to silently
+  regress. Deferred with TASK-6.
+
+Verification: per-task commits; Babel compile clean (index.html + 3 companion
+files); `npm test` → 79/79; headless Playwright boot under an iPad user-agent
+with both flags on → app mounted (`.app-container` present), 0 JS page errors
+(only benign Babel size note + proxy-blocked font/manifest/worker 404s in the
+sandbox). Live-iPad touch-drag and the phase1 recovery flows should still be
+smoke-tested on a real device before release, per the audit's acceptance
+criteria (the sandbox can't drive real touch input).
 
 ---
 
