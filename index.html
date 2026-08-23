@@ -881,8 +881,8 @@
     const { useState, useEffect, useMemo } = React;
 
     const FEATURE_FLAGS = {
-      phase1ReliabilityDataSafety: false,
-      phase2MobileCompatibility: false
+      phase1ReliabilityDataSafety: true,
+      phase2MobileCompatibility: true
     };
 
     /******************* ARRANGEMENT LAYER HELPERS *******************/
@@ -10563,21 +10563,32 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       }, []);
 
       // SAVE ACTIVE BAND DATA
+      // Persist per-band data ONLY when the data slice itself changes — never merely
+      // because activeBandId changed. On a band switch the transition render still holds
+      // the previous band's data in state (the LOAD effect's setState has not been applied
+      // yet); firing on activeBandId here would flush the old band's data into the new
+      // band's storage key. The LOAD effect always assigns a fresh array/object, so the
+      // reconciling render re-runs this effect and persists the correct band. activeBandId
+      // is read from the reconciled render's closure, so the key is always correct.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       useEffect(() => {
         if (activeBandId) LS.set(LS_KEYS.bandSongs(activeBandId), songs);
-      }, [songs, activeBandId]);
+      }, [songs]);
 
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       useEffect(() => {
         if (activeBandId) LS.set(LS_KEYS.bandSettings(activeBandId), settings);
-      }, [settings, activeBandId]);
+      }, [settings]);
 
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       useEffect(() => {
         if (activeBandId) LS.set(LS_KEYS.bandVenues(activeBandId), venues);
-      }, [venues, activeBandId]);
+      }, [venues]);
 
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       useEffect(() => {
         if (activeBandId) LS.set(LS_KEYS.bandBookings(activeBandId), bookings);
-      }, [bookings, activeBandId]);
+      }, [bookings]);
 
       // Venue & Booking CRUD
       const addVenue = (form) => { setVenues(prev => [...prev, { ...form, id: genId(), createdAt: Date.now(), trackingToken: form.trackingToken || genTrackingToken() }]); showToast('Venue added', 'success'); };
@@ -10890,7 +10901,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const techBullets = bullets(e.techAdvance, DEF_TECH);
         const bcBullets = bullets(e.buyerConfidence, DEF_BC);
 
-        const metaLine = [e.location, e.actType, e.targetAudience].filter(Boolean).join(' &nbsp;|&nbsp; ');
+        const metaLine = [e.location, e.actType, e.targetAudience].filter(Boolean).map(esc).join(' &nbsp;|&nbsp; ');
         const tagline = e.tagline || e.actType || '';
         const photo = e.pressPhotoData && /^data:image\//.test(e.pressPhotoData) ? e.pressPhotoData : '';
         const logo = e.logoData && /^data:image\//.test(e.logoData) ? e.logoData : '';
@@ -11115,12 +11126,12 @@ ${headerHtml}
 
       const addSong = (songData) => {
         const newSong = { id: genId(), status: 'active', ...songData };
-        setSongs([...songs, newSong]);
+        setSongs(prev => [...prev, newSong]);
         showToast('Song added (Active)', 'success');
       };
 
       const updateSong = (id, updates) => {
-        setSongs(songs.map(s => s.id === id ? { ...s, ...updates } : s));
+        setSongs(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
         showToast('Song updated', 'success');
       };
 
@@ -11131,7 +11142,7 @@ ${headerHtml}
           message: 'This removes the song from your library.',
           confirmLabel: 'Delete song',
           onConfirm: () => {
-            setSongs(songs.filter(s => s.id !== id));
+            setSongs(prev => prev.filter(s => s.id !== id));
             showToast('Song deleted', 'warning');
             setConfirmDialog(prev => ({ ...prev, open: false }));
           }
@@ -11140,7 +11151,7 @@ ${headerHtml}
 
       // PHASE 3A: shelf/restore
       const shelfSong = (id) => {
-        setSongs(songs.map(s => s.id === id ? { ...s, status: 'cold' } : s));
+        setSongs(prev => prev.map(s => s.id === id ? { ...s, status: 'cold' } : s));
         // remove from setlists + locks if it appears (optional safety)
         setLocked(prev => {
           const next = new Set(prev);
@@ -11154,7 +11165,7 @@ ${headerHtml}
       };
 
       const restoreSong = (id) => {
-        setSongs(songs.map(s => s.id === id ? { ...s, status: 'active' } : s));
+        setSongs(prev => prev.map(s => s.id === id ? { ...s, status: 'active' } : s));
         showToast('Restored to Active', 'success');
       };
 
@@ -12370,7 +12381,7 @@ ${headerHtml}
 
       const createBand = (form) => {
         const newBand = { id: genId(), ...form };
-        setBands([...bands, newBand]);
+        setBands(prev => [...prev, newBand]);
         setActiveBandId(newBand.id);
         LS.set(LS_KEYS.active, newBand.id);
         showToast('Band created', 'success');
@@ -12410,7 +12421,7 @@ ${headerHtml}
           icon: band.icon,
           color: band.color
         };
-        setBands([...bands, newBand]);
+        setBands(prev => [...prev, newBand]);
         // Copy songs, settings, gigs, and imports from source band to new band
         const srcSongs = LS.get(LS_KEYS.bandSongs(band.id));
         const srcSettings = LS.get(LS_KEYS.bandSettings(band.id));
