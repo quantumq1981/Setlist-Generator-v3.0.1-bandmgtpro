@@ -11126,12 +11126,12 @@ ${headerHtml}
 
       const addSong = (songData) => {
         const newSong = { id: genId(), status: 'active', ...songData };
-        setSongs([...songs, newSong]);
+        setSongs(prev => [...prev, newSong]);
         showToast('Song added (Active)', 'success');
       };
 
       const updateSong = (id, updates) => {
-        setSongs(songs.map(s => s.id === id ? { ...s, ...updates } : s));
+        setSongs(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
         showToast('Song updated', 'success');
       };
 
@@ -11142,7 +11142,7 @@ ${headerHtml}
           message: 'This removes the song from your library.',
           confirmLabel: 'Delete song',
           onConfirm: () => {
-            setSongs(songs.filter(s => s.id !== id));
+            setSongs(prev => prev.filter(s => s.id !== id));
             showToast('Song deleted', 'warning');
             setConfirmDialog(prev => ({ ...prev, open: false }));
           }
@@ -11151,7 +11151,7 @@ ${headerHtml}
 
       // PHASE 3A: shelf/restore
       const shelfSong = (id) => {
-        setSongs(songs.map(s => s.id === id ? { ...s, status: 'cold' } : s));
+        setSongs(prev => prev.map(s => s.id === id ? { ...s, status: 'cold' } : s));
         // remove from setlists + locks if it appears (optional safety)
         setLocked(prev => {
           const next = new Set(prev);
@@ -11165,7 +11165,7 @@ ${headerHtml}
       };
 
       const restoreSong = (id) => {
-        setSongs(songs.map(s => s.id === id ? { ...s, status: 'active' } : s));
+        setSongs(prev => prev.map(s => s.id === id ? { ...s, status: 'active' } : s));
         showToast('Restored to Active', 'success');
       };
 
@@ -12381,7 +12381,7 @@ ${headerHtml}
 
       const createBand = (form) => {
         const newBand = { id: genId(), ...form };
-        setBands([...bands, newBand]);
+        setBands(prev => [...prev, newBand]);
         setActiveBandId(newBand.id);
         LS.set(LS_KEYS.active, newBand.id);
         showToast('Band created', 'success');
@@ -12421,7 +12421,7 @@ ${headerHtml}
           icon: band.icon,
           color: band.color
         };
-        setBands([...bands, newBand]);
+        setBands(prev => [...prev, newBand]);
         // Copy songs, settings, gigs, and imports from source band to new band
         const srcSongs = LS.get(LS_KEYS.bandSongs(band.id));
         const srcSettings = LS.get(LS_KEYS.bandSettings(band.id));
