@@ -3930,6 +3930,241 @@
 
     /******************* END BANDHELPER SETLIST PARSER *******************/
 
+
+    /******************* ARRANGEMENT-NOTES ROUND-TRIP (footnote import) *******************/
+    // The Advance-view PDF export writes an "ARRANGEMENT NOTES" section — numbered
+    // footnotes, one per song that carries arrangement data, each broken out by role
+    // (GENERAL / DRUMS / KEYS / BASS / GUITAR 2 / ENDING CUE). Re-importing a setlist
+    // PDF used to discard the whole page, so every rehearsal mark vanished on a
+    // round-trip. These helpers recover the notes and re-attach them to the matching
+    // songs, so musicians never have to re-type them after an export/import cycle.
+    //
+    // Two recovery paths, in order of fidelity:
+    //   1. A machine-readable data block (base64 of the exact arrangement objects)
+    //      embedded by newer exports — lossless, even for characters the visible
+    //      notes can't render. Matched to songs by set/position index.
+    //   2. The visible ARRANGEMENT NOTES text, parsed from the PDF's own geometry —
+    //      works on any Advance export (including older PDFs with no data block).
+    //      Matched to songs by set + fuzzy title.
+
+    // Uppercase role label (as drawn in the PDF) → arrangement object key.
+    const ARR_LABEL_TO_ROLE = {
+      'GENERAL': 'global', 'DRUMS': 'drums', 'KEYS': 'keys',
+      'BASS': 'bass', 'GUITAR 2': 'guitar2', 'ENDING CUE': 'endingCue',
+    };
+
+    // Characters jsPDF's built-in (WinAnsi/Latin-1) fonts can't encode — the musical
+    // ♭ / ♯ / ♮, en/em dashes, curly quotes, ellipsis, arrows, thin spaces. Left
+    // untranslated they render as per-character mojibake in the exported notes and
+    // can't be read back on re-import, so both the export and any text parse map them
+    // to a safe ASCII equivalent up front.
+    const PDF_TEXT_MAP = {
+      '\u266d': 'b', '\u266f': '#', '\u266e': '(nat)',
+      '\u2013': '-', '\u2014': '-', '\u2212': '-',
+      '\u2018': "'", '\u2019': "'", '\u201a': "'", '\u2032': "'",
+      '\u201c': '"', '\u201d': '"', '\u201e': '"', '\u2033': '"',
+      '\u2026': '...', '\u2022': '-', '\u2192': '->',
+    };
+    function pdfSafeText(str) {
+      if (str == null) return '';
+      let s = String(str);
+      s = s.replace(/[\u266d\u266f\u266e\u2013\u2014\u2212\u2018\u2019\u201a\u2032\u201c\u201d\u201e\u2033\u2026\u2022\u2192]/g,
+        ch => (PDF_TEXT_MAP[ch] != null ? PDF_TEXT_MAP[ch] : ' '));
+      // Unicode spaces (thin / hair / narrow-no-break, ideographic, etc.) -> a plain
+      // space so words don't fuse when the char is dropped below.
+      s = s.replace(/[\u00a0\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/g, ' ');
+      // Any remaining char outside Latin-1 (plus tab/newlines) would break the jsPDF
+      // text run into per-character mojibake -> drop it.
+      s = s.replace(/[^\x09\x0a\x0d\x20-\xff]/g, '');
+      return s;
+    }
+
+    // Embedded data-block markers: one line per ~180-char base64 chunk, self-describing
+    // (index / total) so extraction order never matters. The base64 alphabet has no
+    // spaces or ']' so each marker survives PDF text extraction as a single token.
+    const ARR_DATA_MARKER = /\[\[SLARR:/;
+    const ARR_DATA_RE = /\[\[SLARR:(\d+):(\d+):([A-Za-z0-9+/=_-]*)\]\]/g;
+
+    function pdfEncodeArrangementData(payload) {
+      const b64 = gmailB64Utf8(JSON.stringify(payload || []));
+      const size = 180;
+      const chunks = [];
+      for (let i = 0; i < b64.length; i += size) chunks.push(b64.slice(i, i + size));
+      const total = chunks.length || 1;
+      if (!chunks.length) chunks.push('');
+      return chunks.map((c, i) => `[[SLARR:${i}:${total}:${c}]]`);
+    }
+
+    // UTF-8 base64 → string (inverse of gmailB64Utf8; tolerant of the url-safe variant).
+    function arrB64Decode(b64) {
+      try {
+        let s = String(b64 || '').replace(/-/g, '+').replace(/_/g, '/');
+        while (s.length % 4) s += '=';
+        const bin = atob(s);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new TextDecoder().decode(bytes);
+      } catch (e) { return ''; }
+    }
+
+    function normalizeArrObj(a) {
+      const out = {};
+      for (const r of ARR_ROLES) if (a && a[r] != null && String(a[r]).trim()) out[r] = String(a[r]);
+      return out;
+    }
+
+    // Decode the embedded ARRANGEMENT DATA block from a PDF's full text, if present.
+    // Returns [{ title, setName, si, pi, arr }] or null when no valid block exists.
+    function pdfDecodeArrangementData(fullText) {
+      const text = String(fullText || '');
+      if (!ARR_DATA_MARKER.test(text)) return null;
+      const chunks = [];
+      let m, total = 0;
+      ARR_DATA_RE.lastIndex = 0;
+      while ((m = ARR_DATA_RE.exec(text)) !== null) {
+        chunks[Number(m[1])] = m[3];
+        total = Number(m[2]);
+      }
+      if (!total || chunks.filter(c => c != null).length < total) return null;
+      const json = arrB64Decode(chunks.slice(0, total).join(''));
+      if (!json) return null;
+      try {
+        const data = JSON.parse(json);
+        if (!Array.isArray(data)) return null;
+        return data.map(d => ({
+          title: String((d && (d.t != null ? d.t : d.title)) || ''),
+          setName: String((d && (d.s != null ? d.s : d.setName)) || ''),
+          si: d && Number.isInteger(d.si) ? d.si : null,
+          pi: d && Number.isInteger(d.pi) ? d.pi : null,
+          arr: normalizeArrObj(d && (d.a || d.arr)),
+        })).filter(d => d.title && Object.keys(d.arr).length);
+      } catch (e) { return null; }
+    }
+
+    // Greedily consume a 1- or 2-item role label from the front of a row's items.
+    function matchArrRoleLabel(items) {
+      const w1 = ((items[0] && items[0].str) || '').trim().toUpperCase();
+      const w2 = (w1 + ' ' + (((items[1] && items[1].str) || '').trim().toUpperCase())).trim();
+      if (ARR_LABEL_TO_ROLE[w2]) return { role: ARR_LABEL_TO_ROLE[w2], consumed: 2 };
+      if (ARR_LABEL_TO_ROLE[w1]) return { role: ARR_LABEL_TO_ROLE[w1], consumed: 1 };
+      return null;
+    }
+
+    // Parse the visible "ARRANGEMENT NOTES" section from the row structure produced by
+    // pdfExtractRows: [{ page, rows:[{ y, items:[{ str, x }] }] }]. Export geometry:
+    // the footnote number sits at x≈margin with the TITLE (Set N) on the same baseline;
+    // each role renders as "<LABEL>  <note>" with the label at x≈margin+14 and the note
+    // at x≈margin+86; wrapped note lines continue at x≈margin+86. Indent (not casing)
+    // separates a new role label from a continuation line, so a note that happens to
+    // wrap onto a word like "Keys" is never mistaken for a role header.
+    function pdfParseArrangementNotesVisible(pages) {
+      const allRows = (pages || []).flatMap(pg => pg.rows || []);
+      const notes = [];
+      let started = false, cur = null, curRole = null, marginX = null;
+      const rowText = (items) => items.map(it => it.str).join(' ').replace(/\s+/g, ' ').trim();
+
+      for (const row of allRows) {
+        const items = [...(row.items || [])].sort((a, b) => a.x - b.x);
+        if (!items.length) continue;
+        const text = rowText(items);
+        if (!started) {
+          if (/^ARRANGEMENT\s+NOTES\b/i.test(text)) started = true;
+          continue;
+        }
+        if (!text) continue;
+        if (ARR_DATA_MARKER.test(text)) break;         // reached the embedded block — stop
+        if (/^setlist\s+summary\b/i.test(text)) continue;
+
+        const first = items[0];
+        // Footnote header: a bare integer at the left margin, then the title (+ "(Set N)").
+        if (/^\d+$/.test(first.str.trim()) && items.length > 1 &&
+            (marginX === null || first.x <= marginX + 8)) {
+          if (marginX === null) marginX = first.x;
+          const rest = rowText(items.slice(1));
+          let title = rest, setName = '';
+          const sm = rest.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+          if (sm) { title = sm[1].trim(); setName = sm[2].trim(); }
+          cur = { num: Number(first.str.trim()), title, setName, arr: {} };
+          notes.push(cur);
+          curRole = null;
+          continue;
+        }
+        if (!cur) continue;
+
+        const labelZoneMax = (marginX === null ? first.x : marginX) + 60;
+        if (first.x <= labelZoneMax) {
+          const role = matchArrRoleLabel(items);
+          if (role) {
+            const noteTxt = rowText(items.slice(role.consumed));
+            cur.arr[role.role] = (cur.arr[role.role] ? cur.arr[role.role] + ' ' : '') + noteTxt;
+            curRole = role.role;
+            continue;
+          }
+        }
+        if (curRole) {
+          cur.arr[curRole] = (cur.arr[curRole] ? cur.arr[curRole] + ' ' : '') + text;
+        }
+      }
+
+      return notes.map(n => ({
+        num: n.num, title: n.title.replace(/\s+/g, ' ').trim(), setName: n.setName,
+        si: null, pi: null, arr: normalizeArrObj(n.arr),
+      })).filter(n => n.title && Object.keys(n.arr).length);
+    }
+
+    // Parse arrangement footnotes from a PDF (rows from pdfExtractRows), preferring the
+    // lossless embedded data block and falling back to the visible text.
+    function pdfParseArrangementNotes(pages) {
+      const fullText = (pages || []).map(pg =>
+        (pg.rows || []).map(r =>
+          [...(r.items || [])].sort((a, b) => a.x - b.x).map(it => it.str).join(' ')
+        ).join('\n')
+      ).join('\n');
+      const embedded = pdfDecodeArrangementData(fullText);
+      if (embedded && embedded.length) {
+        return embedded.map((d, i) => ({ num: i + 1, ...d }));
+      }
+      return pdfParseArrangementNotesVisible(pages);
+    }
+
+    // Title comparison key for note↔song matching: lowercase, punctuation/space-stripped.
+    function arrTitleKey(s) {
+      return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    }
+    // Does an imported song title correspond to this footnote? The setlist table glues
+    // the superscript footnote number onto the title — after it in the column layout
+    // ("MY OLD SCHOOL11") and before it in this app's stacked layout ("11 MY OLD
+    // SCHOOL") — while the notes section carries a clean title. So also try the title
+    // with this footnote's own number stripped off either end (safe: only that exact
+    // number, so a real trailing/leading number in the title is never touched).
+    function arrNoteMatchesTitle(songTitle, note) {
+      const nt = arrTitleKey(note && note.title);
+      if (!nt) return false;
+      const raw = String(songTitle || '').trim();
+      if (arrTitleKey(raw) === nt) return true;
+      const num = String((note && note.num) || '');
+      if (num) {
+        const variants = [
+          raw.replace(new RegExp('\\s*' + num + '\\s*$'), ''),   // trailing superscript
+          raw.replace(new RegExp('^\\s*' + num + '\\s*'), ''),   // leading (stacked layout)
+        ];
+        if (variants.some(v => arrTitleKey(v) === nt)) return true;
+      }
+      return false;
+    }
+
+    // Merge a footnote's per-role notes onto an existing arrangement (imported roles win,
+    // untouched roles are preserved). Returns a serialized arrangement string, or null
+    // when the note carries nothing to apply.
+    function arrApplyNoteToArrangement(existingArrangement, note) {
+      if (!note || !note.arr || !Object.keys(note.arr).length) return null;
+      const merged = { ...parseArrangement(existingArrangement) };
+      for (const r of ARR_ROLES) if (note.arr[r]) merged[r] = note.arr[r];
+      return serializeArrangement(merged);
+    }
+
+    /******************* END ARRANGEMENT-NOTES ROUND-TRIP *******************/
+
     /******************* END PDF IMPORT ENGINE *******************/
 
 
@@ -7550,8 +7785,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     }
 
     /******************* GIG PROFILES *******************/
-    function GigProfileModal({ open, onClose, gigs, onCreateGig, onDeleteGig, onLoadGig, onSaveToGig, onExportGigCSV, onImportCSVToGig, onImportBandHelper, setlists, bandName }) {
+    function GigProfileModal({ open, onClose, gigs, onCreateGig, onDeleteGig, onLoadGig, onSaveToGig, onExportGigCSV, onImportCSVToGig, onImportBandHelper, onApplyArrangementNotes, setlists, bandName }) {
       const bhRef = React.useRef(null);
+      const anRef = React.useRef(null);
       const [bhAddLib, setBhAddLib] = useState(false);
       const [pendingImport, setPendingImport] = useState(null);
       const [form, setForm] = useState({
@@ -7631,7 +7867,17 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 </div>
               )}
               <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', marginTop: '.4rem' }}>
-                Upload a BandHelper setlist PDF — its Set 1/2/3 are reconstructed and saved here as a gig you can load, annotate, and export. Your song library stays untouched unless you tick the box.
+                Upload a BandHelper setlist PDF — its Set 1/2/3 are reconstructed and saved here as a gig you can load, annotate, and export. Arrangement footnotes / rehearsal marks on an Advance-view export are recovered and re-attached automatically. Your song library stays untouched unless you tick the box.
+              </div>
+            </div>
+
+            {/* Re-apply arrangement footnotes / rehearsal marks from an app-generated notes PDF */}
+            <div style={{ marginBottom: '1rem', padding: '.6rem .7rem', border: '1px dashed var(--accent)', borderRadius: '8px', background: 'rgba(96,165,250,.06)' }}>
+              <input ref={anRef} type="file" accept=".pdf" style={{ display: 'none' }}
+                onChange={e => { const f = e.target.files[0]; if (f && onApplyArrangementNotes) onApplyArrangementNotes(f); e.target.value = ''; }} />
+              <button className="btn btn-small" onClick={() => anRef.current?.click()} style={{ borderColor: '#60a5fa', color: '#60a5fa' }}>📋 Import Arrangement Notes → Library</button>
+              <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', marginTop: '.4rem' }}>
+                Upload an Advance-view PDF (or its arrangement-notes page) that this app generated — every footnote is matched to a song in your library by title and its rehearsal marks are restored, so you never re-type them after an export.
               </div>
             </div>
 
@@ -11842,7 +12088,7 @@ ${headerHtml}
           yPos = drawTableHeader(yPos);
 
           let rowCounter = 0;
-          set.songs.forEach((song) => {
+          set.songs.forEach((song, songIdxInSet) => {
             if (yPos + ROW_H > pageH - margin) {
               drawColumnLines(pageTableTop, yPos);
               doc.addPage();
@@ -11860,6 +12106,8 @@ ${headerHtml}
                 num: fnNum,
                 title: song.title,
                 setName: set.name || `Set ${setIdx + 1}`,
+                setIdx,
+                songIdx: songIdxInSet,
                 arr: parseArrangement(song.arrangement),
               });
             }
@@ -11949,13 +12197,14 @@ ${headerHtml}
             const rf = advanceRoleFilter || new Set(ARR_ROLES);
             footnotes.forEach(fn => {
               if (yPos + 36 > pageH - margin) { doc.addPage(); addWatermark(); yPos = margin + 16; }
+              const safeTitle = pdfSafeText((fn.title || '').toUpperCase());
               doc.setFont(FONT, 'bold'); doc.setFontSize(10); doc.setTextColor(...ACCENT_FN);
               doc.text(String(fn.num), margin, yPos);
               doc.setTextColor(...TEXT_C);
-              doc.text(fn.title.toUpperCase(), margin + 14, yPos);
+              doc.text(safeTitle, margin + 14, yPos);
               doc.setFont(FONT, 'normal'); doc.setFontSize(8); doc.setTextColor(...MUTED_C);
-              const setLabelX = margin + 14 + doc.getTextWidth(fn.title.toUpperCase()) + 5;
-              doc.text(`(${fn.setName})`, setLabelX, yPos);
+              const setLabelX = margin + 14 + doc.getTextWidth(safeTitle) + 5;
+              doc.text(`(${pdfSafeText(fn.setName)})`, setLabelX, yPos);
               yPos += 14;
 
               ARR_ROLES.filter(r => fn.arr[r] && rf.has(r)).forEach(role => {
@@ -11963,12 +12212,34 @@ ${headerHtml}
                 doc.setFont(FONT, 'bold'); doc.setFontSize(8); doc.setTextColor(90, 90, 90);
                 doc.text(ARR_ROLE_LABELS[role].toUpperCase(), margin + 14, yPos);
                 doc.setFont(FONT, 'normal'); doc.setFontSize(9); doc.setTextColor(...TEXT_C);
-                const noteLines = doc.splitTextToSize(fn.arr[role], tableW - 14 - 72);
+                const noteLines = doc.splitTextToSize(pdfSafeText(fn.arr[role]), tableW - 14 - 72);
                 doc.text(noteLines, margin + 86, yPos);
                 yPos += Math.max(noteLines.length * 11, 12);
               });
               yPos += 10;
             });
+
+            // Machine-readable arrangement-data block for a lossless round-trip: on
+            // re-import (importBandHelperSetlist / pdfParseArrangementNotes) this is
+            // decoded ahead of the visible text, so every rehearsal mark returns to its
+            // exact song — even characters the visible notes had to transliterate. Drawn
+            // tiny + white so it stays out of the way but is still extractable.
+            try {
+              const dataPayload = footnotes.map(fn => {
+                const a = {};
+                ARR_ROLES.forEach(r => { if (fn.arr[r]) a[r] = fn.arr[r]; });
+                return { t: fn.title, s: fn.setName, si: fn.setIdx, pi: fn.songIdx, a };
+              });
+              const dataLines = pdfEncodeArrangementData(dataPayload);
+              doc.setFont(FONT, 'normal'); doc.setFontSize(1); doc.setTextColor(255, 255, 255);
+              yPos += 6;
+              dataLines.forEach(ln => {
+                if (yPos > pageH - margin) { doc.addPage(); addWatermark(); yPos = margin; }
+                doc.text(ln, margin, yPos);
+                yPos += 3;
+              });
+              doc.setTextColor(...TEXT_C);
+            } catch (e) { console.warn('Arrangement data-block embed failed:', e); }
           }
         }
 
@@ -12563,6 +12834,36 @@ ${headerHtml}
             };
           });
 
+          // Recover arrangement footnotes / rehearsal marks from the ARRANGEMENT NOTES
+          // page (or the embedded data block) and re-attach them to the songs they
+          // belong to — so an export → re-import round-trip preserves every note.
+          let notesApplied = 0;
+          try {
+            const notes = pdfParseArrangementNotes(pages);
+            notes.forEach(note => {
+              // Title match first (reliable for any Advance export, old or new; tolerant of
+              // the superscript the table glues onto the title). Fall back to the embedded
+              // block's set/song index only when the title doesn't resolve — so a misparse
+              // in the table can't silently attach a note to the wrong song.
+              let target = null;
+              const setMatch = builtSetlists.find(st =>
+                (st.name || '').trim().toLowerCase() === (note.setName || '').trim().toLowerCase());
+              const pools = setMatch ? [setMatch, ...builtSetlists.filter(s => s !== setMatch)] : builtSetlists;
+              for (const st of pools) {
+                target = st.songs.find(sg => arrNoteMatchesTitle(sg.title, note));
+                if (target) break;
+              }
+              if (!target && Number.isInteger(note.si) && Number.isInteger(note.pi) &&
+                  builtSetlists[note.si] && builtSetlists[note.si].songs[note.pi]) {
+                target = builtSetlists[note.si].songs[note.pi]; // embedded-block index fallback
+              }
+              if (target) {
+                const merged = arrApplyNoteToArrangement(target.arrangement, note);
+                if (merged) { target.arrangement = merged; notesApplied++; }
+              }
+            });
+          } catch (e) { console.warn('Arrangement-notes recovery failed:', e); }
+
           const gigName = (customName && customName.trim()) || file.name.replace(/\.pdf$/i, '').trim() || 'Imported Setlist';
           const newGig = {
             id: genId(), name: gigName, venue: '', date: '', notes: 'Imported from BandHelper PDF',
@@ -12575,11 +12876,56 @@ ${headerHtml}
           if (addToLibrary && libAdds.length) setSongs(prev => [...prev, ...libAdds]);
 
           let msg = `Imported "${gigName}" — ${builtSetlists.length} set${builtSetlists.length !== 1 ? 's' : ''}, ${parsed.songCount} songs (saved to Gig Profiles)`;
+          if (notesApplied) msg += ` — ${notesApplied} arrangement note${notesApplied !== 1 ? 's' : ''} restored`;
           if (addToLibrary) msg += ` — ${addedToLib} new song${addedToLib !== 1 ? 's' : ''} added to library`;
           showToast(msg, 'success');
         } catch (err) {
           console.error('BandHelper import error:', err);
           showToast('Failed to parse PDF: ' + (err.message || 'unknown error'), 'error');
+        }
+      };
+
+      // Upload an app-generated arrangement-notes / rehearsal-marks PDF (the Advance
+      // export, or its standalone notes page) and re-apply every footnote to the matching
+      // library song by title — so a song's rehearsal marks never have to be re-typed
+      // after a PDF round-trip. Matched-role notes are merged onto each song's existing
+      // arrangement (untouched roles preserved).
+      const applyArrangementNotesFromPDF = async (file) => {
+        if (!file) return;
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const pages = await pdfExtractRows(arrayBuffer);
+          const notes = pdfParseArrangementNotes(pages);
+          if (!notes.length) {
+            showToast('No arrangement notes found in that PDF — is it an Advance-view export?', 'error');
+            return;
+          }
+          // Resolve which note applies to each song up front (pure), so the toast counts
+          // are correct and the setSongs updater stays side-effect-free.
+          const noteForSong = (s) => {
+            const note = notes.find(n => arrNoteMatchesTitle(s.title, n));
+            if (!note) return null;
+            const merged = arrApplyNoteToArrangement(s.arrangement, note);
+            return merged ? { note, merged } : null;
+          };
+          const usedNotes = new Set();
+          let applied = 0;
+          songs.forEach(s => { const hit = noteForSong(s); if (hit) { usedNotes.add(hit.note); applied++; } });
+          setSongs(prev => prev.map(s => {
+            const hit = noteForSong(s);
+            return hit ? { ...s, arrangement: hit.merged } : s;
+          }));
+          const unmatched = notes.filter(n => !usedNotes.has(n)).length;
+          if (!applied) {
+            showToast(`Found ${notes.length} note${notes.length !== 1 ? 's' : ''}, but no titles matched songs in your library`, 'warning');
+          } else {
+            let msg = `Applied arrangement notes to ${applied} song${applied !== 1 ? 's' : ''}`;
+            if (unmatched) msg += ` — ${unmatched} note${unmatched !== 1 ? 's' : ''} had no matching song`;
+            showToast(msg, 'success');
+          }
+        } catch (err) {
+          console.error('Arrangement-notes import error:', err);
+          showToast('Failed to read notes PDF: ' + (err.message || 'unknown error'), 'error');
         }
       };
 
@@ -13045,6 +13391,7 @@ ${headerHtml}
               onExportGigCSV={exportGigCSV}
               onImportCSVToGig={importCSVToGig}
               onImportBandHelper={importBandHelperSetlist}
+              onApplyArrangementNotes={applyArrangementNotesFromPDF}
               setlists={setlists}
               bandName={activeBand?.name || 'Band'}
             />

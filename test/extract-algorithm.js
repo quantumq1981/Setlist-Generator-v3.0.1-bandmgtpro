@@ -142,6 +142,18 @@ for (const g of [
   'gmailThreadHasReply', 'gmailReplyCheckCandidates',
 ]) pieces.push(extractDecl(g));
 
+// Arrangement-notes round-trip (footnote export/import). Consts before the functions
+// that read them; parse/serializeArrangement + ARR_ROLES back the merge/normalize.
+for (const c of ['ARR_ROLES', 'ARR_LABEL_TO_ROLE', 'PDF_TEXT_MAP', 'ARR_DATA_MARKER', 'ARR_DATA_RE']) {
+  pieces.push(extractDecl(c));
+}
+for (const f of [
+  'parseArrangement', 'serializeArrangement',
+  'pdfSafeText', 'pdfEncodeArrangementData', 'arrB64Decode', 'normalizeArrObj',
+  'pdfDecodeArrangementData', 'matchArrRoleLabel', 'pdfParseArrangementNotesVisible',
+  'pdfParseArrangementNotes', 'arrTitleKey', 'arrNoteMatchesTitle', 'arrApplyNoteToArrangement',
+]) pieces.push(extractDecl(f));
+
 // Contact enrichment + phone-first outreach helpers (CALL_OUTCOMES before its users).
 for (const g of [
   'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
@@ -189,6 +201,10 @@ const EXPORTS = [
   'DAILY_OUTREACH_CAP', 'MAX_SEQUENCE_SENDS', 'SEQUENCE_STEP_DAYS', 'addDaysISO', 'sendsToday', 'nextActionFor',
   'VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'epkLinkForVenue',
   'MIN_LEARN_SAMPLE', 'venueOutcome', 'collectOutreachStats', 'smoothedRate', 'typeScoreMultiplier', 'bestStatInsight',
+  'ARR_ROLES', 'parseArrangement', 'serializeArrangement', 'pdfSafeText',
+  'pdfEncodeArrangementData', 'arrB64Decode', 'pdfDecodeArrangementData',
+  'pdfParseArrangementNotesVisible', 'pdfParseArrangementNotes',
+  'arrTitleKey', 'arrNoteMatchesTitle', 'arrApplyNoteToArrangement',
 ];
 
 // Minimal browser shims the algorithm touches (genId uses window.crypto).
