@@ -809,6 +809,63 @@ sandbox). Live-iPad touch-drag and the phase1 recovery flows should still be
 smoke-tested on a real device before release, per the audit's acceptance
 criteria (the sandbox can't drive real touch input).
 
+## 9q. Change log — 2026-08 arrangement-footnote PDF round-trip
+
+Fixes the reported bug where **arrangement footnotes / rehearsal marks vanished on
+PDF re-import**. The Advance export writes an "ARRANGEMENT NOTES" section, but the
+BandHelper importer `break`s at "SETLIST SUMMARY", discarding the whole page — so
+every re-imported song came back with `arrangement: ''`. Two failure modes are now
+closed: notes are recovered on re-import, and notes containing musical symbols no
+longer render as garbage in the export in the first place.
+
+New module-scope pure helpers (after the BandHelper parser; all extracted +
+unit-tested via `test/extract-algorithm.js`):
+- **`pdfSafeText`** — transliterates characters jsPDF's WinAnsi fonts can't encode
+  (♭→b, ♯→#, en/em dash→-, curly quotes, ellipsis, unicode spaces) and drops any
+  remaining non-Latin-1. Without it, a note like "A♭7 … F♯m7" exported as
+  per-character mojibake (the reported garbling). Applied to the footnote title +
+  note text on export.
+- **`pdfParseArrangementNotes(pages)`** (+ `pdfParseArrangementNotesVisible`,
+  `matchArrRoleLabel`) — parses the visible ARRANGEMENT NOTES section straight from
+  the export's own geometry (footnote number at x≈margin; TITLE + "(Set N)" on the
+  baseline; each role `<LABEL>@margin+14  <note>@margin+86`; wrapped lines continue
+  at margin+86). Indent, not casing, separates a role header from a continuation, so
+  a note wrapping onto "Keys …" is never misread as a KEYS role.
+- **Embedded lossless block** (`pdfEncodeArrangementData` / `pdfDecodeArrangementData`
+  / `arrB64Decode`, markers `[[SLARR:i:n:<b64>]]`) — newer Advance exports also embed
+  the exact arrangement objects as base64 (drawn tiny + white), so a round-trip is
+  lossless even for characters the visible notes transliterate. `pdfParseArrangementNotes`
+  prefers this block over the visible text; matched to songs by set/song index.
+- **`arrNoteMatchesTitle`** / `arrTitleKey` / `arrApplyNoteToArrangement` — reattach a
+  footnote to its song, tolerant of the superscript the table glues onto the title
+  (after it in the column layout, before it in the stacked layout — only the
+  footnote's own number is stripped, so a real leading/trailing number survives).
+  Merge is per-role: imported roles win, untouched roles preserved.
+
+Wiring:
+- **`importBandHelperSetlist`** now recovers notes and re-attaches them (title match
+  first, embedded index as a backstop) instead of hardcoding `arrangement: ''`; the
+  toast reports "N arrangement notes restored".
+- **New "📋 Import Arrangement Notes → Library"** in the Gig Profiles modal
+  (`applyArrangementNotesFromPDF` → `onApplyArrangementNotes`): upload an app-generated
+  Advance PDF (or its notes page) and every footnote is matched to a library song by
+  title and its rehearsal marks restored — no manual re-entry after an export.
+- **Export** embeds the data block after the visible notes and sanitizes note text
+  through `pdfSafeText`.
+
+Verification: Babel compile clean; `npm test` → 93/93 (14 new: sanitize map,
+embedded encode/decode incl. multi-chunk + out-of-order + corrupt, visible-geometry
+parse incl. 2-word ENDING CUE label + the "Keys" continuation trap, embedded-over-
+visible precedence, superscript-tolerant title matching both ends, per-role merge).
+Real jsPDF→pdf.js round-trip (rendered, not synthetic): embedded path lossless with
+♭/♯ intact and index-matched; visible fallback parses the geometry and reads back the
+sanitized ASCII. Parsed the user's two actual exports → 9 and 13 notes recovered with
+correct titles/sets/roles. Headless Playwright drive (vendored npm libs): app mounts,
+0 page errors; the notes PDF applied to a seeded library updated 4 songs (merge
+preserved a pre-existing bass note, non-matching song untouched, correct toast); the
+full setlist PDF re-imported as a gig with 7 arrangement notes restored (the 2 misses
+are songs the pre-existing stacked table parser drops, not a footnote regression).
+
 ---
 
 ## 10. Gmail API integration (BUILT 2026-07 — see §9j; spec kept for reference)
