@@ -154,7 +154,11 @@ for (const f of [
   'pdfParseArrangementNotes', 'arrTitleKey', 'arrNoteMatchesTitle', 'arrApplyNoteToArrangement',
   // Setlist → library round-trip (flatten sets to songs + reattach notes; CSV arr reassembly).
   'stripFootnoteNum', 'flattenSetlistSongs', 'csvArrangementFromRow',
+  // BandHelper/stacked setlist PDF parser (X-position column assignment).
+  'bhFieldOfHeader', 'bhDetectColumns', 'bhAssignRow', 'bhCleanDuration', 'bhCleanKey',
+  'bhCleanVocalist', 'bhIsNoiseRow', 'pdfParseBandHelperSets',
 ]) pieces.push(extractDecl(f));
+pieces.push(extractDecl('BH_SET_HEADER_RE'));
 
 // Contact enrichment + phone-first outreach helpers (CALL_OUTCOMES before its users).
 for (const g of [
@@ -208,6 +212,7 @@ const EXPORTS = [
   'pdfParseArrangementNotesVisible', 'pdfParseArrangementNotes',
   'arrTitleKey', 'arrNoteMatchesTitle', 'arrApplyNoteToArrangement',
   'stripFootnoteNum', 'flattenSetlistSongs', 'csvArrangementFromRow',
+  'pdfParseBandHelperSets',
 ];
 
 // Minimal browser shims the algorithm touches (genId uses window.crypto).
