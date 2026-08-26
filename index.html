@@ -3632,7 +3632,7 @@
      * Convert parsed PDF songs into the standard CSV format string.
      */
     function pdfSongsToCSV(songs) {
-      const headers = ['Title', 'Artist', 'Duration', 'Style', 'Key', 'BPM', 'Vocalist'];
+      const headers = ['Title', 'Artist', 'Duration', 'Style', 'Key', 'BPM', 'Vocalist', 'Arrangement'];
       const esc = (s) => {
         const str = String(s ?? '');
         if (/[",\n\r]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
@@ -3641,7 +3641,7 @@
       const lines = [headers.join(',')];
       for (const s of songs) {
         lines.push([
-          esc(s.title), esc(s.artist), esc(s.duration), esc(s.style || ''), esc(s.key), esc(s.bpm), esc(s.vocalist)
+          esc(s.title), esc(s.artist), esc(s.duration), esc(s.style || ''), esc(s.key), esc(s.bpm), esc(s.vocalist), esc(s.arrangement || '')
         ].join(','));
       }
       return lines.join('\n');
@@ -4164,6 +4164,123 @@
     }
 
     /******************* END ARRANGEMENT-NOTES ROUND-TRIP *******************/
+
+
+    /******************* SETLIST → LIBRARY (round-trippable import) *******************/
+    // The app's own generated setlist exports (PDF "Stage (minimal)" and the setlist/
+    // songs CSVs) must import cleanly back into the song library. The generic
+    // pdfParseAllPages heuristic collapses the stacked PDF layout by row and mis-reads
+    // columns (Title←Key, Key←BPM); the X-position set-aware parser (pdfParseBandHelperSets)
+    // reads it correctly. These pure helpers bridge that parser's set output into flat
+    // library song objects and re-attach recovered arrangement footnotes, so rehearsal
+    // marks survive an export/import round-trip with no manual re-entry.
+
+    // Strip a footnote's own number where the stacked/column layout glued it onto the
+    // title ("SHAKY GROUND 1", "MY OLD SCHOOL11") — but only when removing that exact
+    // number makes the title match the note, so a real leading/trailing number survives.
+    function stripFootnoteNum(title, note) {
+      const raw = String(title || '').trim();
+      const num = String((note && note.num) || '');
+      if (!num) return raw;
+      const nt = arrTitleKey(note && note.title);
+      const trailing = raw.replace(new RegExp('\\s*' + num + '\\s*$'), '').trim();
+      const leading = raw.replace(new RegExp('^\\s*' + num + '\\s*'), '').trim();
+      if (arrTitleKey(trailing) === nt) return trailing;
+      if (arrTitleKey(leading) === nt) return leading;
+      return raw;
+    }
+
+    // Flatten a parsed setlist ({ sets:[{ songs }] } from pdfParseBandHelperSets) into a
+    // flat list of library song objects, re-attaching recovered arrangement footnotes
+    // (`notes` from pdfParseArrangementNotes) to each song by title. Pure; shared by every
+    // "add a generated setlist to the song library" path. `notes` may be [] (no notes page).
+    function flattenSetlistSongs(setResult, notes) {
+      const noteList = Array.isArray(notes) ? notes : [];
+      const out = [];
+      for (const set of (setResult && setResult.sets) || []) {
+        for (const s of (set.songs || [])) {
+          const note = noteList.find(n => arrNoteMatchesTitle(s.title, n));
+          let arrangement = '';
+          let title = String(s.title || '').trim();
+          if (note) {
+            const merged = arrApplyNoteToArrangement('', note);
+            if (merged) arrangement = merged;
+            title = stripFootnoteNum(title, note);
+          }
+          out.push({
+            title,
+            artist: s.artist || '',
+            duration: s.duration || '',
+            style: s.style || '',
+            key: s.key || '',
+            bpm: s.bpm || '',
+            vocalist: s.vocalist || '',
+            arrangement,
+          });
+        }
+      }
+      return out;
+    }
+
+    // Reassemble an arrangement string from a raw CSV row object, mirroring the canonical
+    // importer (importNormalizeRow): the six per-role columns (Arr General/Drums/Keys/Bass/
+    // Guitar2/Ending Cue from the songs-CSV export) take priority, falling back to a single
+    // Arrangement/Notes column. Lets the robust quick-import keep rehearsal notes on CSV
+    // round-trip instead of dropping everything but a lone "arrangement" column. Pure.
+    function csvArrangementFromRow(rowObj) {
+      const rowKeyMap = {};
+      for (const k of Object.keys(rowObj || {})) rowKeyMap[k.toLowerCase().trim()] = k;
+      const roleObj = { global: '', drums: '', keys: '', bass: '', guitar2: '', endingCue: '' };
+      let any = false;
+      for (const [role, syns] of Object.entries(ARR_ROLE_IMPORT_HEADERS)) {
+        const origKey = syns.reduce((found, syn) => found || rowKeyMap[syn] || null, null);
+        if (origKey != null) {
+          roleObj[role] = String(rowObj[origKey] ?? '').trim();
+          if (roleObj[role]) any = true;
+        }
+      }
+      if (any) return serializeArrangement(roleObj);
+      for (const syn of ['arrangement', 'arr', 'notes', 'cues', 'chart notes', 'advance notes']) {
+        if (rowKeyMap[syn]) {
+          const v = String(rowObj[rowKeyMap[syn]] ?? '').trim();
+          if (v) return v;
+        }
+      }
+      return '';
+    }
+
+    // Extract library-ready song objects from a PDF, preferring the X-position set-aware
+    // parser (which correctly reads this app's own stacked setlist export) and recovering
+    // any embedded/visible arrangement footnotes, with the legacy heuristic parser as a
+    // fallback for other/flat PDF layouts. Every returned song has the full field set plus
+    // an `arrangement` string, so both library-import doors round-trip fields AND notes.
+    async function pdfExtractLibrarySongs(arrayBuffer) {
+      let pages = null;
+      try { pages = await pdfExtractRows(arrayBuffer); } catch (e) { pages = null; }
+      if (pages) {
+        let setResult = null;
+        try { setResult = pdfParseBandHelperSets(pages); } catch (e) { setResult = null; }
+        if (setResult && setResult.songCount > 0) {
+          let notes = [];
+          try { notes = pdfParseArrangementNotes(pages) || []; } catch (e) { notes = []; }
+          return flattenSetlistSongs(setResult, notes);
+        }
+      }
+      // Fallback: legacy heuristic parser for non-setlist / flat PDF layouts.
+      const pageTexts = await pdfExtractText(arrayBuffer);
+      return pdfParseAllPages(pageTexts).map(s => ({
+        title: s.title,
+        artist: s.artist || '',
+        duration: s.duration || '',
+        style: s.style || '',
+        key: s.key || '',
+        bpm: s.bpm || '',
+        vocalist: s.vocalist || '',
+        arrangement: '',
+      }));
+    }
+
+    /******************* END SETLIST → LIBRARY *******************/
 
     /******************* END PDF IMPORT ENGINE *******************/
 
@@ -7268,13 +7385,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         if (file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf') {
           try {
             const arrayBuffer = await file.arrayBuffer();
-            const pageTexts = await pdfExtractText(arrayBuffer);
-            const songs = pdfParseAllPages(pageTexts);
+            // Prefer the set-aware parser (correctly reads this app's own stacked setlist
+            // export and recovers arrangement footnotes); falls back to the flat heuristic.
+            const songs = await pdfExtractLibrarySongs(arrayBuffer);
             if (songs.length === 0) {
               alert('No song data found in PDF. The PDF may not be in a recognized format.');
               return;
             }
-            // Convert to CSV and feed into existing pipeline
+            // Convert to CSV (incl. arrangement) and feed into existing pipeline
             const csvText = pdfSongsToCSV(songs);
             parseText(csvText, file.name);
           } catch (err) {
@@ -11610,7 +11728,7 @@ ${headerHtml}
               bpm: get(['bpm', 'tempo', 'speed']) || '',
               vocalist: get(['vocalist', 'singer', 'lead', 'vox', 'vocal']) || '',
               energy: get(['energy', 'intensity', 'vibe']) || '',
-              arrangement: get(['arrangement', 'arr', 'notes', 'cues']) || ''
+              arrangement: csvArrangementFromRow(row)
             });
           }
           return out;
@@ -11624,8 +11742,9 @@ ${headerHtml}
           if (file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf') {
             try {
               const arrayBuffer = await file.arrayBuffer();
-              const pageTexts = await pdfExtractText(arrayBuffer);
-              const pdfSongs = pdfParseAllPages(pageTexts);
+              // Set-aware parser first (correct on this app's own stacked setlist export,
+              // with arrangement footnotes recovered); flat heuristic as fallback.
+              const pdfSongs = await pdfExtractLibrarySongs(arrayBuffer);
               parsedSongs = pdfSongs.map(s => {
                 const rawStyle = s.style ? s.style.toLowerCase() : '';
                 const knownStyle = (rawStyle && PDF_KNOWN_STYLES.has(rawStyle)) ? rawStyle : '';
@@ -11644,6 +11763,7 @@ ${headerHtml}
                   key: s.key || '',
                   bpm: s.bpm || '',
                   vocalist: s.vocalist || '',
+                  arrangement: s.arrangement || '',
                   ...(inferredFlag ? { styleInferred: true } : {})
                 };
               });
