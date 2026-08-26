@@ -3864,6 +3864,20 @@
         } else if (bhDetectColumns(row)) { continue; } // repeated header on a later page
 
         if (!cols) continue; // no columns detected yet — can't parse data rows
+
+        // Footnote-superscript row (stacked export): a lone short integer rendered on
+        // its own line just after the title, marking an arrangement footnote. It carries
+        // no song data, but because it sits between the Title and Key column anchors it
+        // gets assigned to Title (prepending its digits to the title) or — for a long
+        // title that pushes it rightward — to Key, where it masquerades as a meta line and
+        // makes the parser swallow the next song into this one's artist. Drop it before
+        // column assignment. (The row number on a real meta line always shares its line
+        // with Key/BPM, so it never appears as a lone item.) Notes still attach by title.
+        if (stacked && row.items.length === 1 && /^\d{1,3}$/.test(row.items[0].str.trim())) {
+          const titleCol = cols.find(c => c.field === 'title');
+          if (titleCol && row.items[0].x > titleCol.x + 20) continue;
+        }
+
         const cells = bhAssignRow(row, cols);
 
         if (stacked) {

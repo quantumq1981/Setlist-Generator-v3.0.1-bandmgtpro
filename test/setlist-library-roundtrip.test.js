@@ -95,6 +95,41 @@ test('csvArrangementFromRow: rebuilds arrangement from split Arr* columns (songs
   assert.strictEqual(arr.drums, '');
 });
 
+// Reproduces the reported bug where re-importing an app-generated setlist PDF concatenated
+// two songs under one artist ("B.B. King SLOW BLUES FOR Z FROM THE 5 Chris Zemba"). The
+// stacked "Stage (minimal)" export renders each arrangement footnote as its own text row —
+// a lone superscript number just right of the title. Assigned by X, a footnote after a long
+// title lands in the KEY column and masquerades as a song's meta line, swallowing the next
+// song; after a short title it lands in TITLE and prepends its digits. Both are now dropped.
+test('pdfParseBandHelperSets: footnote superscript rows never merge songs or dirty titles', () => {
+  // One page of pre-grouped visual rows (as pdfExtractRows yields: {y, items:[{str,x}]}).
+  const rows = [
+    { y: 923, items: [ { str: '#', x: 31 }, { str: 'SONG TITLE', x: 60 }, { str: 'KEY', x: 373 }, { str: 'BPM', x: 430 }, { str: 'STYLE', x: 478 } ] },
+    // Song 1 — short title, footnote "1" lands in the TITLE column (x160).
+    { y: 899, items: [ { str: '1', x: 160 } ] },
+    { y: 894, items: [ { str: 'SHAKY GROUND', x: 60 } ] },
+    { y: 888, items: [ { str: '1', x: 30 }, { str: 'E', x: 378 }, { str: '105', x: 431 }, { str: 'funk', x: 474 } ] },
+    { y: 879, items: [ { str: 'Delbert McClinton', x: 60 } ] },
+    // Song 2 — no footnote.
+    { y: 558, items: [ { str: 'THE THRILL IS GONE', x: 60 } ] },
+    { y: 552, items: [ { str: '2', x: 30 }, { str: 'Cm', x: 373 }, { str: '70', x: 434 }, { str: 'slow blues', x: 474 } ] },
+    { y: 543, items: [ { str: 'B.B. King', x: 60 } ] },
+    // Song 3 — long title, footnote "6" pushed right into the KEY column (x256): the bleed trigger.
+    { y: 521, items: [ { str: '6', x: 256 } ] },
+    { y: 516, items: [ { str: 'SLOW BLUES FOR Z FROM THE 5', x: 60 } ] },
+    { y: 510, items: [ { str: '3', x: 26 }, { str: 'G', x: 378 }, { str: '60', x: 434 }, { str: 'slow blues', x: 474 } ] },
+    { y: 501, items: [ { str: 'Chris Zemba', x: 60 } ] },
+  ];
+  const { sets, songCount } = S.pdfParseBandHelperSets([{ page: 1, rows }]);
+  assert.strictEqual(songCount, 3, 'all three songs parsed — none swallowed');
+  const songs = sets[0].songs;
+  assert.deepStrictEqual(songs.map(s => s.title), ['SHAKY GROUND', 'THE THRILL IS GONE', 'SLOW BLUES FOR Z FROM THE 5']);
+  assert.deepStrictEqual(songs.map(s => s.artist), ['Delbert McClinton', 'B.B. King', 'Chris Zemba']);
+  // The specific reported failure: the previous song's artist must not absorb the next.
+  assert.ok(!songs[1].artist.includes('SLOW BLUES'), 'THE THRILL artist is not bled into');
+  assert.strictEqual(songs[2].key, 'G', 'a real Key is still read (footnote did not poison it)');
+});
+
 test('csvArrangementFromRow: falls back to a single Arrangement/Notes column', () => {
   assert.strictEqual(
     S.csvArrangementFromRow({ Title: 'X', Arrangement: 'Slow intro build' }),
