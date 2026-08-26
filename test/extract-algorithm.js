@@ -144,7 +144,7 @@ for (const g of [
 
 // Arrangement-notes round-trip (footnote export/import). Consts before the functions
 // that read them; parse/serializeArrangement + ARR_ROLES back the merge/normalize.
-for (const c of ['ARR_ROLES', 'ARR_LABEL_TO_ROLE', 'PDF_TEXT_MAP', 'ARR_DATA_MARKER', 'ARR_DATA_RE']) {
+for (const c of ['ARR_ROLES', 'ARR_ROLE_IMPORT_HEADERS', 'ARR_LABEL_TO_ROLE', 'PDF_TEXT_MAP', 'ARR_DATA_MARKER', 'ARR_DATA_RE']) {
   pieces.push(extractDecl(c));
 }
 for (const f of [
@@ -152,6 +152,8 @@ for (const f of [
   'pdfSafeText', 'pdfEncodeArrangementData', 'arrB64Decode', 'normalizeArrObj',
   'pdfDecodeArrangementData', 'matchArrRoleLabel', 'pdfParseArrangementNotesVisible',
   'pdfParseArrangementNotes', 'arrTitleKey', 'arrNoteMatchesTitle', 'arrApplyNoteToArrangement',
+  // Setlist → library round-trip (flatten sets to songs + reattach notes; CSV arr reassembly).
+  'stripFootnoteNum', 'flattenSetlistSongs', 'csvArrangementFromRow',
 ]) pieces.push(extractDecl(f));
 
 // Contact enrichment + phone-first outreach helpers (CALL_OUTCOMES before its users).
@@ -201,10 +203,11 @@ const EXPORTS = [
   'DAILY_OUTREACH_CAP', 'MAX_SEQUENCE_SENDS', 'SEQUENCE_STEP_DAYS', 'addDaysISO', 'sendsToday', 'nextActionFor',
   'VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'epkLinkForVenue',
   'MIN_LEARN_SAMPLE', 'venueOutcome', 'collectOutreachStats', 'smoothedRate', 'typeScoreMultiplier', 'bestStatInsight',
-  'ARR_ROLES', 'parseArrangement', 'serializeArrangement', 'pdfSafeText',
+  'ARR_ROLES', 'ARR_ROLE_IMPORT_HEADERS', 'parseArrangement', 'serializeArrangement', 'pdfSafeText',
   'pdfEncodeArrangementData', 'arrB64Decode', 'pdfDecodeArrangementData',
   'pdfParseArrangementNotesVisible', 'pdfParseArrangementNotes',
   'arrTitleKey', 'arrNoteMatchesTitle', 'arrApplyNoteToArrangement',
+  'stripFootnoteNum', 'flattenSetlistSongs', 'csvArrangementFromRow',
 ];
 
 // Minimal browser shims the algorithm touches (genId uses window.crypto).
