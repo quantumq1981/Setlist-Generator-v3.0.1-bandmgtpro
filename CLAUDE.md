@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-08-23.
+Last updated: 2026-09-02.
 
 ---
 
@@ -82,7 +82,7 @@ For a one-off probe you can still lift a single function ad hoc, but prefer addi
 case to the suite so the check is permanent.
 
 ### Git / PRs
-Feature branch: `claude/epk-venue-messaging-enhance-1xcsu7`. Open PRs against `main`.
+Feature branch: `claude/pdf-export-decouple-gf67hb`. Open PRs against `main`.
 When a PR merges, restart the branch from `origin/main` for the next change.
 
 ---
@@ -99,7 +99,9 @@ When a PR merges, restart the branch from `origin/main` for the next change.
   bpm,        // tempo as string
   energy,     // OPTIONAL manual energy 1–10 — overrides computed energy (see §6)
   vocalist,
-  arrangement,// JSON { global, drums, keys, bass, guitar2, endingCue } or legacy text
+  arrangement,// JSON { global, drums, keys, bass, guitar2, endingCue,      <- roles
+              //        intro_cue, form_harmony, transition_outro, general_notes }  <- sections
+              // or legacy free text. See §11.
   styleInferred?, mediaLinks?
 }
 ```
@@ -867,6 +869,116 @@ full setlist PDF re-imported as a gig with 7 arrangement notes restored (the 2 m
 are songs the pre-existing stacked table parser drops, not a footnote regression).
 
 ---
+
+## 9r. Change log — 2026-09 PDF export decoupling
+
+- **Two documents, two pipelines.** The 350-line `exportPDF` closure was replaced by a
+  thin dispatcher over module-scope `buildStageSetlistModel` / `generateStageSetlistPDF`
+  and `buildArrangementGuideModel` / `generateArrangementGuidePDF`. The stage sheet lost
+  the ARRANGEMENT NOTES section and the footnote superscripts (now a `*` marker); its
+  summary page keeps the quality scores and points at the guide.
+- **`sanitizeNotation`** — repairs the byte-pair and per-glyph mojibake in the reference
+  PDFs and normalises real Unicode notation; applied to every string in both documents.
+- **Sectioned schema** — `intro_cue` / `form_harmony` / `transition_outro` /
+  `general_notes` added alongside the roles, with a classifier that back-fills them for
+  every existing library and a shared editor component in both song forms.
+- **`arrRowText`** — geometry-aware row joining, so re-importing an old damaged export
+  recovers words rather than letter-spaced characters.
+- **UI** — three export buttons in the Setlist view, a document radio group + Venue/Event
+  field in the PDF settings modal.
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → 132/132
+(32 new); real jsPDF → pdf.js round-trip driven by the verbatim corrupted notes from both
+reference PDFs → 41/41 (mojibake gone, `I-IV-V` / `#V9` / `(I -VI7- II7-V7)` restored,
+stage sheet provably free of prose, guide re-parses via both the embedded block and the
+visible grid); both reference PDFs re-parsed → 13/13 notes each, all rendering clean;
+headless Playwright drive → 19/19 (structured fields present, three export buttons, each
+producing the right file, package producing both, settings modal honouring the choice),
+0 page errors.
+
+---
+
+---
+
+## 11. PDF export — two decoupled documents
+
+Exports split into two independent pipelines, both fed by pure model builders. Nothing
+in the pipeline touches React state: `exportPDF(kind)` in `App` builds a context object
+and hands it to a module-scope renderer, so both renderers are drivable headlessly.
+
+| | Stage Setlist | Master Arrangement Guide |
+|---|---|---|
+| Purpose | on the music stand | in the rehearsal folder |
+| Model | `buildStageSetlistModel(sets, {includeCues})` | `buildArrangementGuideModel(sets, {roleFilter})` |
+| Renderer | `generateStageSetlistPDF(model, ctx)` | `generateArrangementGuidePDF(entries, ctx)` |
+| Content | `#`, title, artist, key, BPM, style; `*` marks a song with a guide entry; one ≤40-char cue line in Advance view | 3-column grid `[Song # & Title] \| [Key/BPM/Style] \| [Arrangement & Harmonic Directives]`, grouped by set |
+| Arrangement prose | **never** | all of it |
+| Filename | `setlist-<band>-<date>.pdf` | `arrangement-guide-<band>-<date>.pdf` |
+
+`kind` is `'stage' | 'guide' | 'package'` (`PDF_DOC_KINDS`). The Setlist view exposes
+all three as buttons (`data-testid="export-stage" / "export-guide" / "export-package"`);
+`PdfSettingsModal` carries the same choice as a radio group (`data-testid="pdf-doc-kind"`)
+plus an optional **Venue / Event** line (`pdfSettings.eventLabel`) printed in both headers.
+`arrangementSongCount` (memo in `App`) drives the guide button's count + enablement.
+
+**Layout rules the guide must keep.** No full-bleed watermark — a background wash under
+dense chord prose is what made the combined export unreadable; the logo is a 30pt mark in
+the header band instead. Rows are measured (`measureBlocks`) before they are drawn, so a
+song is never split across a page and a continuation page repeats its set band. Zebra
+striping is a flat tint, never a graphic.
+
+### `sanitizeNotation(text)` — the notation sanitizer
+
+Every string entering either document goes through it. Two phases:
+
+1. **Repair.** jsPDF's built-in fonts are WinAnsi/Latin-1: handed a codepoint above
+   U+00FF they emit the two raw bytes. That is the exact corruption in the reference
+   exports — U+2160 (Ⅰ) came out as ``!` ``, U+2164 (Ⅴ) as `!d`, U+266D (♭) as `&m`,
+   U+266F (♯) as `&o`; a second fallback mode drew one glyph at a time and interleaved
+   NULs, producing the letter-spaced `S  o    s  l  o  w` rows. `repairNotationMojibake`
+   undoes the byte pairs (the `&` pass runs **before** the `!` pass so `&o!` `9` resolves),
+   `repairRomanChain` recovers a partially damaged progression (`!e7-a7-1d7` → `VI7-II7-V7`),
+   and the NUL collapse undoes the per-glyph mode.
+2. **Normalise.** Roman-numeral codepoints (U+2160–U+217F) → ASCII, accidentals
+   (♭ ♯ ♮ 𝄪 𝄫 Δ ∅ °) → `b # (nat) x bb maj o/ dim`, superscript extensions → digits,
+   then `pdfSafeText` for the Latin-1 net and whitespace hygiene. Idempotent.
+
+Guards keep prose safe: the marker may not be glued to a word character (`R&B`, `Yeah!ok`)
+and `!` may not be followed by a lowercase letter.
+
+`arrRowText` closes the same loop on **import**: when a row's items carry measured widths
+it re-joins them by horizontal gap (`ARR_WORD_GAP_PT` = 2.6), so a per-glyph row comes back
+as words instead of `S o s l o w`. Rows without widths keep the old single-space join.
+
+### Sectioned note schema
+
+`ARR_SECTIONS = ['intro_cue', 'form_harmony', 'transition_outro', 'general_notes']`
+sit **alongside** the six `ARR_ROLES` in the same arrangement object (`ARR_FIELDS` is the
+union). Roles answer "who"; sections answer "where in the song". `parseArrangement` /
+`serializeArrangement` / `hasArrangementData` / `normalizeArrObj` /
+`arrApplyNoteToArrangement` all operate over `ARR_FIELDS`; a lone free-text note still
+serialises as a plain string, so legacy libraries are byte-identical.
+
+`deriveArrangementSections(arrangement)` gives every legacy note a sectioned view:
+explicit section fields always win; otherwise each role line is **repaired first** and
+then classified by `classifyArrLine` (a leading `[tag]` is authoritative, then harmony,
+then outro, then intro, else general). When the sections are derived, the guide suppresses
+the roles block (`derivedFromRoles`) — they would print the same text twice. Both song
+forms render the shared `<ArrSectionFields>` component; do not re-hardcode the field list.
+
+### Round-trip
+
+Guide PDFs still carry the lossless `[[SLARR:…]]` block, so re-import is exact —
+including characters the visible text transliterates. `pdfParseArrangementNotes` resolves
+embedded → legacy footnote layout (`pdfParseArrangementNotesVisible`) → guide grid
+(`pdfParseArrangementGuideVisible`, which recovers column origins from the header strip
+rather than assuming them).
+
+### Verification for this area
+
+`npm test` (`test/pdf-export-split.test.js` drives the renderers through a recording stub
+jsPDF, so the suite stays dependency-free), plus the scratchpad recipe from §2 for a real
+jsPDF → pdf.js round-trip and the Playwright drive.
 
 ## 10. Gmail API integration (BUILT 2026-07 — see §9j; spec kept for reference)
 

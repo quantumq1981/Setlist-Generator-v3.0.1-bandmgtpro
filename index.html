@@ -532,6 +532,10 @@
     .arr-roles-header-label { font-size: .72rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
     .arr-roles-header-badge { font-size: .62rem; padding: .1rem .4rem; border-radius: 10px; background: rgba(74,222,128,.15); color: var(--success); border: 1px solid rgba(74,222,128,.3); }
     .arr-roles-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .35rem; }
+    .arr-sections-block { margin-bottom: .5rem; padding-bottom: .5rem; border-bottom: 1px dashed var(--border); }
+    .arr-sections-title { margin-bottom: .3rem; }
+    .arr-section-derived { font-size: .65rem; color: var(--text-muted); font-style: italic; margin-top: .15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pdf-export-group .btn:disabled { opacity: .45; cursor: not-allowed; }
     .arr-role-full { grid-column: 1 / -1; }
     .arr-role-item { display: flex; flex-direction: column; gap: .15rem; }
     .arr-role-item-label { font-size: .6rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
@@ -889,9 +893,33 @@
     const ARR_ROLES = ['global', 'drums', 'keys', 'bass', 'guitar2', 'endingCue'];
     const ARR_ROLE_LABELS = { global: 'General', drums: 'Drums', keys: 'Keys', bass: 'Bass', guitar2: 'Guitar 2', endingCue: 'Ending Cue' };
 
+    // Structured arrangement SECTIONS. ARR_ROLES above are per-instrument channels
+    // ("who plays what"); these four are the musical-structure channels the Master
+    // Arrangement Guide is organised around ("where in the song"). Both sets live
+    // side by side in the same arrangement object, so nothing that reads roles today
+    // has to change. Keys stay snake_case: they are the published note schema.
+    const ARR_SECTIONS = ['intro_cue', 'form_harmony', 'transition_outro', 'general_notes'];
+    const ARR_SECTION_LABELS = {
+      intro_cue: 'Intro / Cue',
+      form_harmony: 'Form & Harmony',
+      transition_outro: 'Transition / Outro',
+      general_notes: 'General Notes',
+    };
+    const ARR_SECTION_HINTS = {
+      intro_cue: 'Cold open, drum intro, count-in, who starts',
+      form_harmony: 'Bar counts, subs, turnarounds, chromatic slides',
+      transition_outro: 'Direct segue, tag 4x, visual cue, button',
+      general_notes: 'Anything that is not a cue or a chord',
+    };
+    const ARR_FIELDS = ARR_ROLES.concat(ARR_SECTIONS);
+
     function parseArrangement(arrangement) {
-      const empty = { global: '', drums: '', keys: '', bass: '', guitar2: '', endingCue: '' };
+      const empty = {
+        global: '', drums: '', keys: '', bass: '', guitar2: '', endingCue: '',
+        intro_cue: '', form_harmony: '', transition_outro: '', general_notes: '',
+      };
       if (!arrangement) return empty;
+      if (typeof arrangement === 'object') return { ...empty, ...arrangement };
       if (typeof arrangement === 'string' && arrangement.trim().startsWith('{')) {
         try { return { ...empty, ...JSON.parse(arrangement) }; }
         catch (e) { return { ...empty, global: arrangement }; }
@@ -901,17 +929,67 @@
 
     function serializeArrangement(obj) {
       if (!obj) return '';
-      const { global: g = '', drums = '', keys = '', bass = '', guitar2 = '', endingCue = '' } = obj;
-      const hasStructured = drums || keys || bass || guitar2 || endingCue;
+      const g = obj.global || '';
+      // Any populated field other than `global` forces the JSON form; a lone free-text
+      // note still round-trips as a plain string so legacy libraries stay byte-identical.
+      const hasStructured = ARR_FIELDS.some(f => f !== 'global' && obj[f] && String(obj[f]).trim());
       if (!hasStructured) return g;
       const out = {};
-      if (g) out.global = g;
-      if (drums) out.drums = drums;
-      if (keys) out.keys = keys;
-      if (bass) out.bass = bass;
-      if (guitar2) out.guitar2 = guitar2;
-      if (endingCue) out.endingCue = endingCue;
+      ARR_FIELDS.forEach(f => {
+        const v = f === 'global' ? g : obj[f];
+        if (v && String(v).trim()) out[f] = v;
+      });
       return JSON.stringify(out);
+    }
+
+    // --- Legacy prose -> sectioned notes ------------------------------------
+    // Existing libraries keep everything in the free-text role fields. The Arrangement
+    // Guide renders from sections, so notes with no explicit section fields are
+    // classified here instead of showing up blank. Explicit fields always win — this
+    // derives a view, it never rewrites what the user stored.
+    const ARR_TAG_INTRO_RE = /\b(cold\s*(open|guitar|gtr|start)|drum\s*intro|keys?\s*lead[-\s]?in|bass\s*intro|guitar\s*intro|count[-\s]?in|intro|opener|pick[-\s]?up|a\s*cappella|top\s*of\s*(the\s*)?(form|tune)|band\s*(comes|joins)\s*in)\b/i;
+    const ARR_TAG_OUTRO_RE = /\b(segue|tag|ending|outro|end\s+on|button|fade|closer|stop[-\s]?time|visual\s*cue|last\s*chorus\s*out)\b/i;
+    const ARR_HARMONY_RE = /(\bbars?\s*\d)|(\b\d{1,2}[-\s]bar\b)|(quick[-\s]?(iv|4|change))|(turn\s?ar?ound)|(substitut)|(chromatic\s+slide)|(progression)|(\bkey\s+of\b)|(\bchords?\b)|(\bvamp\b)|(\bmodulat)|(\briff\b)|([IiVvXx]{1,4}\d*(?:m|maj|min|dim|aug|sus)?\d*\s*[-–—\/]\s*[IiVvXx]{1,4})|([A-G][#b]?(?:m|maj|min|dim|aug|sus)?\d*\s*[-–—]\s*[A-G][#b]?)/;
+
+    // Which section does one line of arrangement prose belong to? A leading [tag] is
+    // authoritative (that is what the macro strip writes); otherwise harmony wins over
+    // cue words, because "…in the key of G starts with the V chord" is form, not intro.
+    function classifyArrLine(line) {
+      const t = String(line == null ? '' : line).trim();
+      if (!t) return null;
+      const tag = t.match(/^\[([^\]]{1,48})\]/);
+      if (tag) {
+        if (ARR_TAG_OUTRO_RE.test(tag[1])) return 'transition_outro';
+        if (ARR_TAG_INTRO_RE.test(tag[1])) return 'intro_cue';
+      }
+      if (ARR_HARMONY_RE.test(t)) return 'form_harmony';
+      if (ARR_TAG_OUTRO_RE.test(t)) return 'transition_outro';
+      if (ARR_TAG_INTRO_RE.test(t)) return 'intro_cue';
+      return 'general_notes';
+    }
+
+    function deriveArrangementSections(arrangement) {
+      const a = parseArrangement(arrangement);
+      const out = { intro_cue: '', form_harmony: '', transition_outro: '', general_notes: '' };
+      if (ARR_SECTIONS.some(s => a[s] && String(a[s]).trim())) {
+        ARR_SECTIONS.forEach(s => { out[s] = sanitizeNotation(a[s]); });
+        return out;
+      }
+      const push = (sec, txt) => { if (txt) out[sec] = out[sec] ? out[sec] + '\n' + txt : txt; };
+      ARR_ROLES.forEach(role => {
+        // Repair first: a line still reading "!`-!c-!d" carries no classifiable signal,
+        // whereas "I-IV-V" is unmistakably form/harmony.
+        const raw = sanitizeNotation(a[role]);
+        if (!raw) return;
+        const prefix = role === 'global' ? '' : ARR_ROLE_LABELS[role] + ': ';
+        // An ending cue is a transition by definition — no need to guess.
+        if (role === 'endingCue') { push('transition_outro', prefix + raw.replace(/\s*\n\s*/g, ' ')); return; }
+        raw.split(/\n+/).forEach(line => {
+          const t = line.trim();
+          if (t) push(classifyArrLine(t) || 'general_notes', prefix + t);
+        });
+      });
+      return out;
     }
 
     function getArrangementCue(arrangement) {
@@ -924,7 +1002,42 @@
     function hasArrangementData(arrangement) {
       if (!arrangement) return false;
       const p = parseArrangement(arrangement);
-      return ARR_ROLES.some(r => p[r]);
+      return ARR_FIELDS.some(r => p[r] && String(p[r]).trim());
+    }
+
+    // Structured section fields, shared by the add-song and inline-edit forms (the
+    // roles grid below them stays exactly as it was). Rendered from ARR_SECTIONS so
+    // the schema has a single source of truth; both forms must render this component
+    // rather than re-hardcoding the field list.
+    function ArrSectionFields({ arr, onChange }) {
+      const derived = deriveArrangementSections(arr);
+      const anyExplicit = ARR_SECTIONS.some(s => arr[s] && String(arr[s]).trim());
+      return (
+        <div className="arr-sections-block" data-testid="arr-sections">
+          <div className="arr-role-item-label arr-sections-title">
+            Structured Notes <span style={{ fontWeight: 400, textTransform: 'none', color: 'var(--text-muted)' }}>
+              (drives the Arrangement Guide PDF)
+            </span>
+          </div>
+          <div className="arr-roles-grid">
+            {ARR_SECTIONS.map(sec => (
+              <div key={sec} className={'arr-role-item' + (sec === 'form_harmony' || sec === 'general_notes' ? ' arr-role-full' : '')}>
+                <div className="arr-role-item-label">{ARR_SECTION_LABELS[sec]}</div>
+                <textarea className="arr-role-input" rows={sec === 'form_harmony' ? 2 : 1}
+                  data-testid={'arr-section-' + sec}
+                  value={arr[sec] || ''}
+                  onChange={e => onChange(sec, e.target.value)}
+                  placeholder={ARR_SECTION_HINTS[sec]} />
+                {!anyExplicit && derived[sec] && (
+                  <div className="arr-section-derived" title="Derived from the free-text notes below — type here to override">
+                    auto: {derived[sec].replace(/\n/g, ' / ').slice(0, 70)}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
     }
 
     const getYTVideoId = (url) => {
@@ -3665,7 +3778,7 @@
         const content = await page.getTextContent();
         const items = content.items
           .filter(it => it.str && it.str.trim())
-          .map(it => ({ str: it.str.replace(/\s+$/, ''), x: it.transform[4], y: it.transform[5] }))
+          .map(it => ({ str: it.str.replace(/\s+$/, ''), x: it.transform[4], y: it.transform[5], w: it.width }))
           .sort((a, b) => (Math.abs(b.y - a.y) > 3 ? b.y - a.y : a.x - b.x));
         const rows = [];
         let cur = null;
@@ -3993,6 +4106,164 @@
       return s;
     }
 
+    /******************* MUSICAL-NOTATION SANITIZER *******************/
+    // Two jobs, in this order:
+    //
+    //  1. REPAIR text a previous export already mangled. jsPDF's built-in fonts are
+    //     WinAnsi/Latin-1; handed a codepoint above U+00FF it emits the two raw bytes
+    //     instead of the glyph. So U+2160 (ROMAN NUMERAL ONE) left older exports as
+    //     "!`", U+2164 (V) as "!d", U+266D (MUSIC FLAT SIGN) as "&m" and U+266F
+    //     (SHARP) as "&o" -- exactly the corruption in the reference PDFs
+    //     ("conventional !`-!c-!d blues pattern", "(!` -!e7- !a7-!d7)"). Some exports
+    //     additionally fell into a per-glyph fallback that interleaved NULs (UTF-16
+    //     bytes emitted one at a time), producing the letter-spaced "S  o    s  l  o
+    //     w" rows. Re-importing such a PDF feeds the damage straight back into the
+    //     library, so every read path has to be able to undo it.
+    //
+    //  2. NORMALISE genuine Unicode notation down to characters the PDF fonts can
+    //     actually draw -- Roman-numeral codepoints, accidentals, superscript chord
+    //     extensions -- so the corruption is never produced in the first place.
+    //
+    // Pure and side-effect free: safe on every read and every write.
+
+    const NOTATION_ROMAN_UPPER = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','L','C','D','M'];
+    const NOTATION_ROMAN_LOWER = ['i','ii','iii','iv','v','vi','vii','viii','ix','x','xi','xii','l','c','d','m'];
+    const NOTATION_GLYPH_MAP = {
+      '♭': 'b',      // flat
+      '♯': '#',      // sharp
+      '♮': '(nat)',  // natural
+      'Δ': 'maj',    // major-seventh triangle
+      '∅': 'o/', 'ø': 'o/', // half-diminished
+      '°': 'dim',    // degree sign used as diminished
+      '♩': '', '♪': '', '♫': '', '♬': '',
+    };
+    const NOTATION_SUPERSCRIPTS = {
+      '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4',
+      '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9',
+      '⁺': '+', '⁻': '-',
+    };
+
+    // Byte-pair mojibake ("!`", "&m") -> the codepoint it came from. The '&' pass runs
+    // first so that a run like "&o!`9" ("#I9") has a non-word character in front of the
+    // '!' by the time the second pass looks at it. Guards: the marker may not be glued
+    // to a word character ("R&B", "Yeah!ok"), and '!' may not be followed by a
+    // lowercase letter -- which kills prose while keeping every real form ("!`M7",
+    // "!e7", "!d)").
+    function repairNotationMojibake(str) {
+      let s = String(str == null ? '' : str);
+      s = s.replace(/(^|[^0-9A-Za-z])&([l-o])/g,
+        (m, pre, ch) => pre + String.fromCharCode(0x2600 | ch.charCodeAt(0)));
+      s = s.replace(/(^|[^0-9A-Za-z])!([\u0060-\u007f])(?![a-z])/g,
+        (m, pre, ch) => pre + String.fromCharCode(0x2100 | ch.charCodeAt(0)));
+      return s;
+    }
+
+    // A progression sometimes survives only partially: one token keeps its "!" escape
+    // while its neighbours lost theirs to a lossy copy/paste ("!e7-a7-1d7"). Inside a
+    // hyphen chain that has already yielded at least one Roman numeral, a bare low-byte
+    // letter -- optionally still carrying the "1" a dropped "!" leaves behind -- is
+    // decoded the same way, so "!e7-a7-1d7" resolves to "VI7-II7-V7". Scoped to the
+    // chain, so ordinary prose is never touched.
+    const NOTATION_CHAIN_RE = /[\u2160-\u217f][^\s()]*(?:\s*[-\u2013\u2014]\s*[0-9A-Za-z\u2160-\u217f][^\s()]*)+/g;
+    function repairRomanChain(str) {
+      return String(str == null ? '' : str).replace(NOTATION_CHAIN_RE, chain =>
+        chain.replace(/(^|[-\u2013\u2014]\s*)1?([\u0060-\u006f])(?=[0-9]|[-\u2013\u2014\s)]|$)/g,
+          (m, pre, ch) => pre + String.fromCharCode(0x2100 | ch.charCodeAt(0))));
+    }
+
+    function sanitizeNotation(text) {
+      if (text == null) return '';
+      let s = String(text);
+      // 1) Repair: collapse per-glyph NUL interleaving, then the byte-pair mojibake.
+      if (s.indexOf('\u0000') !== -1) s = s.replace(/\u0000([\s\S])/g, '$1').replace(/\u0000/g, '');
+      s = repairNotationMojibake(s);
+      s = repairRomanChain(s);
+      // 2) Normalise real notation to ASCII the PDF fonts can draw.
+      s = s.replace(/[\u2160-\u216f]/g, ch => NOTATION_ROMAN_UPPER[ch.charCodeAt(0) - 0x2160]);
+      s = s.replace(/[\u2170-\u217f]/g, ch => NOTATION_ROMAN_LOWER[ch.charCodeAt(0) - 0x2170]);
+      s = s.replace(/[\u2070\u00b9\u00b2\u00b3\u2074-\u207b]/g,
+        ch => (NOTATION_SUPERSCRIPTS[ch] != null ? NOTATION_SUPERSCRIPTS[ch] : ''));
+      // Double sharp / double flat live outside the BMP, so match the surrogate pair.
+      s = s.replace(/\ud834[\udd2a\udd2b]/g, m => (m.charCodeAt(1) === 0xdd2a ? 'x' : 'bb'));
+      s = s.replace(/[\u266d\u266e\u266f\u0394\u2205\u00f8\u00b0\u2669-\u266c]/g,
+        ch => (NOTATION_GLYPH_MAP[ch] != null ? NOTATION_GLYPH_MAP[ch] : ''));
+      // 3) Latin-1 safety net (shared with every other PDF text path) + whitespace
+      //    hygiene, so a stray run of spaces can never blow out a wrapped line.
+      s = pdfSafeText(s);
+      s = s.replace(/\r\n?/g, '\n').replace(/[ \t]+/g, ' ')
+           .replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n');
+      return s.trim();
+    }
+
+    /******************* EXPORT MODELS (pure) *******************/
+    // The two export documents are built from one shared, already-sanitised model.
+    // Model building is pure -- no jsPDF, no React, no app state -- so it is testable
+    // headless; the renderers further down only turn a model into pages.
+
+    // Stage sheet: song identity only. Arrangement prose is deliberately excluded; at
+    // most one short cue tag per song, which is the entire point of the split.
+    function buildStageSetlistModel(sets, opts) {
+      const o = opts || {};
+      return (sets || []).map((set, setIdx) => ({
+        setIdx,
+        name: sanitizeNotation(set.name || ('Set ' + (setIdx + 1))).toUpperCase(),
+        totalTime: Math.round(set.totalTime || 0),
+        songs: (set.songs || []).map((song, i) => ({
+          no: i + 1,
+          id: song.id,
+          title: sanitizeNotation(song.title || '').toUpperCase(),
+          artist: sanitizeNotation(song.artist || ''),
+          key: sanitizeNotation(song.key || ''),
+          bpm: song.bpm ? String(song.bpm) : '',
+          style: sanitizeNotation(song.style || ''),
+          cue: o.includeCues ? sanitizeNotation(getArrangementCue(song.arrangement)) : '',
+          hasNotes: hasArrangementData(song.arrangement),
+        })),
+      }));
+    }
+
+    // Guide: one entry per song that actually carries arrangement data, holding both
+    // the derived sections (the guide's primary axis) and the per-instrument roles.
+    function buildArrangementGuideModel(sets, opts) {
+      const o = opts || {};
+      const roleFilter = o.roleFilter && o.roleFilter.size ? o.roleFilter : null;
+      const entries = [];
+      (sets || []).forEach((set, setIdx) => {
+        const setName = sanitizeNotation(set.name || ('Set ' + (setIdx + 1)));
+        (set.songs || []).forEach((song, songIdx) => {
+          if (!hasArrangementData(song.arrangement)) return;
+          const arr = parseArrangement(song.arrangement);
+          const derived = deriveArrangementSections(song.arrangement);
+          const sections = ARR_SECTIONS
+            .map(s => ({ key: s, label: ARR_SECTION_LABELS[s], text: sanitizeNotation(derived[s]) }))
+            .filter(s => s.text);
+          const roles = ARR_ROLES
+            .filter(r => arr[r] && (!roleFilter || roleFilter.has(r)))
+            .map(r => ({ key: r, label: ARR_ROLE_LABELS[r], text: sanitizeNotation(arr[r]) }))
+            .filter(r => r.text);
+          if (!sections.length && !roles.length) return;
+          // Sections derived from the roles already carry every role's text (prefixed
+          // with the role name), so emitting the roles as well would print each note
+          // twice -- exactly the clutter this split exists to remove. Roles are only
+          // additive when the sections were authored explicitly.
+          const derivedFromRoles = !ARR_SECTIONS.some(k => arr[k] && String(arr[k]).trim());
+          entries.push({
+            num: entries.length + 1,
+            derivedFromRoles,
+            setIdx, setName, songIdx, songNo: songIdx + 1,
+            title: sanitizeNotation(song.title || '').toUpperCase(),
+            artist: sanitizeNotation(song.artist || ''),
+            key: sanitizeNotation(song.key || ''),
+            bpm: song.bpm ? String(song.bpm) : '',
+            style: sanitizeNotation(song.style || ''),
+            sections, roles: derivedFromRoles ? [] : roles,
+            arr,   // untouched, for the lossless embedded round-trip block
+          });
+        });
+      });
+      return entries;
+    }
+
     // Embedded data-block markers: one line per ~180-char base64 chunk, self-describing
     // (index / total) so extraction order never matters. The base64 alphabet has no
     // spaces or ']' so each marker survives PDF text extraction as a single token.
@@ -4023,7 +4294,7 @@
 
     function normalizeArrObj(a) {
       const out = {};
-      for (const r of ARR_ROLES) if (a && a[r] != null && String(a[r]).trim()) out[r] = String(a[r]);
+      for (const r of ARR_FIELDS) if (a && a[r] != null && String(a[r]).trim()) out[r] = String(a[r]);
       return out;
     }
 
@@ -4064,6 +4335,30 @@
       return null;
     }
 
+    // Join one row's text items back into a line. When every item carries a measured
+    // width, the horizontal gap says where a real space belongs -- which matters
+    // because an export that fell back to per-glyph drawing yields one item PER
+    // CHARACTER, and a plain join(' ') letter-spaces the whole note ("S o s l o w b l u
+    // e s"). In those rows a glyph advance is ~2pt while a word break is ~4pt (the
+    // dropped space glyph's own slot), so the threshold separates them cleanly; a real
+    // column gap is an order of magnitude wider again. Rows without widths (synthetic
+    // fixtures, older callers) keep the original single-space join verbatim.
+    const ARR_WORD_GAP_PT = 2.6;
+    function arrRowText(items) {
+      const list = items || [];
+      const measured = list.length > 0 && list.every(it => typeof it.w === 'number' && isFinite(it.w));
+      if (!measured) return list.map(it => it.str).join(' ').replace(/\s+/g, ' ').trim();
+      let out = '';
+      for (let i = 0; i < list.length; i++) {
+        if (i > 0) {
+          const prev = list[i - 1];
+          if (list[i].x - (prev.x + prev.w) > ARR_WORD_GAP_PT) out += ' ';
+        }
+        out += list[i].str;
+      }
+      return out.replace(/[ \t]{2,}/g, ' ').trim();
+    }
+
     // Parse the visible "ARRANGEMENT NOTES" section from the row structure produced by
     // pdfExtractRows: [{ page, rows:[{ y, items:[{ str, x }] }] }]. Export geometry:
     // the footnote number sits at x≈margin with the TITLE (Set N) on the same baseline;
@@ -4075,7 +4370,7 @@
       const allRows = (pages || []).flatMap(pg => pg.rows || []);
       const notes = [];
       let started = false, cur = null, curRole = null, marginX = null;
-      const rowText = (items) => items.map(it => it.str).join(' ').replace(/\s+/g, ' ').trim();
+      const rowText = arrRowText;
 
       for (const row of allRows) {
         const items = [...(row.items || [])].sort((a, b) => a.x - b.x);
@@ -4126,6 +4421,86 @@
       })).filter(n => n.title && Object.keys(n.arr).length);
     }
 
+    // Uppercase section label (as drawn in the Arrangement Guide) -> section key.
+    const ARR_LABEL_TO_SECTION = {
+      'INTRO / CUE': 'intro_cue',
+      'FORM & HARMONY': 'form_harmony',
+      'TRANSITION / OUTRO': 'transition_outro',
+      'GENERAL NOTES': 'general_notes',
+    };
+
+    // Parse the Master Arrangement Guide's three-column grid. Geometry (see
+    // generateArrangementGuidePDF): a full-width set band carries the set name; column A
+    // holds a song-number badge plus the title; column C holds the directives, each an
+    // uppercase label line followed by wrapped body lines, all left-aligned at the same
+    // x. Column boundaries are recovered from the header strip rather than assumed, so
+    // the parser follows the user's page-size / margin settings.
+    function pdfParseArrangementGuideVisible(pages) {
+      const allRows = (pages || []).flatMap(pg => pg.rows || []);
+      const rowText = arrRowText;
+      const notes = [];
+      let started = false, colCx = null, colBx = null, colAx = null, cur = null, curKey = null, setName = '';
+
+      for (const row of allRows) {
+        const items = [...(row.items || [])].sort((a, b) => a.x - b.x);
+        if (!items.length) continue;
+        const text = rowText(items);
+        if (!text) continue;
+        if (ARR_DATA_MARKER.test(text)) break;
+
+        if (!started) {
+          if (/^MASTER\s+ARRANGEMENT\s+GUIDE\b/i.test(text)) started = true;
+          continue;
+        }
+        // Header strip: gives us the column origins for everything that follows.
+        if (/SONG\s*#\s*&\s*TITLE/i.test(text) && /DIRECTIVES/i.test(text)) {
+          const a = items.find(it => /SONG/i.test(it.str));
+          const b = items.find(it => /^KEY\b|BPM/i.test(it.str));
+          const c = items.find(it => /ARRANGEMENT|DIRECTIVES/i.test(it.str));
+          if (a) colAx = a.x;
+          if (b) colBx = b.x;
+          if (c) colCx = c.x;
+          continue;
+        }
+        if (colCx === null) continue;
+        if (/Arrangement Guide.*page \d+/i.test(text)) continue;   // page footer
+
+        // Full-width set band: a single left-aligned run with nothing in column C.
+        if (items.every(it => it.x < colCx) && /^[A-Z0-9][^a-z]*$/.test(text) && !/^\d+$/.test(items[0].str.trim())
+            && items[0].x <= (colAx === null ? items[0].x : colAx) + 2 && text.length < 60) {
+          setName = text.replace(/\s*\(CONT\.\)\s*$/i, '').trim();
+          cur = null; curKey = null;
+          continue;
+        }
+
+        const colCItems = items.filter(it => it.x >= colCx - 2);
+        const colAItems = items.filter(it => it.x < colCx - 2);
+
+        // A new song starts on the row whose column A opens with the number badge.
+        if (colAItems.length > 1 && /^\d+$/.test(colAItems[0].str.trim())) {
+          const titleMax = (colBx === null ? colCx : colBx) - 2;
+          const title = rowText(colAItems.slice(1).filter(it => it.x < titleMax))
+            .replace(/\s+\d+\s*BPM.*$/i, '').trim();
+          cur = { num: notes.length + 1, title, setName, arr: {} };
+          notes.push(cur);
+          curKey = null;
+        }
+        if (!cur || !colCItems.length) continue;
+
+        const cText = rowText(colCItems);
+        const asSection = ARR_LABEL_TO_SECTION[cText.toUpperCase()];
+        if (asSection) { curKey = asSection; continue; }
+        const asRole = ARR_LABEL_TO_ROLE[cText.toUpperCase()];
+        if (asRole) { curKey = asRole; continue; }
+        if (curKey) cur.arr[curKey] = (cur.arr[curKey] ? cur.arr[curKey] + ' ' : '') + cText;
+      }
+
+      return notes.map(n => ({
+        num: n.num, title: n.title.replace(/\s+/g, ' ').trim(), setName: n.setName,
+        si: null, pi: null, arr: normalizeArrObj(n.arr),
+      })).filter(n => n.title && Object.keys(n.arr).length);
+    }
+
     // Parse arrangement footnotes from a PDF (rows from pdfExtractRows), preferring the
     // lossless embedded data block and falling back to the visible text.
     function pdfParseArrangementNotes(pages) {
@@ -4138,7 +4513,12 @@
       if (embedded && embedded.length) {
         return embedded.map((d, i) => ({ num: i + 1, ...d }));
       }
-      return pdfParseArrangementNotesVisible(pages);
+      // Visible fallback: the legacy combined export's footnote list, then the
+      // Master Arrangement Guide's grid. Both are tried because a library can hold
+      // PDFs from either era.
+      const legacy = pdfParseArrangementNotesVisible(pages);
+      if (legacy.length) return legacy;
+      return pdfParseArrangementGuideVisible(pages);
     }
 
     // Title comparison key for note↔song matching: lowercase, punctuation/space-stripped.
@@ -4173,7 +4553,7 @@
     function arrApplyNoteToArrangement(existingArrangement, note) {
       if (!note || !note.arr || !Object.keys(note.arr).length) return null;
       const merged = { ...parseArrangement(existingArrangement) };
-      for (const r of ARR_ROLES) if (note.arr[r]) merged[r] = note.arr[r];
+      for (const r of ARR_FIELDS) if (note.arr[r]) merged[r] = note.arr[r];
       return serializeArrangement(merged);
     }
 
@@ -6067,6 +6447,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     </React.Fragment>
                   ))}
                 </div>
+                <ArrSectionFields arr={arrObj} onChange={upd} />
                 <div className="arr-roles-grid">
                   <div className="arr-role-item arr-role-full">
                     <div className="arr-role-item-label">General Notes</div>
@@ -6216,6 +6597,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                                 </React.Fragment>
                               ))}
                             </div>
+                            <ArrSectionFields arr={arrObj} onChange={upd} />
                             <div className="arr-roles-grid">
                               <div className="arr-role-item arr-role-full">
                                 <div className="arr-role-item-label">General Notes</div>
@@ -6306,7 +6688,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, onOpenPdfSettings, onEmailShare, songCount, libraryTime, watermarkImg, onWatermarkUpload, onClearWatermark, activeSongs, onRecoverSnapshot }) {
+    function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, onOpenPdfSettings, onEmailShare, songCount, libraryTime, watermarkImg, onWatermarkUpload, onClearWatermark, activeSongs, onRecoverSnapshot, arrangementCount }) {
       const [activeHelpKey, setActiveHelpKey] = useState(null);
       const activeHelp = activeHelpKey ? window.featureDefinitions?.[activeHelpKey] : null;
       const openHelp = (featureKey) => setActiveHelpKey(featureKey);
@@ -6878,6 +7260,29 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             <button className="btn btn-small" onClick={onCopy}>Copy Text</button>
             <button className="btn btn-small" onClick={onEmailShare} title="Format setlist for email or WhatsApp — respects Stage/Advance view" style={{ borderColor: '#60a5fa', color: '#60a5fa' }}>📧 Email / Share</button>
             <button className="btn btn-small" onClick={onOpenPdfSettings} title="Customize page, typography & layout before exporting">⚙ Export PDF…</button>
+          </div>
+
+          {/* Two decoupled export pipelines: the stage sheet stays uncluttered, the
+              arrangement guide carries every rehearsal mark. */}
+          <div className="toolbar pdf-export-group" style={{ marginTop: '.5rem' }}>
+            <button className="btn btn-small" data-testid="export-stage"
+              onClick={() => onExportPDF('stage')}
+              title="Clean, high-contrast stage sheet — song, key, BPM, style. No arrangement prose.">
+              🎤 Stage Setlist
+            </button>
+            <button className="btn btn-small" data-testid="export-guide"
+              onClick={() => onExportPDF('guide')}
+              disabled={!arrangementCount}
+              title={arrangementCount
+                ? `Structured reference document — ${arrangementCount} song${arrangementCount === 1 ? '' : 's'} with arrangement notes`
+                : 'No arrangement notes on this setlist yet'}>
+              📘 Arrangement Guide{arrangementCount ? ` (${arrangementCount})` : ''}
+            </button>
+            <button className="btn btn-small" data-testid="export-package"
+              onClick={() => onExportPDF('package')}
+              title="Both documents, as two separate PDFs">
+              📦 Package (Both)
+            </button>
             {FEATURE_FLAGS.phase1ReliabilityDataSafety && (
               <button className="btn btn-small" onClick={onRecoverSnapshot} style={{ borderColor: 'var(--warning)', color: 'var(--warning)' }}>
                 Recover previous snapshot
@@ -10464,13 +10869,528 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       lineHeight: 1.5,
       pageBreakPerSet: true,
       includeSummaryPage: true,
+      // Which document(s) the Export action produces: 'stage' | 'guide' | 'package'.
+      docKind: 'stage',
+      // Optional venue / event line, printed in both documents' headers.
+      eventLabel: '',
     };
     const PDF_SETTINGS_STORAGE_KEY = 'setlist_pdf_settings_v3';
+
+    /******************* PDF RENDER ENGINES (two-document architecture) *******************/
+    // Stage Setlist and Master Arrangement Guide are now separate documents produced by
+    // separate pipelines. The stage sheet is what goes on the music stand: song identity
+    // at high contrast and nothing else. The guide is the rehearsal/reference document:
+    // every arrangement directive, structured by set and song. Neither renderer touches
+    // React state -- they take a pure model plus an explicit context and return a jsPDF
+    // doc, so both are callable from anywhere (and testable with a stub jsPDF).
+
+    const PDF_DOC_KINDS = ['stage', 'guide', 'package'];
+    const PDF_DOC_LABELS = {
+      stage: 'Stage Setlist only',
+      guide: 'Arrangement Guide only',
+      package: 'Package (both PDFs)',
+    };
+
+    // Shared page furniture derived from the settings panel.
+    function pdfBaseLayout(ctx) {
+      const { jsPDF } = ctx;
+      const ps = { ...DEFAULT_PDF_SETTINGS, ...(ctx.ps || {}) };
+      const sizeDef = PDF_PAGE_SIZES[ps.pageSize] || PDF_PAGE_SIZES.Letter;
+      const famDef = PDF_FONT_FAMILIES[ps.fontFamily] || PDF_FONT_FAMILIES.Helvetica;
+      const doc = new jsPDF({ orientation: ps.orientation, unit: 'pt', format: [sizeDef.w, sizeDef.h] });
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const margin = PDF_MARGIN_PRESETS[ps.margin] ?? 36;
+      return {
+        doc, ps, pageW, pageH, margin,
+        FONT: famDef.jsFont,
+        fScale: ps.fontSize / PDF_FONT_BASE,
+        lh: ps.lineHeight || 1.5,
+        tableX: margin,
+        tableW: pageW - margin * 2,
+      };
+    }
+
+    const PDF_PALETTE = {
+      ACCENT: [61, 79, 95],
+      ALT_ROW: [246, 247, 249],
+      LINE: [215, 215, 215],
+      TEXT: [22, 22, 22],
+      MUTED: [110, 110, 118],
+      FN: [80, 100, 140],
+      SECTION: [42, 82, 122],
+      ROLE: [122, 82, 42],
+    };
+
+    /* ---------------- 1. Stage Setlist ---------------- */
+    // High-contrast, uncluttered, one table per set. Arrangement prose never lands here;
+    // at most a single short cue line per song when the caller asks for cues.
+    function generateStageSetlistPDF(model, ctx) {
+      const L = pdfBaseLayout(ctx);
+      const { doc, ps, pageW, pageH, margin, FONT, fScale, lh, tableX, tableW } = L;
+      const P = PDF_PALETTE;
+      const withCues = !!(ctx.includeCues);
+
+      const alignField = (cellX, cellW, pad) => {
+        if (ps.textAlign === 'center') return { x: cellX + cellW / 2, align: 'center' };
+        if (ps.textAlign === 'right') return { x: cellX + cellW - pad, align: 'right' };
+        return { x: cellX + pad, align: 'left' };
+      };
+
+      const NUM_W = 38;
+      const KEY_W = tableW * 0.10;
+      const BPM_W = tableW * 0.10;
+      const STY_W = tableW * 0.22;
+      const TTL_W = tableW - NUM_W - KEY_W - BPM_W - STY_W;
+      const cols = {
+        num:   { x: tableX, w: NUM_W },
+        title: { x: tableX + NUM_W, w: TTL_W },
+        key:   { x: tableX + NUM_W + TTL_W, w: KEY_W },
+        bpm:   { x: tableX + NUM_W + TTL_W + KEY_W, w: BPM_W },
+        style: { x: tableX + NUM_W + TTL_W + KEY_W + BPM_W, w: STY_W },
+      };
+
+      const ROW_H = Math.round((withCues ? 58 : 52) * (lh / 1.5));
+      const HDR_H = Math.round(28 * fScale);
+      const CELL_PAD = 8;
+      const TITLE_SIZE = Math.round(26 * fScale);
+      const HDR_FONT = Math.round(10 * fScale);
+      const TITLE_FONT = Math.round(13 * fScale);
+      const ARTIST_FONT = Math.max(6, Math.round(8 * fScale));
+      const META_FONT = Math.round(12 * fScale);
+
+      const addWatermark = () => {
+        if (!ctx.watermarkImg) return;
+        doc.saveGraphicsState();
+        doc.setGState(new doc.GState({ opacity: 0.12 }));
+        try { doc.addImage(ctx.watermarkImg, 'AUTO', 0, 0, pageW, pageH); }
+        catch (err) { console.warn('Watermark image error:', err); }
+        doc.restoreGraphicsState();
+      };
+
+      const truncate = (text, maxW) => {
+        let t = String(text == null ? '' : text);
+        if (doc.getTextWidth(t) <= maxW) return t;
+        while (t.length > 0 && doc.getTextWidth(t + '...') > maxW) t = t.slice(0, -1);
+        return t + '...';
+      };
+
+      const drawTableHeader = (y) => {
+        doc.setFillColor(...P.ACCENT);
+        doc.rect(tableX, y, tableW, HDR_H, 'F');
+        doc.setFont(FONT, 'bold');
+        doc.setFontSize(HDR_FONT);
+        doc.setTextColor(255, 255, 255);
+        const ty = y + HDR_H / 2 + 3.5;
+        doc.text('#', cols.num.x + NUM_W / 2, ty, { align: 'center' });
+        doc.text('SONG TITLE', cols.title.x + CELL_PAD, ty);
+        doc.text('KEY', cols.key.x + KEY_W / 2, ty, { align: 'center' });
+        doc.text('BPM', cols.bpm.x + BPM_W / 2, ty, { align: 'center' });
+        doc.text('STYLE', cols.style.x + CELL_PAD, ty);
+        return y + HDR_H;
+      };
+
+      const drawSongRow = (song, y, rowIdx) => {
+        if (rowIdx % 2 === 1) {
+          doc.setFillColor(...P.ALT_ROW);
+          doc.rect(tableX, y, tableW, ROW_H, 'F');
+        }
+        doc.setDrawColor(...P.LINE);
+        doc.setLineWidth(0.4);
+        doc.line(tableX, y, tableX + tableW, y);
+
+        doc.setFillColor(...P.ACCENT);
+        doc.roundedRect(cols.num.x + 4, y + 8, NUM_W - 8, ROW_H - 16, 3, 3, 'F');
+        doc.setFont(FONT, 'bold');
+        doc.setFontSize(12);
+        doc.setTextColor(255, 255, 255);
+        doc.text(String(song.no), cols.num.x + NUM_W / 2, y + ROW_H / 2 + 4.5, { align: 'center' });
+
+        const stackedLines = (song.artist ? 1 : 0) + (withCues && song.cue ? 1 : 0);
+        const titleY = stackedLines ? y + 20 : y + ROW_H / 2 + 5;
+        doc.setFont(FONT, 'bold');
+        doc.setFontSize(TITLE_FONT);
+        doc.setTextColor(...P.TEXT);
+        // A tiny marker, not the note itself: says "this song has a guide entry".
+        const maxTitleW = cols.title.w - CELL_PAD - (song.hasNotes ? 14 : 4);
+        const titleTxt = truncate(song.title, maxTitleW);
+        const ta = alignField(cols.title.x, cols.title.w, CELL_PAD);
+        doc.text(titleTxt, ta.x, titleY, { align: ta.align });
+
+        if (song.hasNotes) {
+          const tw = doc.getTextWidth(titleTxt);
+          const titleStart = ta.align === 'center' ? ta.x - tw / 2 : ta.align === 'right' ? ta.x - tw : ta.x;
+          doc.setFontSize(7);
+          doc.setTextColor(...P.FN);
+          doc.text('*', titleStart + tw + 2, titleY - 5);
+        }
+
+        let subY = y + 35;
+        if (song.artist) {
+          doc.setFont(FONT, 'italic');
+          doc.setFontSize(ARTIST_FONT);
+          doc.setTextColor(...P.MUTED);
+          const aa = alignField(cols.title.x, cols.title.w, CELL_PAD);
+          doc.text(truncate(song.artist, cols.title.w - CELL_PAD * 2), aa.x, subY, { align: aa.align });
+          subY += ARTIST_FONT + 3;
+        }
+        if (withCues && song.cue) {
+          doc.setFont(FONT, 'bold');
+          doc.setFontSize(Math.max(6, ARTIST_FONT - 0.5));
+          doc.setTextColor(...P.FN);
+          const ca = alignField(cols.title.x, cols.title.w, CELL_PAD);
+          doc.text(truncate(song.cue, cols.title.w - CELL_PAD * 2), ca.x, subY, { align: ca.align });
+        }
+
+        doc.setFont(FONT, 'bold');
+        doc.setFontSize(META_FONT);
+        doc.setTextColor(...P.TEXT);
+        const metaY = y + ROW_H / 2 + 4.5;
+        if (song.key) doc.text(song.key, cols.key.x + KEY_W / 2, metaY, { align: 'center' });
+        if (song.bpm) doc.text(song.bpm, cols.bpm.x + BPM_W / 2, metaY, { align: 'center' });
+        if (song.style) doc.text(truncate(song.style, STY_W - CELL_PAD), cols.style.x + CELL_PAD / 2, metaY);
+
+        return y + ROW_H;
+      };
+
+      const drawColumnLines = (startY, endY) => {
+        doc.setDrawColor(...P.LINE);
+        doc.setLineWidth(0.4);
+        doc.rect(tableX, startY, tableW, endY - startY);
+        [cols.title.x, cols.key.x, cols.bpm.x, cols.style.x].forEach(x => doc.line(x, startY, x, endY));
+      };
+
+      let yPos = margin + TITLE_SIZE;
+      addWatermark();
+      (model || []).forEach((set, setIdx) => {
+        if (setIdx > 0) {
+          if (ps.pageBreakPerSet) {
+            doc.addPage(); addWatermark(); yPos = margin + TITLE_SIZE;
+          } else {
+            yPos += 30;
+            if (yPos + TITLE_SIZE + 30 + HDR_H + ROW_H > pageH - margin) {
+              doc.addPage(); addWatermark(); yPos = margin + TITLE_SIZE;
+            }
+          }
+        }
+
+        doc.setFont(FONT, 'bold');
+        doc.setFontSize(TITLE_SIZE);
+        doc.setTextColor(0, 0, 0);
+        doc.text(set.name, pageW / 2, yPos, { align: 'center' });
+        yPos += 8;
+        doc.setFont(FONT, 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(...P.MUTED);
+        const bits = [ctx.bandName || '', ctx.eventLabel || '', `${set.songs.length} songs`, `~${set.totalTime} min`]
+          .filter(Boolean).join('  ' + String.fromCharCode(0xb7) + '  ');
+        doc.text(bits, pageW / 2, yPos + 10, { align: 'center' });
+        yPos += 22;
+
+        let pageTableTop = yPos;
+        yPos = drawTableHeader(yPos);
+        let rowCounter = 0;
+        set.songs.forEach(song => {
+          if (yPos + ROW_H > pageH - margin) {
+            drawColumnLines(pageTableTop, yPos);
+            doc.addPage(); addWatermark();
+            pageTableTop = margin + 10;
+            yPos = drawTableHeader(pageTableTop);
+            rowCounter = 0;
+          }
+          yPos = drawSongRow(song, yPos, rowCounter);
+          rowCounter++;
+        });
+        drawColumnLines(pageTableTop, yPos);
+
+        yPos += 6;
+        doc.setFont(FONT, 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(...P.MUTED);
+        doc.text(`Total: ${set.songs.length} songs  ${String.fromCharCode(0xb7)}  ${set.totalTime} min`,
+          tableX + tableW, yPos, { align: 'right' });
+      });
+
+      if (ctx.summary && ps.includeSummaryPage && (model || []).length) {
+        drawStageSummaryPage(L, model, ctx, addWatermark);
+      }
+      return doc;
+    }
+
+    // Summary page for the stage document: counts, quality scores, tonal diagnostics.
+    // Arrangement prose deliberately does NOT appear here any more -- it lives in the
+    // guide, which is the whole point of the decoupling.
+    function drawStageSummaryPage(L, model, ctx, addWatermark) {
+      const { doc, pageW, pageH, margin, FONT, fScale, tableW } = L;
+      const P = PDF_PALETTE;
+      const s = ctx.summary || {};
+      doc.addPage(); addWatermark();
+      let y = margin + 10;
+      doc.setFont(FONT, 'bold'); doc.setFontSize(Math.round(26 * fScale)); doc.setTextColor(0, 0, 0);
+      doc.text('SETLIST SUMMARY', pageW / 2, y, { align: 'center' });
+      y += Math.round(26 * fScale) + 16;
+
+      doc.setFont(FONT, 'normal'); doc.setFontSize(11); doc.setTextColor(...P.TEXT);
+      const totalSongs = model.reduce((a, set) => a + set.songs.length, 0);
+      const totalTime = model.reduce((a, set) => a + set.totalTime, 0);
+      const lines = [
+        `Band: ${ctx.bandName || 'Unknown'}`,
+        ctx.eventLabel ? `Event: ${ctx.eventLabel}` : null,
+        `Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
+        `Total Sets: ${model.length}`,
+        `Total Songs: ${totalSongs}  ${String.fromCharCode(0xb7)}  Total Time: ~${totalTime} min`,
+        `Export mode: Stage Setlist${ctx.includeCues ? ' (with cue line)' : ''}`,
+        s.guideCount ? `Arrangement Guide: ${s.guideCount} songs carry notes (separate document)` : null,
+      ].filter(Boolean);
+      lines.forEach(t => { doc.text(t, margin, y); y += 18; });
+      y += 10;
+
+      if (s.qualityScores && s.qualityScores.length) {
+        doc.setFont(FONT, 'bold'); doc.setFontSize(13); doc.setTextColor(...P.TEXT);
+        doc.text('Quality Scores', margin, y); y += 18;
+        doc.setFont(FONT, 'normal'); doc.setFontSize(10);
+        s.qualityScores.forEach((q, qi) => {
+          const col = q.overall >= 75 ? [0, 120, 0] : q.overall >= 50 ? [130, 100, 0] : [170, 0, 0];
+          doc.setTextColor(...col);
+          doc.text(`Set ${qi + 1}: Overall ${q.overall}/100  ${String.fromCharCode(0xb7)}  Energy: ${q.energy}  ${String.fromCharCode(0xb7)}  Tonal: ${q.tonal}  ${String.fromCharCode(0xb7)}  Diversity: ${q.diversity}  ${String.fromCharCode(0xb7)}  Duration: ${q.duration}`, margin, y);
+          y += 16;
+        });
+        doc.setTextColor(...P.TEXT);
+      }
+      if (s.anchorKey) { y += 6; doc.setFont(FONT, 'normal'); doc.setFontSize(10); doc.text(`Anchor Key: ${s.anchorKey}`, margin, y); y += 16; }
+      if (s.diagnostics) {
+        y += 10;
+        doc.setFont(FONT, 'bold'); doc.setFontSize(13); doc.setTextColor(...P.TEXT);
+        doc.text('Tonal Diagnostics', margin, y); y += 18;
+        doc.setFont(FONT, 'normal'); doc.setFontSize(9); doc.setTextColor(...P.MUTED);
+        s.diagnostics.forEach((diag, di) => {
+          if (!diag) return;
+          if (y + 28 > pageH - margin) { doc.addPage(); addWatermark(); y = margin + 20; }
+          doc.text(`Set ${di + 1} - Tonal Flow: ${diag.qualityScore}  (avg circle distance: ${diag.avgCircleDistance})`, margin, y); y += 13;
+          if (diag.contrastJumps && diag.contrastJumps.length) {
+            const txt = `  Key jumps: ${diag.contrastJumps.map(j => `#${j.position} ${j.from}->${j.to} (${j.distance})`).join(', ')}`;
+            doc.splitTextToSize(txt, tableW).forEach(line => { doc.text(line, margin, y); y += 12; });
+          }
+          y += 4;
+        });
+        doc.setTextColor(...P.TEXT);
+      }
+    }
+
+    /* ---------------- 2. Master Arrangement Guide ---------------- */
+    // Structured reference document, organised by Set # and Song #. Three columns:
+    // [Song # & Title] | [Key / BPM / Style] | [Arrangement & Harmonic Directives].
+    // No full-bleed watermark: a background wash behind dense chord prose is exactly the
+    // overlap that made the old combined export unreadable. The logo, if any, is a small
+    // mark in the header band instead.
+    function generateArrangementGuidePDF(entries, ctx) {
+      const L = pdfBaseLayout(ctx);
+      const { doc, pageW, pageH, margin, FONT, fScale, tableX, tableW } = L;
+      const P = PDF_PALETTE;
+
+      const PAD = 8;
+      const COL_A = Math.max(140, tableW * 0.28);
+      const COL_B = Math.max(72, tableW * 0.14);
+      const COL_C = tableW - COL_A - COL_B;
+      const colA = tableX, colB = tableX + COL_A, colC = tableX + COL_A + COL_B;
+
+      const F_TITLE = Math.max(9, Math.round(10.5 * fScale));
+      const F_META = Math.max(7, Math.round(8.5 * fScale));
+      const F_LABEL = Math.max(6, Math.round(7 * fScale));
+      const F_BODY = Math.max(7.5, Math.round(9 * fScale));
+      const LINE_H = F_BODY + 2.6;
+
+      const dateStr = new Date().toLocaleDateString();
+      let pageNo = 0;
+
+      const drawHeaderBand = () => {
+        pageNo += 1;
+        let y = margin;
+        doc.setFillColor(...P.ACCENT);
+        doc.rect(tableX, y, tableW, 40, 'F');
+        doc.setFont(FONT, 'bold'); doc.setFontSize(Math.round(13 * fScale)); doc.setTextColor(255, 255, 255);
+        doc.text('MASTER ARRANGEMENT GUIDE', tableX + PAD, y + 17);
+        doc.setFont(FONT, 'normal'); doc.setFontSize(Math.max(7, Math.round(8 * fScale)));
+        const sub = [ctx.bandName, ctx.eventLabel, ctx.setlistTitle, dateStr].filter(Boolean)
+          .join('  ' + String.fromCharCode(0xb7) + '  ');
+        doc.text(sub, tableX + PAD, y + 31);
+        if (ctx.watermarkImg) {
+          try { doc.addImage(ctx.watermarkImg, 'AUTO', tableX + tableW - 34, y + 5, 30, 30); }
+          catch (err) { /* a bad logo must never take the document down */ }
+        }
+        y += 40;
+        // Column header strip
+        doc.setFillColor(232, 235, 239);
+        doc.rect(tableX, y, tableW, 16, 'F');
+        doc.setFont(FONT, 'bold'); doc.setFontSize(F_LABEL); doc.setTextColor(...P.ACCENT);
+        doc.text('SONG # & TITLE', colA + PAD, y + 11);
+        doc.text('KEY / BPM / STYLE', colB + PAD, y + 11);
+        doc.text('ARRANGEMENT & HARMONIC DIRECTIVES', colC + PAD, y + 11);
+        return y + 16;
+      };
+
+      const drawFooter = () => {
+        doc.setFont(FONT, 'normal'); doc.setFontSize(7); doc.setTextColor(...P.MUTED);
+        doc.text(`${ctx.bandName || ''}  ${String.fromCharCode(0xb7)}  Arrangement Guide  ${String.fromCharCode(0xb7)}  page ${pageNo}`,
+          pageW / 2, pageH - margin / 2, { align: 'center' });
+      };
+
+      // Pre-measure a directive block so a song is never split across a page mid-note.
+      const measureBlocks = (entry) => {
+        const blocks = [];
+        let h = 0;
+        const push = (label, text, color) => {
+          doc.setFont(FONT, 'normal'); doc.setFontSize(F_BODY);
+          const lines = doc.splitTextToSize(text, COL_C - PAD * 2);
+          blocks.push({ label, lines, color });
+          h += F_LABEL + 3 + lines.length * LINE_H + 5;
+        };
+        entry.sections.forEach(s => push(s.label, s.text, P.SECTION));
+        entry.roles.forEach(r => push(r.label, r.text, P.ROLE));
+        return { blocks, h };
+      };
+
+      let y = drawHeaderBand();
+      let lastSetIdx = null;
+      let zebra = 0;
+
+      (entries || []).forEach(entry => {
+        const { blocks, h: blocksH } = measureBlocks(entry);
+        // Left column needs room for the number badge, wrapped title and artist.
+        doc.setFont(FONT, 'bold'); doc.setFontSize(F_TITLE);
+        const titleLines = doc.splitTextToSize(entry.title, COL_A - PAD * 2 - 4);
+        const leftH = 14 + titleLines.length * (F_TITLE + 2) + (entry.artist ? F_META + 2 : 0) + 6;
+        const rowH = Math.max(blocksH + 10, leftH, 34);
+
+        const newSet = entry.setIdx !== lastSetIdx;
+        const setBandH = newSet ? 20 : 0;
+
+        if (y + setBandH + rowH > pageH - margin - 14) {
+          drawFooter();
+          doc.addPage();
+          y = drawHeaderBand();
+          zebra = 0;
+          // Repeat the set band at the top of a continuation page so a directive is
+          // never orphaned from the set it belongs to.
+          if (!newSet) {
+            doc.setFillColor(...P.ACCENT);
+            doc.rect(tableX, y, tableW, 20, 'F');
+            doc.setFont(FONT, 'bold'); doc.setFontSize(F_META); doc.setTextColor(255, 255, 255);
+            doc.text(`${entry.setName.toUpperCase()} (CONT.)`, tableX + PAD, y + 14);
+            y += 20;
+          }
+        }
+
+        if (newSet) {
+          doc.setFillColor(...P.ACCENT);
+          doc.rect(tableX, y, tableW, 20, 'F');
+          doc.setFont(FONT, 'bold'); doc.setFontSize(F_META); doc.setTextColor(255, 255, 255);
+          doc.text(entry.setName.toUpperCase(), tableX + PAD, y + 14);
+          y += 20;
+          lastSetIdx = entry.setIdx;
+          zebra = 0;
+        }
+
+        // Zebra striping -- a flat tint, never a graphic, so nothing sits under the text.
+        if (zebra % 2 === 1) {
+          doc.setFillColor(...P.ALT_ROW);
+          doc.rect(tableX, y, tableW, rowH, 'F');
+        }
+        doc.setDrawColor(...P.LINE); doc.setLineWidth(0.5);
+        doc.line(tableX, y, tableX + tableW, y);
+
+        // --- Column A: song number + title + artist
+        let ay = y + 15;
+        doc.setFillColor(...P.FN);
+        doc.roundedRect(colA + PAD, ay - 9, 22, 12, 2, 2, 'F');
+        doc.setFont(FONT, 'bold'); doc.setFontSize(F_LABEL); doc.setTextColor(255, 255, 255);
+        doc.text(String(entry.songNo), colA + PAD + 11, ay, { align: 'center' });
+        doc.setFont(FONT, 'bold'); doc.setFontSize(F_TITLE); doc.setTextColor(...P.TEXT);
+        titleLines.forEach((ln, i) => doc.text(ln, colA + PAD + 28, ay + i * (F_TITLE + 2)));
+        ay += titleLines.length * (F_TITLE + 2);
+        if (entry.artist) {
+          doc.setFont(FONT, 'italic'); doc.setFontSize(F_META); doc.setTextColor(...P.MUTED);
+          doc.text(entry.artist, colA + PAD + 28, ay + 2);
+        }
+
+        // --- Column B: key / bpm / style
+        let by = y + 15;
+        doc.setFont(FONT, 'bold'); doc.setFontSize(F_TITLE); doc.setTextColor(...P.TEXT);
+        if (entry.key) { doc.text(entry.key, colB + PAD, by); by += F_TITLE + 3; }
+        doc.setFont(FONT, 'normal'); doc.setFontSize(F_META); doc.setTextColor(...P.MUTED);
+        if (entry.bpm) { doc.text(entry.bpm + ' BPM', colB + PAD, by); by += F_META + 3; }
+        if (entry.style) {
+          doc.splitTextToSize(entry.style, COL_B - PAD * 2).forEach(ln => {
+            doc.text(ln, colB + PAD, by); by += F_META + 2;
+          });
+        }
+
+        // --- Column C: the directives
+        let cy = y + 12;
+        blocks.forEach(b => {
+          doc.setFont(FONT, 'bold'); doc.setFontSize(F_LABEL); doc.setTextColor(...b.color);
+          doc.text(b.label.toUpperCase(), colC + PAD, cy);
+          cy += F_LABEL + 3;
+          doc.setFont(FONT, 'normal'); doc.setFontSize(F_BODY); doc.setTextColor(...P.TEXT);
+          b.lines.forEach(ln => { doc.text(ln, colC + PAD, cy); cy += LINE_H; });
+          cy += 5;
+        });
+
+        // Column rules for this block only, so the grid stays crisp with variable heights.
+        doc.setDrawColor(...P.LINE); doc.setLineWidth(0.4);
+        doc.line(colB, y, colB, y + rowH);
+        doc.line(colC, y, colC, y + rowH);
+        doc.line(tableX, y, tableX, y + rowH);
+        doc.line(tableX + tableW, y, tableX + tableW, y + rowH);
+
+        y += rowH;
+        zebra++;
+      });
+
+      doc.setDrawColor(...P.LINE); doc.setLineWidth(0.5);
+      doc.line(tableX, y, tableX + tableW, y);
+
+      if (!(entries || []).length) {
+        doc.setFont(FONT, 'italic'); doc.setFontSize(10); doc.setTextColor(...PDF_PALETTE.MUTED);
+        doc.text('No arrangement notes on this setlist yet.', tableX + PAD, y + 20);
+      }
+
+      // Lossless machine-readable block, same contract as the legacy combined export:
+      // pdfParseArrangementNotes decodes this ahead of any visible text, so a guide PDF
+      // re-imports every rehearsal mark exactly, accidentals included.
+      try {
+        const payload = (entries || []).map(e => {
+          const a = {};
+          ARR_FIELDS.forEach(f => { if (e.arr[f]) a[f] = e.arr[f]; });
+          return { t: e.title, s: e.setName, si: e.setIdx, pi: e.songIdx, a };
+        });
+        if (payload.length) {
+          const dataLines = pdfEncodeArrangementData(payload);
+          doc.setFont(FONT, 'normal'); doc.setFontSize(1); doc.setTextColor(255, 255, 255);
+          let dy = y + 8;
+          dataLines.forEach(ln => {
+            if (dy > pageH - margin) { drawFooter(); doc.addPage(); pageNo += 1; dy = margin; }
+            doc.text(ln, margin, dy);
+            dy += 3;
+          });
+          doc.setTextColor(...P.TEXT);
+        }
+      } catch (e) { console.warn('Arrangement data-block embed failed:', e); }
+
+      drawFooter();
+      return doc;
+    }
+
+    function pdfExportFilename(kind, bandName) {
+      const safe = String(bandName || 'band').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+      const stamp = new Date().toISOString().slice(0, 10);
+      return `${kind === 'guide' ? 'arrangement-guide' : 'setlist'}-${safe}-${stamp}.pdf`;
+    }
 
     // React-based PDF export settings panel. State is held by the parent App and
     // threaded straight into the jsPDF render utility (exportPDF), so every
     // control here maps 1:1 onto the generated document.
-    function PdfSettingsModal({ open, onClose, settings, onChange, onExport, viewMode, sampleSet, bandName }) {
+    function PdfSettingsModal({ open, onClose, settings, onChange, onExport, viewMode, sampleSet, bandName, arrangementCount }) {
       if (!open) return null;
       const s = { ...DEFAULT_PDF_SETTINGS, ...settings };
       const set = (field, value) => onChange(prev => ({ ...prev, [field]: value }));
@@ -10672,12 +11592,49 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               </div>
             </div>
 
+            {/* ---------------- Which document(s) ---------------- */}
+            <div data-testid="pdf-doc-kind" style={{ marginTop: '1rem', borderTop: '1px solid var(--border)', paddingTop: '.85rem' }}>
+              <div style={{ fontSize: '.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-muted)', marginBottom: '.45rem' }}>
+                Documents to export
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+                {PDF_DOC_KINDS.map(kind => {
+                  const disabled = kind === 'guide' && !arrangementCount;
+                  return (
+                    <label key={kind} style={{ display: 'flex', alignItems: 'flex-start', gap: '.5rem', fontSize: '.82rem', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? .5 : 1 }}>
+                      <input type="radio" name="pdf-doc-kind" value={kind} disabled={disabled}
+                        checked={s.docKind === kind}
+                        onChange={() => set('docKind', kind)} />
+                      <span>
+                        <strong>{PDF_DOC_LABELS[kind]}</strong>
+                        <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '.72rem' }}>
+                          {kind === 'stage' && 'Song, key, BPM, style. No arrangement prose.'}
+                          {kind === 'guide' && (arrangementCount
+                            ? `Structured directives for ${arrangementCount} song${arrangementCount === 1 ? '' : 's'}.`
+                            : 'No arrangement notes on this setlist yet.')}
+                          {kind === 'package' && 'Two separate PDFs, downloaded back to back.'}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="input-group" style={{ marginTop: '.6rem' }}>
+                <label>Venue / Event <span style={{ color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none' }}>(optional, printed in both headers)</span></label>
+                <input type="text" data-testid="pdf-event-label" value={s.eventLabel || ''}
+                  placeholder="e.g. The Sand Dollar — Fri 12 Sep"
+                  onChange={e => set('eventLabel', e.target.value)} />
+              </div>
+            </div>
+
             {/* ---------------- Actions ---------------- */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '.5rem', marginTop: '1rem', borderTop: '1px solid var(--border)', paddingTop: '.85rem' }}>
               <button className="btn btn-small" onClick={() => onChange(() => ({ ...DEFAULT_PDF_SETTINGS }))}>Reset to defaults</button>
               <div style={{ display: 'flex', gap: '.5rem' }}>
                 <button className="btn btn-small" onClick={onClose}>Cancel</button>
-                <button className="btn btn-primary btn-small export-btn" onClick={onExport}>Export to PDF</button>
+                <button className="btn btn-primary btn-small export-btn" onClick={() => onExport(s.docKind)}>
+                  Export {s.docKind === 'package' ? 'both PDFs' : 'to PDF'}
+                </button>
               </div>
             </div>
           </div>
@@ -10837,6 +11794,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const activeLibraryTime = useMemo(
         () => activeSongs.reduce((sum, s) => sum + parseDuration(s.duration), 0),
         [activeSongs]
+      );
+
+      // How many songs on the current setlists carry arrangement data. Drives the
+      // Arrangement Guide export affordances (button label, enablement, doc selector).
+      const arrangementSongCount = useMemo(
+        () => setlists.reduce(
+          (n, set) => n + (set.songs || []).filter(sg => hasArrangementData(sg.arrangement)).length, 0),
+        [setlists]
       );
 
       // LOAD BANDS FROM STORAGE
@@ -12029,357 +12994,67 @@ ${headerHtml}
         showToast('Watermark removed', 'success');
       };
 
-      const exportPDF = () => {
-        const isAdvance = viewMode === 'advance';
-        const { jsPDF } = window.jspdf;
+      // ---- PDF export: two decoupled pipelines -------------------------------
+      // `kind` selects the document(s): the stage sheet that goes on the music stand,
+      // the master arrangement guide that goes in the rehearsal folder, or both. The
+      // heavy lifting lives in the module-scope model builders + renderers; this is
+      // only the bridge from app state to an explicit render context.
+      const buildExportContext = () => ({
+        jsPDF: window.jspdf.jsPDF,
+        ps: { ...DEFAULT_PDF_SETTINGS, ...pdfSettings },
+        bandName: activeBand?.name || '',
+        eventLabel: (pdfSettings && pdfSettings.eventLabel) || '',
+        setlistTitle: setlists.length === 1 ? (setlists[0].name || 'Set 1') : `${setlists.length} sets`,
+        watermarkImg,
+        includeCues: viewMode === 'advance',
+        roleFilter: advanceRoleFilter,
+      });
 
-        // --- Settings panel → render engine mapping ---
-        const ps = { ...DEFAULT_PDF_SETTINGS, ...pdfSettings };
-        const sizeDef = PDF_PAGE_SIZES[ps.pageSize] || PDF_PAGE_SIZES.Letter;
-        const famDef  = PDF_FONT_FAMILIES[ps.fontFamily] || PDF_FONT_FAMILIES.Helvetica;
-        const FONT    = famDef.jsFont;                       // jsPDF built-in font
-        const fScale  = ps.fontSize / PDF_FONT_BASE;          // typography scale
-        const lh      = ps.lineHeight || 1.5;                 // line-height factor
-        const alignField = (cellX, cellW, pad) => {           // title cell alignment
-          if (ps.textAlign === 'center') return { x: cellX + cellW / 2, align: 'center' };
-          if (ps.textAlign === 'right')  return { x: cellX + cellW - pad, align: 'right' };
-          return { x: cellX + pad, align: 'left' }; // left + justify (single line)
-        };
+      const exportPDF = (kind) => {
+        const docKind = PDF_DOC_KINDS.includes(kind) ? kind : (pdfSettings.docKind || 'stage');
+        if (!setlists.length) return showToast('Generate a setlist first', 'warning');
+        if (!window.jspdf || !window.jspdf.jsPDF) return showToast('PDF engine not loaded', 'error');
 
-        const doc = new jsPDF({ orientation: ps.orientation, unit: 'pt', format: [sizeDef.w, sizeDef.h] });
-        const pageW = doc.internal.pageSize.getWidth();
-        const pageH = doc.internal.pageSize.getHeight();
-        const margin = PDF_MARGIN_PRESETS[ps.margin] ?? 36;
-        const tableX = margin;
-        const tableW = pageW - margin * 2;
+        const ctx = buildExportContext();
+        const guideEntries = buildArrangementGuideModel(setlists, { roleFilter: advanceRoleFilter });
 
-        // Palette
-        const ACCENT    = [61, 79, 95];
-        const ALT_ROW   = [246, 247, 249];
-        const LINE_C    = [215, 215, 215];
-        const TEXT_C    = [22, 22, 22];
-        const MUTED_C   = [110, 110, 118];
-        const ACCENT_FN = [80, 100, 140]; // footnote number colour
-
-        // Column layout: # | TITLE+artist stacked | KEY | BPM | STYLE
-        const NUM_W   = 38;
-        const KEY_W   = tableW * 0.10;
-        const BPM_W   = tableW * 0.10;
-        const STY_W   = tableW * 0.22;
-        const TTL_W   = tableW - NUM_W - KEY_W - BPM_W - STY_W;
-        const cols = {
-          num:   { x: tableX,                             w: NUM_W  },
-          title: { x: tableX + NUM_W,                    w: TTL_W  },
-          key:   { x: tableX + NUM_W + TTL_W,            w: KEY_W  },
-          bpm:   { x: tableX + NUM_W + TTL_W + KEY_W,    w: BPM_W  },
-          style: { x: tableX + NUM_W + TTL_W + KEY_W + BPM_W, w: STY_W },
-        };
-
-        // Row height scales with line-height; type sizes scale with base font size.
-        const ROW_H      = Math.round(52 * (lh / 1.5));
-        const HDR_H      = Math.round(28 * fScale);
-        const CELL_PAD   = 8;
-        const TITLE_SIZE = Math.round(26 * fScale);
-        const HDR_FONT   = Math.round(10 * fScale);
-        const TITLE_FONT = Math.round(13 * fScale);
-        const ARTIST_FONT = Math.max(6, Math.round(8 * fScale));
-        const META_FONT  = Math.round(12 * fScale);
-
-        const addWatermark = () => {
-          if (!watermarkImg) return;
-          doc.saveGraphicsState();
-          doc.setGState(new doc.GState({ opacity: 0.12 }));
-          try { doc.addImage(watermarkImg, 'AUTO', 0, 0, pageW, pageH); }
-          catch (err) { console.warn('Watermark image error:', err); }
-          doc.restoreGraphicsState();
-        };
-
-        const truncate = (text, maxW) => {
-          if (doc.getTextWidth(text) <= maxW) return text;
-          while (doc.getTextWidth(text + '…') > maxW && text.length > 0) text = text.slice(0, -1);
-          return text + '…';
-        };
-
-        const drawTableHeader = (y) => {
-          doc.setFillColor(...ACCENT);
-          doc.rect(tableX, y, tableW, HDR_H, 'F');
-          doc.setFont(FONT, 'bold');
-          doc.setFontSize(HDR_FONT);
-          doc.setTextColor(255, 255, 255);
-          const ty = y + HDR_H / 2 + 3.5;
-          doc.text('#', cols.num.x + NUM_W / 2, ty, { align: 'center' });
-          doc.text('SONG TITLE', cols.title.x + CELL_PAD, ty);
-          doc.text('KEY', cols.key.x + KEY_W / 2, ty, { align: 'center' });
-          doc.text('BPM', cols.bpm.x + BPM_W / 2, ty, { align: 'center' });
-          doc.text('STYLE', cols.style.x + CELL_PAD, ty);
-          return y + HDR_H;
-        };
-
-        const drawSongRow = (song, y, rowIdx, fnNum) => {
-          if (rowIdx % 2 === 1) {
-            doc.setFillColor(...ALT_ROW);
-            doc.rect(tableX, y, tableW, ROW_H, 'F');
-          }
-          doc.setDrawColor(...LINE_C);
-          doc.setLineWidth(0.4);
-          doc.line(tableX, y, tableX + tableW, y);
-
-          // Song number badge
-          doc.setFillColor(...ACCENT);
-          doc.roundedRect(cols.num.x + 4, y + 8, NUM_W - 8, ROW_H - 16, 3, 3, 'F');
-          doc.setFont(FONT, 'bold');
-          doc.setFontSize(12);
-          doc.setTextColor(255, 255, 255);
-          doc.text(String(rowIdx + 1), cols.num.x + NUM_W / 2, y + ROW_H / 2 + 4.5, { align: 'center' });
-
-          // Title
-          const titleY = song.artist ? y + 20 : y + ROW_H / 2 + 5;
-          doc.setFont(FONT, 'bold');
-          doc.setFontSize(TITLE_FONT);
-          doc.setTextColor(...TEXT_C);
-          const maxTitleW = cols.title.w - CELL_PAD - (fnNum ? 14 : 4);
-          const titleTxt = truncate((song.title || '').toUpperCase(), maxTitleW);
-          const ta = alignField(cols.title.x, cols.title.w, CELL_PAD);
-          doc.text(titleTxt, ta.x, titleY, { align: ta.align });
-
-          // Footnote superscript — anchored to the end of the rendered title
-          if (fnNum) {
-            const tw = doc.getTextWidth(titleTxt);
-            const titleStart = ta.align === 'center' ? ta.x - tw / 2 : ta.align === 'right' ? ta.x - tw : ta.x;
-            doc.setFontSize(7);
-            doc.setTextColor(...ACCENT_FN);
-            doc.text(String(fnNum), titleStart + tw + 2, titleY - 5);
-          }
-
-          // Artist sub-line
-          if (song.artist) {
-            doc.setFont(FONT, 'italic');
-            doc.setFontSize(ARTIST_FONT);
-            doc.setTextColor(...MUTED_C);
-            const aa = alignField(cols.title.x, cols.title.w, CELL_PAD);
-            doc.text(truncate(song.artist, cols.title.w - CELL_PAD * 2), aa.x, y + 35, { align: aa.align });
-          }
-
-          // Key / BPM / Style
-          doc.setFont(FONT, 'bold');
-          doc.setFontSize(META_FONT);
-          doc.setTextColor(...TEXT_C);
-          const metaY = y + ROW_H / 2 + 4.5;
-          if (song.key)   doc.text(String(song.key),  cols.key.x  + KEY_W / 2, metaY, { align: 'center' });
-          if (song.bpm)   doc.text(String(song.bpm),  cols.bpm.x  + BPM_W / 2, metaY, { align: 'center' });
-          if (song.style) doc.text(truncate(song.style, STY_W - CELL_PAD), cols.style.x + CELL_PAD / 2, metaY);
-
-          return y + ROW_H;
-        };
-
-        const drawColumnLines = (startY, endY) => {
-          doc.setDrawColor(...LINE_C);
-          doc.setLineWidth(0.4);
-          doc.rect(tableX, startY, tableW, endY - startY);
-          [cols.title.x, cols.key.x, cols.bpm.x, cols.style.x].forEach(x => {
-            doc.line(x, startY, x, endY);
-          });
-        };
-
-        // Collect footnotes during rendering (advance mode only)
-        const footnotes = [];
-
-        // --- Render each set ---
-        // yPos flows across sets so the "new page per set" toggle can either
-        // start every set on a fresh page or stack them continuously.
-        let yPos = margin + TITLE_SIZE;
-        addWatermark();
-        setlists.forEach((set, setIdx) => {
-          if (setIdx > 0) {
-            if (ps.pageBreakPerSet) {
-              doc.addPage();
-              addWatermark();
-              yPos = margin + TITLE_SIZE;
-            } else {
-              yPos += 30; // breathing room between stacked sets
-              if (yPos + TITLE_SIZE + 30 + HDR_H + ROW_H > pageH - margin) {
-                doc.addPage();
-                addWatermark();
-                yPos = margin + TITLE_SIZE;
-              }
-            }
-          }
-
-          // Set title + band/duration sub-line
-          doc.setFont(FONT, 'bold');
-          doc.setFontSize(TITLE_SIZE);
-          doc.setTextColor(0, 0, 0);
-          doc.text((set.name || `Set ${setIdx + 1}`).toUpperCase(), pageW / 2, yPos, { align: 'center' });
-          yPos += 8;
-          doc.setFont(FONT, 'normal');
-          doc.setFontSize(9);
-          doc.setTextColor(...MUTED_C);
-          const subLine = `${activeBand?.name || ''}  ·  ${set.songs.length} songs  ·  ~${Math.round(set.totalTime)} min`;
-          doc.text(subLine, pageW / 2, yPos + 10, { align: 'center' });
-          yPos += 22;
-
-          let pageTableTop = yPos;
-          yPos = drawTableHeader(yPos);
-
-          let rowCounter = 0;
-          set.songs.forEach((song, songIdxInSet) => {
-            if (yPos + ROW_H > pageH - margin) {
-              drawColumnLines(pageTableTop, yPos);
-              doc.addPage();
-              addWatermark();
-              pageTableTop = margin + 10;
-              yPos = pageTableTop;
-              yPos = drawTableHeader(yPos);
-              rowCounter = 0;
-            }
-
-            let fnNum = null;
-            if (isAdvance && hasArrangementData(song.arrangement)) {
-              fnNum = footnotes.length + 1;
-              footnotes.push({
-                num: fnNum,
-                title: song.title,
-                setName: set.name || `Set ${setIdx + 1}`,
-                setIdx,
-                songIdx: songIdxInSet,
-                arr: parseArrangement(song.arrangement),
-              });
-            }
-
-            yPos = drawSongRow(song, yPos, rowCounter, fnNum);
-            rowCounter++;
-          });
-
-          drawColumnLines(pageTableTop, yPos);
-
-          // Set footer
-          yPos += 6;
-          doc.setFont(FONT, 'normal');
-          doc.setFontSize(8);
-          doc.setTextColor(...MUTED_C);
-          doc.text(`Total: ${set.songs.length} songs  ·  ${Math.round(set.totalTime)} min`, tableX + tableW, yPos, { align: 'right' });
-        });
-
-        // --- Summary / footnotes page ---
-        if (setlists.length > 0 && ps.includeSummaryPage) {
-          doc.addPage();
-          addWatermark();
-          let yPos = margin + 10;
-
-          doc.setFont(FONT, 'bold');
-          doc.setFontSize(TITLE_SIZE);
-          doc.setTextColor(0, 0, 0);
-          doc.text('SETLIST SUMMARY', pageW / 2, yPos, { align: 'center' });
-          yPos += TITLE_SIZE + 16;
-
-          doc.setFont(FONT, 'normal');
-          doc.setFontSize(11);
-          doc.setTextColor(...TEXT_C);
-          doc.text(`Band: ${activeBand?.name || 'Unknown'}`, margin, yPos); yPos += 18;
-          doc.text(`Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, margin, yPos); yPos += 18;
-          doc.text(`Total Sets: ${setlists.length}`, margin, yPos); yPos += 18;
-          const totalSongs = setlists.reduce((s, set) => s + set.songs.length, 0);
-          const totalTime  = setlists.reduce((s, set) => s + set.totalTime, 0);
-          doc.text(`Total Songs: ${totalSongs}  ·  Total Time: ~${Math.round(totalTime)} min`, margin, yPos); yPos += 18;
-          doc.text(`Export mode: ${isAdvance ? 'Advance (arrangement footnotes on this page)' : 'Stage (minimal)'}`, margin, yPos); yPos += 28;
-
-          // Quality scores
-          const qScores = setlists.qualityScores;
-          if (qScores && qScores.length > 0) {
-            doc.setFont(FONT, 'bold'); doc.setFontSize(13); doc.setTextColor(...TEXT_C);
-            doc.text('Quality Scores', margin, yPos); yPos += 18;
-            doc.setFont(FONT, 'normal'); doc.setFontSize(10);
-            qScores.forEach((q, qi) => {
-              const col = q.overall >= 75 ? [0, 120, 0] : q.overall >= 50 ? [130, 100, 0] : [170, 0, 0];
-              doc.setTextColor(...col);
-              doc.text(`Set ${qi + 1}: Overall ${q.overall}/100  ·  Energy: ${q.energy}  ·  Tonal: ${q.tonal}  ·  Diversity: ${q.diversity}  ·  Duration: ${q.duration}`, margin, yPos);
-              yPos += 16;
-            });
-            doc.setTextColor(...TEXT_C);
-          }
-
-          if (setlists.anchorKey) { yPos += 6; doc.setFont(FONT,'normal'); doc.setFontSize(10); doc.text(`Anchor Key: ${setlists.anchorKey}`, margin, yPos); yPos += 16; }
-
-          if (setlists.diagnostics) {
-            yPos += 10;
-            doc.setFont(FONT, 'bold'); doc.setFontSize(13); doc.setTextColor(...TEXT_C);
-            doc.text('Tonal Diagnostics', margin, yPos); yPos += 18;
-            doc.setFont(FONT, 'normal'); doc.setFontSize(9); doc.setTextColor(...MUTED_C);
-            setlists.diagnostics.forEach((diag, di) => {
-              if (!diag) return;
-              if (yPos + 28 > pageH - margin) { doc.addPage(); addWatermark(); yPos = margin + 20; }
-              doc.text(`Set ${di + 1} — Tonal Flow: ${diag.qualityScore}  (avg circle distance: ${diag.avgCircleDistance})`, margin, yPos); yPos += 13;
-              if (diag.contrastJumps && diag.contrastJumps.length > 0) {
-                const txt = `  Key jumps: ${diag.contrastJumps.map(j => `#${j.position} ${j.from}→${j.to} (${j.distance})`).join(', ')}`;
-                doc.splitTextToSize(txt, tableW).forEach(line => { doc.text(line, margin, yPos); yPos += 12; });
-              }
-              yPos += 4;
-            });
-            doc.setTextColor(...TEXT_C);
-          }
-
-          // Arrangement footnotes
-          if (footnotes.length > 0) {
-            yPos += 18;
-            if (yPos + 30 > pageH - margin) { doc.addPage(); addWatermark(); yPos = margin + 10; }
-            doc.setFillColor(...ACCENT);
-            doc.rect(margin, yPos, tableW, 24, 'F');
-            doc.setFont(FONT, 'bold'); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
-            doc.text('ARRANGEMENT NOTES', margin + 8, yPos + 16);
-            yPos += 30;
-
-            const rf = advanceRoleFilter || new Set(ARR_ROLES);
-            footnotes.forEach(fn => {
-              if (yPos + 36 > pageH - margin) { doc.addPage(); addWatermark(); yPos = margin + 16; }
-              const safeTitle = pdfSafeText((fn.title || '').toUpperCase());
-              doc.setFont(FONT, 'bold'); doc.setFontSize(10); doc.setTextColor(...ACCENT_FN);
-              doc.text(String(fn.num), margin, yPos);
-              doc.setTextColor(...TEXT_C);
-              doc.text(safeTitle, margin + 14, yPos);
-              doc.setFont(FONT, 'normal'); doc.setFontSize(8); doc.setTextColor(...MUTED_C);
-              const setLabelX = margin + 14 + doc.getTextWidth(safeTitle) + 5;
-              doc.text(`(${pdfSafeText(fn.setName)})`, setLabelX, yPos);
-              yPos += 14;
-
-              ARR_ROLES.filter(r => fn.arr[r] && rf.has(r)).forEach(role => {
-                if (yPos + 16 > pageH - margin) { doc.addPage(); addWatermark(); yPos = margin + 16; }
-                doc.setFont(FONT, 'bold'); doc.setFontSize(8); doc.setTextColor(90, 90, 90);
-                doc.text(ARR_ROLE_LABELS[role].toUpperCase(), margin + 14, yPos);
-                doc.setFont(FONT, 'normal'); doc.setFontSize(9); doc.setTextColor(...TEXT_C);
-                const noteLines = doc.splitTextToSize(pdfSafeText(fn.arr[role]), tableW - 14 - 72);
-                doc.text(noteLines, margin + 86, yPos);
-                yPos += Math.max(noteLines.length * 11, 12);
-              });
-              yPos += 10;
-            });
-
-            // Machine-readable arrangement-data block for a lossless round-trip: on
-            // re-import (importBandHelperSetlist / pdfParseArrangementNotes) this is
-            // decoded ahead of the visible text, so every rehearsal mark returns to its
-            // exact song — even characters the visible notes had to transliterate. Drawn
-            // tiny + white so it stays out of the way but is still extractable.
-            try {
-              const dataPayload = footnotes.map(fn => {
-                const a = {};
-                ARR_ROLES.forEach(r => { if (fn.arr[r]) a[r] = fn.arr[r]; });
-                return { t: fn.title, s: fn.setName, si: fn.setIdx, pi: fn.songIdx, a };
-              });
-              const dataLines = pdfEncodeArrangementData(dataPayload);
-              doc.setFont(FONT, 'normal'); doc.setFontSize(1); doc.setTextColor(255, 255, 255);
-              yPos += 6;
-              dataLines.forEach(ln => {
-                if (yPos > pageH - margin) { doc.addPage(); addWatermark(); yPos = margin; }
-                doc.text(ln, margin, yPos);
-                yPos += 3;
-              });
-              doc.setTextColor(...TEXT_C);
-            } catch (e) { console.warn('Arrangement data-block embed failed:', e); }
-          }
+        if (docKind === 'guide' && !guideEntries.length) {
+          return showToast('No arrangement notes to export yet — add rehearsal marks in Advance view', 'warning');
         }
 
-        const safeName = (activeBand?.name || 'band').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
-        const suffix   = isAdvance ? '-advance' : '-stage';
-        doc.save(`setlist-${safeName}${suffix}-${new Date().toISOString().slice(0, 10)}.pdf`);
+        try {
+          if (docKind === 'stage' || docKind === 'package') {
+            const stageModel = buildStageSetlistModel(setlists, { includeCues: ctx.includeCues });
+            const stageDoc = generateStageSetlistPDF(stageModel, {
+              ...ctx,
+              summary: {
+                qualityScores: setlists.qualityScores,
+                anchorKey: setlists.anchorKey,
+                diagnostics: setlists.diagnostics,
+                guideCount: guideEntries.length,
+              },
+            });
+            stageDoc.save(pdfExportFilename('stage', ctx.bandName));
+          }
+          if (docKind === 'guide' || docKind === 'package') {
+            if (guideEntries.length) {
+              const guideDoc = generateArrangementGuidePDF(guideEntries, ctx);
+              guideDoc.save(pdfExportFilename('guide', ctx.bandName));
+            } else if (docKind === 'package') {
+              showToast('Stage setlist exported — no arrangement notes to put in a guide', 'info');
+            }
+          }
+        } catch (err) {
+          console.error('PDF export failed:', err);
+          return showToast('PDF export failed: ' + (err && err.message ? err.message : 'unknown error'), 'error');
+        }
+
+        const what = docKind === 'package'
+          ? (guideEntries.length ? 'Stage setlist + arrangement guide exported' : null)
+          : docKind === 'guide'
+            ? `Arrangement guide exported (${guideEntries.length} songs)`
+            : 'Stage setlist exported';
+        if (what) showToast(what, 'success');
       };
 
       const toggleLock = (setIdx, songId) => {
@@ -13280,6 +13955,7 @@ ${headerHtml}
                 onGenerate={generate}
                 onCopy={copyToClipboard}
                 onExportPDF={exportPDF}
+                arrangementCount={arrangementSongCount}
                 onOpenPdfSettings={() => setPdfSettingsModal(true)}
                 onEmailShare={openEmailShare}
                 songCount={activeSongs.length}
@@ -13480,7 +14156,8 @@ ${headerHtml}
               onClose={() => setPdfSettingsModal(false)}
               settings={pdfSettings}
               onChange={setPdfSettings}
-              onExport={() => { exportPDF(); setPdfSettingsModal(false); }}
+              arrangementCount={arrangementSongCount}
+              onExport={(kind) => { exportPDF(kind); setPdfSettingsModal(false); }}
               viewMode={viewMode}
               sampleSet={setlists[0] || null}
               bandName={activeBand?.name || 'Band'}
