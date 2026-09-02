@@ -144,13 +144,21 @@ for (const g of [
 
 // Arrangement-notes round-trip (footnote export/import). Consts before the functions
 // that read them; parse/serializeArrangement + ARR_ROLES back the merge/normalize.
-for (const c of ['ARR_ROLES', 'ARR_ROLE_IMPORT_HEADERS', 'ARR_LABEL_TO_ROLE', 'PDF_TEXT_MAP', 'ARR_DATA_MARKER', 'ARR_DATA_RE']) {
+for (const c of ['ARR_ROLES', 'ARR_ROLE_LABELS', 'ARR_SECTIONS', 'ARR_SECTION_LABELS', 'ARR_FIELDS',
+  'ARR_ROLE_IMPORT_HEADERS', 'ARR_LABEL_TO_ROLE', 'ARR_LABEL_TO_SECTION', 'PDF_TEXT_MAP', 'ARR_DATA_MARKER', 'ARR_DATA_RE',
+  'ARR_TAG_INTRO_RE', 'ARR_TAG_OUTRO_RE', 'ARR_HARMONY_RE',
+  'NOTATION_ROMAN_UPPER', 'NOTATION_ROMAN_LOWER', 'NOTATION_GLYPH_MAP', 'NOTATION_SUPERSCRIPTS',
+  'NOTATION_CHAIN_RE']) {
   pieces.push(extractDecl(c));
 }
 for (const f of [
-  'parseArrangement', 'serializeArrangement',
+  'parseArrangement', 'serializeArrangement', 'hasArrangementData', 'getArrangementCue',
+  'classifyArrLine', 'deriveArrangementSections',
+  'repairNotationMojibake', 'repairRomanChain', 'sanitizeNotation',
+  'buildStageSetlistModel', 'buildArrangementGuideModel',
   'pdfSafeText', 'pdfEncodeArrangementData', 'arrB64Decode', 'normalizeArrObj',
-  'pdfDecodeArrangementData', 'matchArrRoleLabel', 'pdfParseArrangementNotesVisible',
+  'pdfDecodeArrangementData', 'matchArrRoleLabel', 'arrRowText', 'pdfParseArrangementNotesVisible',
+  'pdfParseArrangementGuideVisible',
   'pdfParseArrangementNotes', 'arrTitleKey', 'arrNoteMatchesTitle', 'arrApplyNoteToArrangement',
   // Setlist → library round-trip (flatten sets to songs + reattach notes; CSV arr reassembly).
   'stripFootnoteNum', 'flattenSetlistSongs', 'csvArrangementFromRow',
@@ -159,6 +167,15 @@ for (const f of [
   'bhCleanVocalist', 'bhIsNoiseRow', 'pdfParseBandHelperSets',
 ]) pieces.push(extractDecl(f));
 pieces.push(extractDecl('BH_SET_HEADER_RE'));
+pieces.push(extractDecl('ARR_WORD_GAP_PT'));
+
+// PDF export engines. The settings-panel constants must land before the layout
+// helper that reads them; the two renderers take an injected jsPDF constructor, so a
+// recording stub drives them without any dependency.
+for (const g of ['PDF_PAGE_SIZES', 'PDF_MARGIN_PRESETS', 'PDF_FONT_FAMILIES', 'PDF_FONT_BASE',
+  'DEFAULT_PDF_SETTINGS', 'PDF_DOC_KINDS', 'PDF_DOC_LABELS', 'PDF_PALETTE',
+  'pdfBaseLayout', 'generateStageSetlistPDF', 'drawStageSummaryPage',
+  'generateArrangementGuidePDF', 'pdfExportFilename']) pieces.push(extractDecl(g));
 
 // Contact enrichment + phone-first outreach helpers (CALL_OUTCOMES before its users).
 for (const g of [
@@ -207,9 +224,15 @@ const EXPORTS = [
   'DAILY_OUTREACH_CAP', 'MAX_SEQUENCE_SENDS', 'SEQUENCE_STEP_DAYS', 'addDaysISO', 'sendsToday', 'nextActionFor',
   'VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'epkLinkForVenue',
   'MIN_LEARN_SAMPLE', 'venueOutcome', 'collectOutreachStats', 'smoothedRate', 'typeScoreMultiplier', 'bestStatInsight',
-  'ARR_ROLES', 'ARR_ROLE_IMPORT_HEADERS', 'parseArrangement', 'serializeArrangement', 'pdfSafeText',
+  'ARR_ROLES', 'ARR_SECTIONS', 'ARR_SECTION_LABELS', 'ARR_FIELDS', 'ARR_ROLE_IMPORT_HEADERS',
+  'parseArrangement', 'serializeArrangement', 'hasArrangementData',
+  'classifyArrLine', 'deriveArrangementSections',
+  'repairNotationMojibake', 'repairRomanChain', 'sanitizeNotation',
+  'buildStageSetlistModel', 'buildArrangementGuideModel', 'pdfSafeText',
+  'PDF_DOC_KINDS', 'PDF_DOC_LABELS', 'DEFAULT_PDF_SETTINGS',
+  'generateStageSetlistPDF', 'generateArrangementGuidePDF', 'pdfExportFilename',
   'pdfEncodeArrangementData', 'arrB64Decode', 'pdfDecodeArrangementData',
-  'pdfParseArrangementNotesVisible', 'pdfParseArrangementNotes',
+  'arrRowText', 'pdfParseArrangementNotesVisible', 'pdfParseArrangementGuideVisible', 'pdfParseArrangementNotes',
   'arrTitleKey', 'arrNoteMatchesTitle', 'arrApplyNoteToArrangement',
   'stripFootnoteNum', 'flattenSetlistSongs', 'csvArrangementFromRow',
   'pdfParseBandHelperSets',
