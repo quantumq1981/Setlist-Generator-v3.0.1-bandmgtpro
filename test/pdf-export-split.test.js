@@ -16,7 +16,7 @@ const {
   generateStageSetlistPDF, generateArrangementGuidePDF,
   pdfExportFilename, PDF_DOC_KINDS, PDF_DOC_LABELS,
   arrRowText, pdfParseArrangementGuideVisible, pdfParseArrangementNotes,
-  arrApplyNoteToArrangement,
+  arrApplyNoteToArrangement, mergeArrangementFillEmpty,
 } = algorithm;
 
 // ================================================================================
@@ -461,4 +461,70 @@ test('a real column gap still produces a space', () => {
     { str: 'GENERAL', x: 50, w: 30 },
     { str: 'the note', x: 122, w: 40 },
   ]), 'GENERAL the note');
+});
+
+// ================================================================================
+// 7. Import dedup: fill-empty arrangement merge onto the existing song
+// ================================================================================
+// A duplicate song name is not re-added, but its rehearsal notes attach to the copy
+// already in the library — filling only empty fields, never overwriting a curated one.
+
+test('an incoming note fills an empty field on the existing song', () => {
+  const existing = serializeArrangement({ drums: 'Fill on 8' });          // no harmony yet
+  const incoming = serializeArrangement({ form_harmony: 'I-IV-V, quick IV' });
+  const { arrangement, filled } = mergeArrangementFillEmpty(existing, incoming);
+  const p = parseArrangement(arrangement);
+  assert.equal(filled, 1);
+  assert.equal(p.drums, 'Fill on 8');                 // untouched
+  assert.equal(p.form_harmony, 'I-IV-V, quick IV');   // filled from the import
+});
+
+test('a curated note is never overwritten by a conflicting import', () => {
+  const existing = serializeArrangement({ form_harmony: 'my hand-typed chart', intro_cue: '' });
+  const incoming = serializeArrangement({ form_harmony: 'bulk import chart', intro_cue: 'Cold open' });
+  const { arrangement, filled } = mergeArrangementFillEmpty(existing, incoming);
+  const p = parseArrangement(arrangement);
+  assert.equal(filled, 1);                             // only intro_cue was empty
+  assert.equal(p.form_harmony, 'my hand-typed chart'); // conflict → existing wins
+  assert.equal(p.intro_cue, 'Cold open');              // gap → filled
+});
+
+test('all four sections and the roles are eligible to be filled', () => {
+  const incoming = serializeArrangement({
+    intro_cue: 'Drum intro', form_harmony: 'Stormy Monday subs',
+    transition_outro: 'Tag 4x', general_notes: 'Opener', bass: 'Root only',
+  });
+  const { arrangement, filled } = mergeArrangementFillEmpty('', incoming);
+  const p = parseArrangement(arrangement);
+  assert.equal(filled, 5);
+  ARR_SECTIONS.forEach(sec => assert.ok(p[sec], sec + ' filled'));
+  assert.equal(p.bass, 'Root only');
+});
+
+test('a mojibake note imported onto a duplicate stays raw in storage but renders clean', () => {
+  // Storage keeps the raw import (sanitize happens at render, per the guide pipeline);
+  // deriveArrangementSections repairs it on the way to the Arrangement Guide.
+  const { arrangement } = mergeArrangementFillEmpty('', serializeArrangement({
+    form_harmony: 'conventional !`-!c-!d blues',
+  }));
+  assert.match(parseArrangement(arrangement).form_harmony, /!`/);   // raw preserved
+  assert.match(deriveArrangementSections(arrangement).form_harmony, /I-IV-V/); // clean on display
+});
+
+test('nothing to merge returns the original arrangement unchanged', () => {
+  const existing = serializeArrangement({ global: 'just a note' });
+  const a = mergeArrangementFillEmpty(existing, '');
+  assert.equal(a.filled, 0);
+  assert.equal(a.arrangement, existing);              // byte-identical, no churn
+  const b = mergeArrangementFillEmpty('', '');
+  assert.equal(b.arrangement, '');
+  assert.equal(b.filled, 0);
+});
+
+test('merging is stable across repeated imports of the same duplicate (idempotent)', () => {
+  const incoming = serializeArrangement({ form_harmony: 'I-IV-V' });
+  const once = mergeArrangementFillEmpty('', incoming).arrangement;
+  const twice = mergeArrangementFillEmpty(once, incoming);
+  assert.equal(twice.filled, 0);                      // already present → no-op
+  assert.equal(twice.arrangement, once);
 });

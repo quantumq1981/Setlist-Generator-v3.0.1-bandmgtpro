@@ -159,7 +159,7 @@ for (const f of [
   'pdfSafeText', 'pdfEncodeArrangementData', 'arrB64Decode', 'normalizeArrObj',
   'pdfDecodeArrangementData', 'matchArrRoleLabel', 'arrRowText', 'pdfParseArrangementNotesVisible',
   'pdfParseArrangementGuideVisible',
-  'pdfParseArrangementNotes', 'arrTitleKey', 'arrNoteMatchesTitle', 'arrApplyNoteToArrangement',
+  'pdfParseArrangementNotes', 'arrTitleKey', 'arrNoteMatchesTitle', 'arrApplyNoteToArrangement', 'mergeArrangementFillEmpty',
   // Setlist → library round-trip (flatten sets to songs + reattach notes; CSV arr reassembly).
   'stripFootnoteNum', 'flattenSetlistSongs', 'csvArrangementFromRow',
   // BandHelper/stacked setlist PDF parser (X-position column assignment).
@@ -233,7 +233,7 @@ const EXPORTS = [
   'generateStageSetlistPDF', 'generateArrangementGuidePDF', 'pdfExportFilename',
   'pdfEncodeArrangementData', 'arrB64Decode', 'pdfDecodeArrangementData',
   'arrRowText', 'pdfParseArrangementNotesVisible', 'pdfParseArrangementGuideVisible', 'pdfParseArrangementNotes',
-  'arrTitleKey', 'arrNoteMatchesTitle', 'arrApplyNoteToArrangement',
+  'arrTitleKey', 'arrNoteMatchesTitle', 'arrApplyNoteToArrangement', 'mergeArrangementFillEmpty',
   'stripFootnoteNum', 'flattenSetlistSongs', 'csvArrangementFromRow',
   'pdfParseBandHelperSets',
 ];

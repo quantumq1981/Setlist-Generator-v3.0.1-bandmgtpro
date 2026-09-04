@@ -4557,6 +4557,32 @@
       return serializeArrangement(merged);
     }
 
+    // Fill-empty union of two arrangement strings across ARR_FIELDS (the six roles +
+    // the four sections). For each field: keep the existing note if it already has
+    // content; otherwise take the incoming one. A note the user curated by hand is
+    // NEVER overwritten — the import only fills gaps. This is the merge the CSV/PDF
+    // dedup path uses so a duplicate song's rehearsal notes land on the copy already in
+    // the library instead of being dropped with the duplicate row. Pure; returns
+    // { arrangement, filled } where `filled` counts the fields the import populated
+    // (0 means nothing changed, and the original string is returned byte-identical so
+    // legacy libraries never churn).
+    function mergeArrangementFillEmpty(existingArrangement, incomingArrangement) {
+      const inc = parseArrangement(incomingArrangement);
+      const hasIncoming = ARR_FIELDS.some(f => inc[f] && String(inc[f]).trim());
+      if (!hasIncoming) return { arrangement: existingArrangement || '', filled: 0 };
+      const out = { ...parseArrangement(existingArrangement) };
+      let filled = 0;
+      for (const f of ARR_FIELDS) {
+        const have = out[f] && String(out[f]).trim();
+        const add = inc[f] && String(inc[f]).trim();
+        if (!have && add) { out[f] = inc[f]; filled++; }
+      }
+      return {
+        arrangement: filled ? serializeArrangement(out) : (existingArrangement || ''),
+        filled,
+      };
+    }
+
     /******************* END ARRANGEMENT-NOTES ROUND-TRIP *******************/
 
 
@@ -12677,6 +12703,13 @@ ${headerHtml}
         let crossLibraryDupes = 0;
         const fileNames = [];
         let pdfErrors = 0;
+        // A duplicate row isn't uploaded as a second song, but its rehearsal notes are
+        // still valuable: fill-empty merge them onto the copy already in the library
+        // (mergeLibById, applied in one functional setSongs at commit) or onto the batch
+        // entry it duplicates, so notes on a duplicate list are never lost. Never
+        // overwrites a curated note.
+        const mergeLibById = new Map();
+        let notesFilled = 0;
 
         // Parse a single CSV/TXT text blob and return song objects.
         const parseCSVText = (text) => {
@@ -12766,6 +12799,28 @@ ${headerHtml}
           for (const song of parsedSongs) {
             if (isTitleDupe(song.title, existingNorms)) {
               crossLibraryDupes++;
+              // Carry the duplicate's arrangement notes onto the song it duplicates —
+              // a batch entry from an earlier file first, else a library song — filling
+              // only empty fields.
+              if (song.arrangement) {
+                const key = normTitle(song.title);
+                const batchHit = allImported.find(s => titlesSame(normTitle(s.title), key));
+                if (batchHit) {
+                  const m = mergeArrangementFillEmpty(batchHit.arrangement, song.arrangement);
+                  batchHit.arrangement = m.arrangement;
+                  notesFilled += m.filled;
+                } else {
+                  const lib = songs.find(s => titlesSame(normTitle(s.title), key));
+                  if (lib) {
+                    const base = mergeLibById.get(lib.id) || lib;
+                    const m = mergeArrangementFillEmpty(base.arrangement, song.arrangement);
+                    if (m.filled) {
+                      mergeLibById.set(lib.id, { ...base, arrangement: m.arrangement });
+                      notesFilled += m.filled;
+                    }
+                  }
+                }
+              }
             } else {
               // Register normalized form so later files in this batch are compared against it.
               existingNorms.push(normTitle(song.title));
@@ -12788,7 +12843,14 @@ ${headerHtml}
           : fileNames[0];
 
         const commitImport = () => {
-          if (allImported.length > 0) setSongs(prev => [...prev, ...allImported]);
+          if (allImported.length > 0 || mergeLibById.size > 0) {
+            setSongs(prev => {
+              const mapped = mergeLibById.size
+                ? prev.map(s => (mergeLibById.has(s.id) ? mergeLibById.get(s.id) : s))
+                : prev;
+              return allImported.length ? [...mapped, ...allImported] : mapped;
+            });
+          }
           const newImport = {
             ts: Date.now(),
             count: allImported.length,
@@ -12802,6 +12864,7 @@ ${headerHtml}
           let msg = `Imported ${allImported.length} song${allImported.length !== 1 ? 's' : ''}`;
           if (files.length > 1) msg += ` from ${files.length} files`;
           if (totalDupes > 0) msg += ` — ${totalDupes} duplicate${totalDupes !== 1 ? 's' : ''} removed`;
+          if (notesFilled > 0) msg += ` — ${notesFilled} note${notesFilled !== 1 ? 's' : ''} merged into existing songs`;
           if (pdfErrors > 0) msg += ` — ${pdfErrors} PDF failed`;
           showToast(msg, allImported.length > 0 ? 'success' : 'warning');
         };
@@ -12841,28 +12904,39 @@ ${headerHtml}
         const existingNormsCanon = songs.map(s => normTitle(s.title));
         const imported = [];
         let dupeCount = 0;
+        // Merges accumulate here keyed by the existing song's id, so multiple duplicate
+        // rows folding into the same (or different) library songs never clobber one
+        // another — the whole batch is applied in ONE functional setSongs at commit.
+        // (The old code wrote setSongs([...songs]) per row from a stale copy, so only
+        // the last merge in a batch survived.) `filled` counts arrangement fields the
+        // import carried into an existing song, for the duplicate-flag toast.
+        const mergeById = new Map();
+        let notesFilled = 0;
 
         for (const row of rows) {
           const dedupKey = normTitle(row.title);
           if (isTitleDupe(row.title, existingNormsCanon)) {
-            // Merge missing fields into the existing matching song.
+            // Duplicate name: don't create a second song. Fill the existing song's
+            // empty fields from this row — including a per-field union of arrangement
+            // notes (rehearsal marks on a duplicate list attach to the copy already in
+            // the library), never overwriting a note the user already curated.
             const idx = songs.findIndex(s => titlesSame(normTitle(s.title), dedupKey));
             if (idx >= 0) {
               const existing = songs[idx];
-              let updated = false;
-              const merged = { ...existing };
-              if (!merged.key && row.key) { merged.key = row.key; updated = true; }
-              if (!merged.bpm && row.tempo) { merged.bpm = row.tempo; updated = true; }
-              if (!merged.artist && row.artist) { merged.artist = sanitizeInput(row.artist); updated = true; }
-              if ((!merged.duration || merged.duration === DEFAULT_DURATION_MINUTES) && row.duration) { merged.duration = parseDuration(row.duration); updated = true; }
-              if (merged.style === 'midtempo' && row.style && row.style !== 'midtempo') { merged.style = row.style; updated = true; }
-              if (!merged.arrangement && row.arrangement) { merged.arrangement = row.arrangement; updated = true; }
-              if (!merged.energy && row.energy) { merged.energy = row.energy; updated = true; }
-              if (updated) {
-                const newSongs = [...songs];
-                newSongs[idx] = merged;
-                setSongs(newSongs);
+              const base = mergeById.get(existing.id) || existing;
+              const merged = { ...base };
+              if (!merged.key && row.key) merged.key = row.key;
+              if (!merged.bpm && row.tempo) merged.bpm = row.tempo;
+              if (!merged.artist && row.artist) merged.artist = sanitizeInput(row.artist);
+              if ((!merged.duration || merged.duration === DEFAULT_DURATION_MINUTES) && row.duration) merged.duration = parseDuration(row.duration);
+              if (merged.style === 'midtempo' && row.style && row.style !== 'midtempo') merged.style = row.style;
+              if (!merged.energy && row.energy) merged.energy = row.energy;
+              if (row.arrangement) {
+                const m = mergeArrangementFillEmpty(merged.arrangement, row.arrangement);
+                merged.arrangement = m.arrangement;
+                notesFilled += m.filled;
               }
+              mergeById.set(existing.id, merged);
             }
             dupeCount++;
             continue;
@@ -12885,8 +12959,13 @@ ${headerHtml}
         }
 
         const commitImport = () => {
-          if (imported.length > 0) {
-            setSongs(prev => [...prev, ...imported]);
+          if (imported.length > 0 || mergeById.size > 0) {
+            setSongs(prev => {
+              const mapped = mergeById.size
+                ? prev.map(s => (mergeById.has(s.id) ? mergeById.get(s.id) : s))
+                : prev;
+              return imported.length ? [...mapped, ...imported] : mapped;
+            });
           }
 
           const newImport = { ts: Date.now(), count: imported.length, filename: 'canonical-import', dupes: dupeCount };
@@ -12895,7 +12974,9 @@ ${headerHtml}
           LS.set(LS_KEYS.bandImports(activeBandId), updatedImports);
 
           let msg = `Imported ${imported.length} songs`;
-          if (dupeCount > 0) msg += ` (${dupeCount} duplicates merged/skipped)`;
+          if (dupeCount > 0) msg += ` (${dupeCount} duplicate${dupeCount !== 1 ? 's' : ''} skipped`
+            + (notesFilled > 0 ? `, ${notesFilled} note${notesFilled !== 1 ? 's' : ''} merged into existing songs` : '')
+            + ')';
           msg += ` | Parsed: ${report.rowsParsed}, Rejected: ${report.rowsRejected}`;
           showToast(msg, 'success');
         };
