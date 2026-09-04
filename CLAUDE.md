@@ -896,7 +896,39 @@ headless Playwright drive → 19/19 (structured fields present, three export but
 producing the right file, package producing both, settings modal honouring the choice),
 0 page errors.
 
----
+## 9s. Change log — 2026-09 import dedup carries arrangement notes onto the existing song
+
+A duplicate song name has always been flagged and not re-added, but its rehearsal notes
+were lost with the row. Both import doors now fold a duplicate's arrangement notes onto
+the copy already in the library, **filling only empty fields** so a hand-curated note is
+never overwritten (the conflict policy the user chose).
+
+- **`mergeArrangementFillEmpty(existing, incoming)`** (new pure helper next to
+  `arrApplyNoteToArrangement`): per-field union over `ARR_FIELDS` (the six roles + the
+  four sections); keeps the existing field when it already has content, else takes the
+  incoming one. Returns `{ arrangement, filled }`; `filled` counts populated fields and
+  is 0-safe (the original string is returned byte-identical, so legacy libraries never
+  churn). Storage stays raw — sanitize/repair still happens at render via
+  `deriveArrangementSections`, so a mojibake note imported onto a duplicate reads back
+  clean in the guide.
+- **`importCanonicalRows` (Import + Normalize, CSV **and** PDF)**: the arrangement merge
+  went from "only if the existing song had no notes, wholesale replace" to the per-field
+  fill-empty union. Fixed a batch bug in the same pass — merges were applied with
+  `setSongs([...songs])` per row from a stale closure, so with two duplicates in one
+  import only the last survived; all merges now accumulate in a `Map` keyed by song id
+  and commit in one functional `setSongs`. The toast flags "N notes merged into existing
+  songs".
+- **`importCSVRobust` (Quick Import, multi-file CSV/PDF)**: previously dropped a duplicate
+  row outright. Now fill-empty-merges its notes onto the batch entry it duplicates (an
+  earlier file in the same drop) or the library song, via the same helper and a functional
+  commit; same toast flag.
+
+Verification: `npm test` → 138/138 (6 new: fill-empty, conflict-keeps-existing, all
+sections+roles eligible, raw-storage-renders-clean, no-op byte-identity, idempotent
+re-import); Babel compile clean; headless Playwright drive of the real Quick Import door
+→ 7/7 (seed a curated song, upload a CSV duplicating it with extra + conflicting notes
+plus a new song: duplicate not re-added, new song added, curated drums note preserved,
+empty harmony/keys fields filled, the conflicting import note never lands), 0 page errors.
 
 ---
 
