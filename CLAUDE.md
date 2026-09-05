@@ -984,6 +984,40 @@ OG assets visually verified.
 
 ---
 
+## 9u. Change log — 2026-09 BandLeaderHQ visual design system (PR 2)
+
+Reskin only — no logic, no algorithm, no schema change; behavior identical. Applies the
+owner-approved "command center" direction (blue leads, orange fires) across all three
+theming surfaces (CLAUDE.md §2 / the `design-conventions` skill), driven off a sign-off
+mockup canvas.
+
+- **Token flip in the app `:root`.** `--accent` changed from orange to **blue (`#3d7bff`)**
+  so every structural/primary usage it already drove — primary buttons, focus rings,
+  active toggles, panel titles, the header bar, venue/booking/stage-current highlights,
+  drop zones, drag handles — became blue in one edit. A new **`--energy` (orange
+  `#ff6b35`, the logo's accent) is reserved** for the one Generate CTA per view and the
+  energy visualisation only, so orange never competes with itself. Added
+  `--accent-soft`/`--accent-glow`/`--energy-glow` tints; surfaces cooled to a navy-black
+  base (`--primary`/`--secondary`/body/`.ide-background`); text/border cooled.
+- **The few genuinely-energy spots repointed to `--energy`:** the Generate button (new
+  `.btn-cta` modifier, orange gradient over the blue `.btn-primary`), the energy-preview
+  "actual" line + legend, and the "ending" macro category. Semantic oranges left as-is
+  (ambient backdrop glow, pool-exhaustion warning, playlist "Hits" category). Header
+  accent bar is now a blue→orange brand gradient; the on-screen wordmark uses a cool
+  blue-tinted gradient.
+- **EPK export CSS** (`buildEPKHtml`): two-tone `--accent`/`--gold` moved from red/gold to
+  **blue/orange**, base cooled — the EPK now matches the app brand.
+- **PDF `PDF_PALETTE`**: `ACCENT` moved from slate to a **print-deepened brand blue**
+  `[40,78,150]`; `SECTION` blue; `ROLE` a warm energy tone `[176,82,40]`. Print discipline
+  kept (no heavy fills).
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → 138/138
+(reskin touched no logic); headless Playwright render of the app → mounts, blue-primary
+chrome with orange reserved, 0 JS page errors; screenshot compared against the approved
+mockup. EPK/PDF changes are isolated color values validated by the compile + suite.
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing
