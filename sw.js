@@ -1,4 +1,4 @@
-const CACHE_NAME = 'setlist-generator-shell-v1';
+const CACHE_NAME = 'bandleaderhq-shell-v1';
 const CORE_ASSETS = ['./', './index.html', './manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {

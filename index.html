@@ -3,7 +3,31 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Setlist Generator v3.8.0 — Force Opener/Closer Fix, Affinity Engine v2, Song-to-Set Pinning</title>
+  <title>BandLeaderHQ — Setlists, Venues &amp; EPK for Working Bands</title>
+
+  <!-- SEO / social. NOTE: when the custom domain is live, swap the base URL
+       https://quantumq1981.github.io/Setlist-Generator-v3.0.1-bandmgtpro
+       for https://<your-domain> in the canonical + og:url + og:image + twitter:image below. -->
+  <meta name="description" content="BandLeaderHQ is the command center for working bands — build optimized setlists, run venue outreach and bookings, and share a polished press kit. Works offline, no sign-up." />
+  <link rel="canonical" href="https://quantumq1981.github.io/Setlist-Generator-v3.0.1-bandmgtpro/" />
+
+  <link rel="icon" type="image/svg+xml" href="./assets/icon.svg" />
+  <link rel="icon" type="image/png" sizes="512x512" href="./assets/icon-512.png" />
+  <link rel="apple-touch-icon" href="./assets/icon-512.png" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="BandLeaderHQ" />
+  <meta property="og:title" content="BandLeaderHQ — Setlists, Venues &amp; EPK for Working Bands" />
+  <meta property="og:description" content="Build optimized setlists, run venue outreach and bookings, and share a polished press kit — one command center for working bands." />
+  <meta property="og:url" content="https://quantumq1981.github.io/Setlist-Generator-v3.0.1-bandmgtpro/" />
+  <meta property="og:image" content="https://quantumq1981.github.io/Setlist-Generator-v3.0.1-bandmgtpro/assets/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="BandLeaderHQ — Setlists, Venues &amp; EPK for Working Bands" />
+  <meta name="twitter:description" content="Build optimized setlists, run venue outreach and bookings, and share a polished press kit — one command center for working bands." />
+  <meta name="twitter:image" content="https://quantumq1981.github.io/Setlist-Generator-v3.0.1-bandmgtpro/assets/og-image.png" />
 
   <link rel="manifest" href="./manifest.webmanifest" />
   <!-- TODO(SRI): add integrity hashes once CDN access is available in this environment. -->
@@ -32,7 +56,7 @@
   </script>
 
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Manrope:wght@400;500;600;700&family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <meta name="theme-color" content="#ff6b35">
+  <meta name="theme-color" content="#0b0b0f">
 
   <style>
     :root {
@@ -112,21 +136,20 @@
       min-height: 100vh; overflow-x: hidden;
     }
 
+    /* BandLeaderHQ ambient backdrop — zero-byte CSS, no image payload.
+       Warm (orange) + cool (blue) brand glows over a near-black base. */
     .ide-background {
       min-height: 100vh;
       background-color: #0b0b0f;
-      background-image: url('./assets/zemba-logo-bg.png');
-      background-image: image-set(
-        url('./assets/zemba-logo-bg.webp') type('image/webp'),
-        url('./assets/zemba-logo-bg.png') type('image/png')
-      );
-      background-size: cover;
-      background-position: center;
-      background-repeat: no-repeat;
+      background-image:
+        radial-gradient(1100px 620px at 12% -8%, rgba(255, 107, 53, 0.10), transparent 60%),
+        radial-gradient(1000px 700px at 102% -4%, rgba(56, 120, 220, 0.12), transparent 55%),
+        linear-gradient(180deg, #0d0e15 0%, #0b0b0f 45%, #090a0e 100%);
+      background-attachment: fixed;
     }
     .ide-background__content {
       min-height: 100vh;
-      background: linear-gradient(135deg, rgba(15, 15, 15, 0.82) 0%, rgba(26, 26, 26, 0.78) 100%);
+      background: radial-gradient(1400px 900px at 50% -20%, rgba(255, 255, 255, 0.02), transparent 70%);
       padding: 1px 0;
     }
     .app-container { max-width: 1600px; margin: 0 auto; padding: 1.25rem; }
@@ -12001,7 +12024,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           const k = localStorage.key(i);
           if (k && k.startsWith('setlist_')) stores[k] = localStorage.getItem(k);
         }
-        const payload = JSON.stringify({ app: 'setlist-generator-pro', kind: 'full-backup', exportedAt: new Date().toISOString(), stores }, null, 1);
+        const payload = JSON.stringify({ app: 'bandleaderhq', kind: 'full-backup', exportedAt: new Date().toISOString(), stores }, null, 1);
         const blob = new Blob([payload], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -12018,7 +12041,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         reader.onload = (ev) => {
           try {
             const data = JSON.parse(ev.target.result);
-            if (!data || data.kind !== 'full-backup' || !data.stores) { showToast('Not a Setlist Generator backup file', 'error'); return; }
+            if (!data || data.kind !== 'full-backup' || !data.stores) { showToast('Not a BandLeaderHQ backup file', 'error'); return; }
             const n = Object.keys(data.stores).length;
             if (!window.confirm(`Restore backup from ${(data.exportedAt || '').slice(0, 10)}?\n\nThis replaces ALL current app data (${n} stores) — bands, songs, venues, bookings, EPK. The app will reload.`)) return;
             Object.keys(localStorage).filter(k => k.startsWith('setlist_')).forEach(k => localStorage.removeItem(k));
@@ -13955,8 +13978,8 @@ ${headerHtml}
             )}
 
             <header className="header">
-              <h1>SETLIST GENERATOR</h1>
-              <div className="subtitle">v3.8.0 — Force Opener/Closer Fix • Affinity Engine v2 • Song-to-Set Pinning • Master Library Injection</div>
+              <h1>BandLeaderHQ</h1>
+              <div className="subtitle">Setlists · Venues · Press Kit — your band's command center</div>
             </header>
 
             {FEATURE_FLAGS.phase1ReliabilityDataSafety && storageStatus.level !== 'normal' && (
