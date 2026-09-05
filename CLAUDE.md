@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-09-02.
+Last updated: 2026-09-05.
 
 ---
 
@@ -82,8 +82,15 @@ For a one-off probe you can still lift a single function ad hoc, but prefer addi
 case to the suite so the check is permanent.
 
 ### Git / PRs
-Feature branch: `claude/pdf-export-decouple-gf67hb`. Open PRs against `main`.
+Feature branch: `claude/skill-point-usability-qqdkbn`. Open PRs against `main`.
 When a PR merges, restart the branch from `origin/main` for the next change.
+
+**The app is being rebranded to "BandLeaderHQ" and taken public (GitHub Pages +
+custom domain).** This is a phased effort — see §9t for PR 1 (rebrand + public
+shell + hosting) and the remaining phases (design system, IA/usability,
+genericizing the Zemba seed data for a public product). `DEPLOY.md` is the hosting
+runbook. Project design/engineering conventions now also live in
+`.claude/skills/design-conventions/SKILL.md`.
 
 ---
 
@@ -929,6 +936,51 @@ re-import); Babel compile clean; headless Playwright drive of the real Quick Imp
 → 7/7 (seed a curated song, upload a CSV duplicating it with extra + conflicting notes
 plus a new song: duplicate not re-added, new song added, curated drums note preserved,
 empty harmony/keys fields filled, the conflicting import note never lands), 0 page errors.
+
+---
+
+## 9t. Change log — 2026-09 rebrand to BandLeaderHQ + public shell (PR 1 of a phased effort)
+
+First phase of renaming the app from "Setlist Generator Pro" to **BandLeaderHQ** and
+making it a legitimate public web page. Display-only rename + hosting shell; no logic
+or algorithm change. The visual design system, IA/navigation refresh, and genericizing
+the Zemba-specific seed data are deliberately later phases (see the plan / §2 note).
+
+- **Rename — display strings only.** `<title>` (now a public brand title, not a
+  changelog string), the on-screen `<h1>` ("BandLeaderHQ") + subtitle tagline, the
+  backup-validation toast, the backup payload's informational `app` field,
+  `manifest.webmanifest` `name`/`short_name`, `sw.js` `CACHE_NAME`, and `package.json`
+  `name`/`version` (→ **4.0.0**)/description. **`localStorage` key strings were left
+  untouched** — they are the on-disk contract with existing users' data; the backup
+  `kind` stays `'full-backup'` so old backups still restore. (See the localStorage-key
+  rule in `.claude/skills/design-conventions/SKILL.md`.)
+- **Killed the 17 MB background.** `.ide-background` no longer loads
+  `assets/zemba-logo-bg.png` (17.4 MB, and Zemba-branded); it is now a zero-byte CSS
+  gradient (warm orange + cool blue glows on near-black — a first hint of the new
+  palette). The PNG/WebP were deleted (~18 MB out of the repo).
+- **Real icon set + brand assets.** New `assets/icon.svg` (scalable favicon),
+  `assets/icon-square.svg` (full-bleed raster source), `assets/icon-512.png`
+  (PWA + Apple touch icon), and `assets/og-image.png` (1200×630 social card). Manifest
+  icons repointed off the giant PNG; head gained the favicon/apple-touch links.
+  Rasters are rendered with headless Chromium (no ImageMagick/rsvg in the sandbox;
+  SVG intrinsic sizing is unreliable below ~512px, so smaller PNGs are downscaled from
+  the 512 raster — see `assets/README.md`).
+- **Public `<head>`.** Added meta description, Open Graph, Twitter card, and canonical.
+  `theme-color` reconciled to `#0b0b0f` across the head meta and the manifest
+  (`theme_color`/`background_color`), which also gained a `description`/`categories`.
+  Absolute social URLs are anchored to the interim GitHub Pages base with a comment
+  marking every spot to swap once the custom domain is live.
+- **Hosting shell.** Added `404.html` (branded redirect to root) and `DEPLOY.md`
+  (branch-based Pages today → custom domain DNS/CNAME/HTTPS + URL-swap steps). No
+  Actions workflow — the app has no build step, so Pages serves the repo as-is.
+- **Not touched (verified, not blindly "fixed"):** `test/epk-links.test.js` uses a
+  github.io URL only as a pure-function *input fixture*, not an app-state assertion, so
+  it needs no change; §9o's EPK URL is historical changelog text and the live EPK URL
+  (Zemba's domain) is genericized in a later phase, not here.
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → 138/138
+(no logic touched); headless Playwright boot → app mounted, 0 JS page errors; icon +
+OG assets visually verified.
 
 ---
 
