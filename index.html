@@ -60,16 +60,22 @@
 
   <style>
     :root {
-      --primary: #1a1a1a;
-      --secondary: #2d2d2d;
-      --accent: #ff6b35;
-      --accent-dark: #e85a28;
-      --text: #ffffff;
-      --text-muted: #9aa0a6;
-      --border: #404040;
+      /* BandLeaderHQ — blue leads, orange fires. Dark "command center" base. */
+      --primary: #0f1522;      /* recessed surface — inputs, song rows, pills */
+      --secondary: #161d2b;    /* raised surface — panels, band bar */
+      --accent: #3d7bff;       /* PRIMARY (blue) — nav, links, active, focus, primary buttons */
+      --accent-dark: #2149c9;
+      --accent-soft: rgba(61,123,255,.14);
+      --accent-glow: rgba(61,123,255,.35);
+      --energy: #ff6b35;       /* ENERGY accent (orange) — the Generate CTA + energy viz only */
+      --energy-dark: #e8481f;
+      --energy-glow: rgba(255,107,53,.40);
+      --text: #eef2f8;
+      --text-muted: #93a1ba;
+      --border: #29354a;
       --success: #4ade80;
       --warning: #fbbf24;
-      --error: #ef4444;
+      --error: #f87171;
       --ballad: #60a5fa;
       --acoustic: #93c5fd;
       --slow-blues: #7dd3fc;
@@ -131,7 +137,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Manrope', system-ui, -apple-system, Arial, sans-serif;
-      background: #0b0b0f;
+      background: #0a0d14;
       color: var(--text);
       min-height: 100vh; overflow-x: hidden;
     }
@@ -144,7 +150,7 @@
       background-image:
         radial-gradient(1100px 620px at 12% -8%, rgba(255, 107, 53, 0.10), transparent 60%),
         radial-gradient(1000px 700px at 102% -4%, rgba(56, 120, 220, 0.12), transparent 55%),
-        linear-gradient(180deg, #0d0e15 0%, #0b0b0f 45%, #090a0e 100%);
+        linear-gradient(180deg, #0c1120 0%, #0a0d14 46%, #080a10 100%);
       background-attachment: fixed;
     }
     .ide-background__content {
@@ -156,11 +162,11 @@
     header.header { text-align: center; margin: 1rem 0 2rem; position: relative; }
     header.header::before {
       content: ''; position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
-      width: 100px; height: 4px; background: linear-gradient(90deg, var(--accent), var(--accent-dark)); border-radius: 2px;
+      width: 104px; height: 4px; background: linear-gradient(90deg, var(--accent), var(--energy)); border-radius: 2px;
     }
     h1 {
       font-family: 'Space Mono', monospace; font-size: 2.2rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: .25rem;
-      background: linear-gradient(135deg, var(--text) 0%, var(--text-muted) 100%);
+      background: linear-gradient(135deg, #dbe6ff 0%, #8fb2f2 100%);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
     }
     .subtitle { color: var(--text-muted); font-size: .95rem; letter-spacing: .08em; text-transform: uppercase; }
@@ -179,10 +185,12 @@
       font-weight: 600; font-size: .85rem; letter-spacing: .04em; cursor: pointer; transition: .2s ease;
     }
     .btn:disabled { opacity: .55; cursor: not-allowed; }
-    .btn-primary { background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%); border-color: transparent; }
+    .btn-primary { background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%); border-color: transparent; color: #fff; box-shadow: 0 6px 18px -6px var(--accent-glow); }
+    /* The one energy CTA per view (Generate) stays orange so it never competes with itself. */
+    .btn-cta { background: linear-gradient(135deg, var(--energy) 0%, var(--energy-dark) 100%); box-shadow: 0 8px 22px -6px var(--energy-glow); }
     .btn-small { padding: .45rem .75rem; font-size: .75rem; }
     .btn-toggle-active { border-color: var(--accent); color: var(--text); }
-    .btn-toggle-active.btn-primary { box-shadow: 0 4px 12px rgba(255, 107, 53, 0.35); }
+    .btn-toggle-active.btn-primary { box-shadow: 0 4px 12px var(--accent-glow); }
 
     .main-grid { display: grid; grid-template-columns: 420px 1fr; gap: 1rem; }
     .panel {
@@ -198,7 +206,7 @@
       width: 100%; padding: .65rem .75rem; background: var(--primary); border: 1px solid var(--border); border-radius: 8px;
       color: var(--text); font-size: 16px !important;
     }
-    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,107,53,.12); }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
     .input-group { margin-bottom: .8rem; }
     .set-config { display:grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
     .toolbar { display:flex; gap:.6rem; flex-wrap: wrap; align-items:center; }
@@ -453,7 +461,7 @@
       transition: background .15s, color .15s, border-color .15s;
     }
     .view-toggle-btn.active-stage {
-      background: rgba(255,107,53,.15); border-color: var(--accent); color: var(--accent); font-weight: 600;
+      background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600;
     }
     .view-toggle-btn.active-advance {
       background: rgba(74,222,128,.12); border-color: var(--success); color: var(--success); font-weight: 600;
@@ -491,10 +499,10 @@
     }
     .stage-overlay-song:hover { background: rgba(255,255,255,.04); }
     .stage-overlay-song.stage-current {
-      background: rgba(255,107,53,.10);
+      background: var(--accent-soft);
       border-left: 3px solid var(--accent);
       padding-left: .55rem;
-      border-bottom-color: rgba(255,107,53,.18);
+      border-bottom-color: rgba(61,123,255,.30);
     }
     .stage-overlay-song.stage-dimmed { opacity: .28; }
     .stage-current-badge {
@@ -584,7 +592,7 @@
     }
     .macro-btn:hover { opacity: .7; }
     .macro-btn.cat-intro  { border-color: rgba(96,165,250,.5);  color: #60a5fa; }
-    .macro-btn.cat-ending { border-color: rgba(255,107,53,.5);  color: var(--accent); }
+    .macro-btn.cat-ending { border-color: rgba(255,107,53,.5);  color: var(--energy); }
     .macro-btn.cat-feel   { border-color: rgba(167,139,250,.5); color: #a78bfa; }
     .macro-btn.cat-cues   { border-color: rgba(74,222,128,.5);  color: var(--success); }
 
@@ -635,7 +643,7 @@
       border: 1px solid var(--border); background: var(--primary); color: var(--text-muted);
       font-size: .68rem; font-weight: 700; padding: .18rem .5rem; border-radius: 12px; cursor: pointer;
     }
-    .venue-filter-chip.active { border-color: var(--accent); color: var(--text); background: rgba(255,107,53,.1); }
+    .venue-filter-chip.active { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
     .venue-filter-chip.chip-due { border-color: var(--warning); color: var(--warning); }
     .venue-filter-chip.chip-due.active { background: rgba(251,191,36,.12); color: var(--warning); }
     .venue-filter-chip .chip-count { opacity: .7; font-weight: 600; margin-left: .2rem; }
@@ -692,7 +700,7 @@
       border: 1px solid var(--border); border-radius: 4px; padding: .2rem; font-size: .7rem;
     }
     .booking-cal-cell.cal-empty { background: transparent; border-color: transparent; }
-    .booking-cal-cell.cal-today { border-color: var(--accent); background: rgba(255,107,53,.08); }
+    .booking-cal-cell.cal-today { border-color: var(--accent); background: var(--accent-soft); }
     .booking-cal-daynum { font-weight: 700; font-size: .68rem; margin-bottom: .1rem; }
     .booking-cal-event {
       font-size: .58rem; padding: .06rem .22rem; border-radius: 3px;
@@ -873,9 +881,10 @@
 
     @media (hover: hover) {
       .btn:hover { border-color: var(--accent); }
-      .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(255, 107, 53, 0.35); }
+      .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px -4px var(--accent-glow); }
+      .btn-cta:hover { box-shadow: 0 8px 20px -4px var(--energy-glow); }
       .action-btn:hover { background: var(--border); color: var(--text); }
-      .drop-zone-between:hover, .drop-zone-between.drag-over { border-color: var(--accent); color: var(--accent); background: rgba(255,107,53,.06); }
+      .drop-zone-between:hover, .drop-zone-between.drag-over { border-color: var(--accent); color: var(--accent); background: rgba(61,123,255,.10); }
       .move-to-set-select:hover { border-color: var(--accent); color: var(--text); }
       .optimized-removal-zone:hover { background: rgba(220, 38, 38, 0.95); border-color: #fff; }
       .import-drop-zone:hover, .import-drop-zone.dragover { border-color: var(--accent); color: var(--text); }
@@ -889,7 +898,7 @@
     }
     @media (pointer: coarse) {
       .reorder-controls { flex-direction: column; gap: .4rem; }
-      .drag-handle { min-width: 46px; min-height: 52px; font-size: 1.7rem; border: 1px solid var(--accent); border-radius: 8px; background: rgba(255,107,53,.12); color: var(--accent); justify-content: center; }
+      .drag-handle { min-width: 46px; min-height: 52px; font-size: 1.7rem; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-soft); color: var(--accent); justify-content: center; }
       .drag-handle:active, .drag-handle.touch-active { background: var(--accent); color: #fff; border-color: var(--accent); }
       .mobile-updown { display: inline-flex; flex-direction: column; gap: .35rem; }
       .setlist-song { grid-template-columns: 52px 26px 1fr 46px 50px; }
@@ -7301,8 +7310,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               </div>
             </div>
           )}
-          <button className="btn btn-primary" onClick={onGenerate} disabled={songCount === 0} style={{ width: '100%', marginTop: '.5rem' }}>
-            Generate Setlists
+          <button className="btn btn-primary btn-cta" onClick={onGenerate} disabled={songCount === 0} style={{ width: '100%', marginTop: '.5rem' }}>
+            ⚡ Generate Setlists
           </button>
 
           <div className="toolbar" style={{ marginTop: '1rem' }}>
@@ -7530,7 +7539,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           <div className="energy-preview-head">
             <span className="energy-preview-title">Energy shape</span>
             <span className="energy-preview-legend">
-              <span className="epl"><svg width="16" height="8" aria-hidden="true"><line x1="0" y1="4" x2="16" y2="4" stroke="var(--accent)" strokeWidth="2" /></svg>Actual</span>
+              <span className="epl"><svg width="16" height="8" aria-hidden="true"><line x1="0" y1="4" x2="16" y2="4" stroke="var(--energy)" strokeWidth="2" /></svg>Actual</span>
               <span className="epl"><svg width="16" height="8" aria-hidden="true"><line x1="0" y1="4" x2="16" y2="4" stroke="var(--text-muted)" strokeWidth="2" strokeDasharray="3 2" /></svg>Target</span>
               <span className="energy-preview-caption">{caption}</span>
             </span>
@@ -7544,7 +7553,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             <polyline points={targetPts.join(' ')} fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeDasharray="3 2" strokeLinejoin="round" opacity="0.9">
               <title>{`Target energy arc — ${caption}`}</title>
             </polyline>
-            <polyline points={actualPts} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+            <polyline points={actualPts} fill="none" stroke="var(--energy)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
             {actual.map((a, i) => (
               <circle key={i} cx={a.x} cy={a.y} r="3" fill={energyColor(a.e)} stroke="var(--primary)" strokeWidth="1">
                 <title>{`${i + 1}. ${a.title}\nEnergy ${a.e.toFixed(1)} · target ${a.target.toFixed(1)}`}</title>
@@ -8421,7 +8430,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             </div>
 
             {/* Import a pre-made setlist (e.g. BandHelper PDF export) as a standalone saved gig */}
-            <div style={{ marginBottom: '1rem', padding: '.6rem .7rem', border: '1px dashed var(--accent)', borderRadius: '8px', background: 'rgba(255,107,53,.06)' }}>
+            <div style={{ marginBottom: '1rem', padding: '.6rem .7rem', border: '1px dashed var(--accent)', borderRadius: '8px', background: 'rgba(61,123,255,.08)' }}>
               <input ref={bhRef} type="file" accept=".pdf" style={{ display: 'none' }}
                 onChange={e => { const f = e.target.files[0]; if (f) setPendingImport({ file: f, name: f.name.replace(/\.pdf$/i, '').trim() }); e.target.value = ''; }} />
               {!pendingImport ? (
@@ -10961,14 +10970,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     }
 
     const PDF_PALETTE = {
-      ACCENT: [61, 79, 95],
-      ALT_ROW: [246, 247, 249],
-      LINE: [215, 215, 215],
+      ACCENT: [40, 78, 150],     // BandLeaderHQ brand blue, deepened for print legibility on white
+      ALT_ROW: [244, 247, 252],
+      LINE: [212, 218, 228],
       TEXT: [22, 22, 22],
       MUTED: [110, 110, 118],
       FN: [80, 100, 140],
-      SECTION: [42, 82, 122],
-      ROLE: [122, 82, 42],
+      SECTION: [33, 73, 160],
+      ROLE: [176, 82, 40],       // warm energy tone for role labels, echoing the orange accent
     };
 
     /* ---------------- 1. Stage Setlist ---------------- */
@@ -12308,7 +12317,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const actParas = actPs.map(p => `<p>${esc(p)}</p>`).join('');
         const bookbar = `<div class="bookbar"><b>BOOKING:</b> &nbsp;${[e.contactEmail ? esc(e.contactEmail) : 'EMAIL', e.contactPhone ? esc(e.contactPhone) : 'PHONE', e.website ? esc(e.website) : 'SITE', (e.epkUrl || e.linktree) ? esc(e.epkUrl || e.linktree) : 'EPK LINK'].join(' &nbsp;|&nbsp; ')}</div>`;
 
-        const css = `:root{--bg:#101216;--card:#191c24;--bd:rgba(255,255,255,.07);--accent:#ff4a5a;--gold:#e8b84b;--tx:#f3f4f7;--mut:#9aa0ab;}
+        const css = `:root{--bg:#0b0f17;--card:#151c28;--bd:rgba(255,255,255,.07);--accent:#3d7bff;--gold:#ff7d3a;--tx:#f3f4f7;--mut:#9aa0ab;}
 *{box-sizing:border-box;}
 body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 .page{position:relative;overflow:hidden;max-width:8.5in;margin:0 auto;padding:.6in .62in;}
