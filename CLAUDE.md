@@ -1055,6 +1055,39 @@ errors; screenshots compared against the approved mockup.
 
 ---
 
+## 9w. Change log — 2026-09 Reference Clips fixed + segment support (PR 5a)
+
+First slice of the "airtight gig prep" goal — the Advance/rehearsal view should carry the
+audio a note refers to so a sub can play cold. The per-song **Reference Clips (YouTube)**
+feature existed but its **"+ Add" failed silently**: `getYTVideoId` matched only `youtu.be/`,
+`?v=`, `/embed/`, and the add handlers did `if (!getYTVideoId(url)) return;` — so a YouTube
+**playlist** URL (the common paste), a `/clip/` URL, or a `/shorts/` link vanished with no
+feedback.
+
+- **Parser broadened** (`getYTVideoId`): now also accepts `/shorts/<id>`, `/live/<id>`, and
+  `youtu.be/<id>?…`; a `watch?v=<id>&list=…` link resolves to the video (not the playlist).
+- **No more silent failure** (`ytUrlIssue`, new): both add handlers replace the bare `return`
+  with a plain-language inline error (`.media-clip-err`) — a playlist link says "open the
+  individual video and paste its URL", a clip link says "paste the full video URL, then set a
+  start/end time", etc.
+- **True segment clips:** clip objects gain an **end** time (`te`, MM:SS) beside the existing
+  start (`ts`); `getYTEmbedUrl(url, ts, te)` now emits `?start=X&end=Y` so a player watches
+  exactly the illustrating segment. New "End MM:SS" input in both add forms; the row shows the
+  `start–end` range. `tsToSeconds` hardened for bare seconds / numbers.
+- **Convenience** (`ytStartFromUrl`, new): a `?t=` / `&t=1m30s` / `?start=` in the pasted URL
+  auto-fills the start field.
+- Clip metadata is small text stored in `song.mediaLinks` (localStorage) — no storage concern.
+  Embedded **document attachments** (PDF lead sheets / drum charts) are PR 5b, using IndexedDB
+  for offline blobs (owner chose embed-offline).
+
+Verification: `npm test` → 144/144 (6 new pure-function tests: parser accepts/rejects, issue
+messages, `tsToSeconds`, start-from-URL, start-only vs start→end embeds); Babel compile clean;
+headless drive — a playlist URL shows the inline error and adds nothing, a valid video with a
+1:30–2:00 segment adds and displays the range, error clears on the next valid add, 0 JS page
+errors.
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing
