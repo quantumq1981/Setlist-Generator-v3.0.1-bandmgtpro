@@ -1018,6 +1018,43 @@ mockup. EPK/PDF changes are isolated color values validated by the compile + sui
 
 ---
 
+## 9v. Change log — 2026-09 BandLeaderHQ top-level navigation + onboarding (PR 3a)
+
+First IA pass. The app had **no top-level navigation** — every destination was a modal off
+the band bar, and Analytics, the EPK builder and Bookings were buried three layers deep
+inside `VenueModal` (reachable only via band bar → Venues → an internal tab). A new user
+never found them. PR 3a makes them discoverable **without** re-architecting the venue
+subsystem (a hard refactor — `renderAnalyticsTab`/`renderSettingsTab` close over ~25 of
+`VenueModal`'s local `useState` hooks). Mockup-gated and owner-approved before code.
+
+- **Persistent top-level nav** (`.topnav`, inserted between the band bar and the workspace):
+  **Setlists** (the Library+Config+setlist workspace = home, always the active pill) ·
+  **Venues** · **Bookings** (with a live count badge) · **Analytics** · **Press Kit**, plus a
+  right-hand utility cluster (Gig Profiles, Roster). The band bar was slimmed to band identity
+  + Manage Bands + Backup/Restore + the band switcher; the scattered nav-ish buttons moved
+  into the nav.
+- **Deep-linking into the venue mega-modal.** `VenueModal` gained an `initialTab` prop; App
+  holds `venueInitialTab` + an `openVenue(tab)` helper. Because the modal stays mounted and
+  returns null while closed (so `vTab` persists), a `React.useEffect([open, initialTab])`
+  seeds the tab on open. Venues/Bookings/Analytics/Press Kit nav items and the next-gig banner
+  now land directly on their tab — one click from anywhere.
+- **First-run onboarding.** When `songs.length === 0`, a welcome card (`.onboard`, the "B"
+  monogram tile) renders above the workspace with three real actions: **Import a CSV**
+  (`setImportModal`), **Get a sample CSV** (`downloadSampleCSV`), **Add songs by hand**
+  (scrolls to the library). It disappears once a song exists. Reuses the PR-2 component
+  vocabulary; no new tokens.
+- **Deferred to PR 3b** (kept out to hold regression risk down): flattening `VenueModal`'s
+  3-deep overlay path + folding its 7-button toolbar into a "Find rooms ▾" menu; splitting the
+  `SetConfiguration` wall; and extending the `InfoTrigger`/`featureHelp` help system to the
+  venue/EPK area. The "Load demo band" onboarding path waits on PR 4's demo data.
+
+Verification: `npm test` → 138/138 (no algorithm logic touched); Babel compile clean; headless
+Playwright drive → nav renders all five destinations, an empty library shows the onboarding
+card, clicking **Analytics** deep-links straight to the venue modal's Analytics tab, 0 JS page
+errors; screenshots compared against the approved mockup.
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing

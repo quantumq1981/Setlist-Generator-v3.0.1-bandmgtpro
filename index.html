@@ -180,6 +180,48 @@
       border: 1px solid var(--border); border-radius: 999px; padding: .4rem .75rem; font-size: .9rem;
     }
     .band-pill .swatch { width: 12px; height: 12px; border-radius: 999px; border: 1px solid var(--border); }
+
+    /* Top-level navigation (PR 3) — persistent destinations, so the venue/EPK/analytics
+       features stop being buried inside one modal. Setlists is the home workspace. */
+    .topnav { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+      flex-wrap: wrap; background: var(--secondary); border: 1px solid var(--border);
+      border-radius: 12px; padding: .5rem .6rem; margin: 0 0 1rem; }
+    .topnav-primary { display: flex; gap: .3rem; flex-wrap: wrap; }
+    .topnav-util { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+    .navpill { display: inline-flex; align-items: center; gap: .5rem; font-size: .9rem; font-weight: 700;
+      color: var(--text-muted); background: transparent; border: 1px solid transparent; border-radius: 10px;
+      padding: .55rem .85rem; cursor: pointer; transition: .15s ease; }
+    .navpill svg { width: 17px; height: 17px; flex: none; }
+    .navpill:hover { color: var(--text); background: rgba(255,255,255,.05); }
+    .navpill.on { color: #fff; background: linear-gradient(180deg, var(--accent), var(--accent-dark));
+      box-shadow: 0 6px 16px -7px var(--accent-glow); }
+    .navpill .navcount { font-family: 'Space Mono', monospace; font-size: .7rem; font-weight: 700;
+      background: var(--energy); color: #0a0d14; border-radius: 999px; padding: .05rem .4rem; }
+
+    /* First-run onboarding (PR 3) — shown only when the library is empty. */
+    .onboard { background: var(--secondary); border: 1px solid var(--border); border-radius: 16px;
+      padding: 2rem 2rem 1.75rem; margin: 0 0 1rem; text-align: center; position: relative; overflow: hidden; }
+    .onboard::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+      background: linear-gradient(90deg, var(--accent), var(--energy)); }
+    .onboard-tile { width: 58px; height: 58px; border-radius: 15px; margin: 0 auto 1rem; position: relative;
+      background: linear-gradient(160deg, #2f66d8, #14203f); box-shadow: 0 10px 26px -10px rgba(20,32,63,.9), inset 0 0 0 1px rgba(122,166,255,.35); }
+    .onboard-tile svg { position: absolute; inset: 0; }
+    .onboard h2 { font-family: 'Space Mono', monospace; font-size: 1.5rem; margin-bottom: .5rem; }
+    .onboard p.lead { color: var(--text-muted); max-width: 540px; margin: 0 auto 1.5rem; line-height: 1.55; }
+    .onboard-actions { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: .8rem;
+      max-width: 760px; margin: 0 auto; text-align: left; }
+    .onboard-card { background: var(--primary); border: 1px solid var(--border); border-radius: 12px;
+      padding: 1.1rem 1rem; cursor: pointer; transition: .15s ease; }
+    .onboard-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .onboard-card.prime { border-color: transparent; background: linear-gradient(165deg, var(--accent-soft), rgba(61,123,255,.04)); }
+    .onboard-card .oc-ic { width: 38px; height: 38px; border-radius: 10px; background: var(--secondary);
+      display: flex; align-items: center; justify-content: center; margin-bottom: .7rem; color: var(--accent); }
+    .onboard-card.prime .oc-ic { background: linear-gradient(180deg, var(--accent), var(--accent-dark)); color: #fff; }
+    .onboard-card .oc-ic svg { width: 20px; height: 20px; }
+    .onboard-card h3 { font-size: .95rem; margin-bottom: .25rem; }
+    .onboard-card p { font-size: .78rem; color: var(--text-muted); line-height: 1.45; }
+    @media (max-width: 640px) { .onboard-actions { grid-template-columns: 1fr; } }
+
     .btn {
       padding: .65rem 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--primary); color: var(--text);
       font-weight: 600; font-size: .85rem; letter-spacing: .04em; cursor: pointer; transition: .2s ease;
@@ -8885,10 +8927,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     }
 
     /******************* VENUE MODAL *******************/
-    function VenueModal({ open, onClose, venues, bookings, setlists, songs, epkSettings,
+    function VenueModal({ open, onClose, initialTab, venues, bookings, setlists, songs, epkSettings,
       onSaveEpkSettings, onAddVenue, onUpdateVenue, onDeleteVenue,
       onAddBooking, onUpdateBooking, onDeleteBooking, bandName, showToast, onBulkAddVenues, onGenerateEPK, onGenerateEPKHtml, onDownloadEPKHtml }) {
       const [vTab, setVTab] = useState('venues');
+      // Deep-link: when the modal is opened from a top-level nav item, jump to that sub-tab.
+      // (The modal stays mounted and returns null while closed, so vTab persists — hence this effect.)
+      React.useEffect(() => { if (open && initialTab) setVTab(initialTab); }, [open, initialTab]);
       const [venueForm, setVenueForm] = useState(null);
       const [editVenueId, setEditVenueId] = useState(null);
       const [bookingForm, setBookingForm] = useState(null);
@@ -11764,6 +11809,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       // Venue CRM & Bookings
       const [venueModal, setVenueModal] = useState(false);
+      // Deep-link the top-level nav into the venue mega-modal's sub-tabs (PR 3).
+      const [venueInitialTab, setVenueInitialTab] = useState('venues');
+      const openVenue = (tab = 'venues') => { setVenueInitialTab(tab); setVenueModal(true); };
       const [stageMode, setStageMode] = useState(false);
       const [venues, setVenues] = useState([]);
       const [bookings, setBookings] = useState([]);
@@ -14005,9 +14053,6 @@ ${headerHtml}
                   <span className="swatch" style={{ background: activeBand?.color || '#ff6b35' }}></span>
                 </div>
                 <button className="btn btn-small" onClick={() => setBandModal(true)}>Manage Bands</button>
-                <button className="btn btn-small" onClick={() => setGigModal(true)} style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>Gig Profiles</button>
-                <button className="btn btn-small" onClick={() => setVenueModal(true)} style={{ borderColor: '#60a5fa', color: '#60a5fa' }}>📍 Venues</button>
-                <button className="btn btn-small" onClick={() => setRosterModal(true)} style={{ borderColor: '#a78bfa', color: '#a78bfa' }}>🎸 Roster</button>
               </div>
               <div className="toolbar">
                 <input ref={backupFileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
@@ -14020,6 +14065,33 @@ ${headerHtml}
               </div>
             </div>
 
+            {/* Top-level navigation (PR 3): Setlists is the home workspace; the other
+                destinations deep-link straight into the venue mega-modal's tabs, so
+                Analytics, the EPK builder and Bookings are one click and discoverable. */}
+            <nav className="topnav" aria-label="Primary">
+              <div className="topnav-primary">
+                <button className="navpill on" title="Song library, setlist configuration & generated setlists">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 18V6l8 3 8-3v12"/><path d="M4 12l8 3 8-3"/></svg>Setlists
+                </button>
+                <button className="navpill" onClick={() => openVenue('venues')} title="Your venue pipeline — prospects, outreach, directory & prospector">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="10" r="3"/><path d="M12 21s7-6 7-11a7 7 0 10-14 0c0 5 7 11 7 11z"/></svg>Venues
+                </button>
+                <button className="navpill" onClick={() => openVenue('bookings')} title="Confirmed & pending gigs on a calendar">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>Bookings{bookings.length ? <span className="navcount">{bookings.length}</span> : null}
+                </button>
+                <button className="navpill" onClick={() => openVenue('analytics')} title="Outreach performance & what's working">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Analytics
+                </button>
+                <button className="navpill" onClick={() => openVenue('settings')} title="Electronic Press Kit & email templates">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h5"/></svg>Press Kit
+                </button>
+              </div>
+              <div className="topnav-util">
+                <button className="btn btn-small" onClick={() => setGigModal(true)} style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>Gig Profiles</button>
+                <button className="btn btn-small" onClick={() => setRosterModal(true)} style={{ borderColor: '#a78bfa', color: '#a78bfa' }}>🎸 Roster</button>
+              </div>
+            </nav>
+
             {(() => {
               const today = new Date().toISOString().slice(0, 10);
               const next = [...bookings]
@@ -14031,7 +14103,7 @@ ${headerHtml}
               const daysUntil = Math.round(msUntil / 86400000);
               const daysLabel = daysUntil === 0 ? 'TODAY' : daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`;
               return (
-                <div className="next-gig-banner" onClick={() => setVenueModal(true)}>
+                <div className="next-gig-banner" onClick={() => openVenue('bookings')}>
                   <span className="next-gig-label">Next Gig</span>
                   <span className="next-gig-venue">{next.venueName || '—'}</span>
                   <span className="next-gig-date">{next.date}{next.startTime && ` · ${next.startTime}`}{next.fee && ` · ${next.fee}`}</span>
@@ -14041,6 +14113,36 @@ ${headerHtml}
                 </div>
               );
             })()}
+
+            {songs.length === 0 && (
+              <div className="onboard">
+                <div className="onboard-tile">
+                  <svg viewBox="0 0 58 58" fill="none">
+                    <path d="M9 38 H18 L21 28 L24 46 L27 34 L29 38 H49" stroke="#ff6b35" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/>
+                    <text x="29" y="34" textAnchor="middle" dominantBaseline="central" fontFamily="'Arial Black',sans-serif" fontWeight="900" fontSize="33" fill="#fff">B</text>
+                  </svg>
+                </div>
+                <h2>Welcome to your HQ</h2>
+                <p className="lead">You don't have any songs yet. Load your library and BandLeaderHQ will build energy-optimized setlists — then you can work venues and share a press kit.</p>
+                <div className="onboard-actions">
+                  <div className="onboard-card prime" onClick={() => setImportModal(true)} role="button" tabIndex={0}>
+                    <div className="oc-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg></div>
+                    <h3>Import a CSV</h3>
+                    <p>Already have a list? Bring it in — energy and arrangement notes come with it.</p>
+                  </div>
+                  <div className="onboard-card" onClick={downloadSampleCSV} role="button" tabIndex={0}>
+                    <div className="oc-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 15h6"/></svg></div>
+                    <h3>Get a sample CSV</h3>
+                    <p>Download a ready-made template with the right columns to fill in.</p>
+                  </div>
+                  <div className="onboard-card" onClick={() => document.querySelector('.main-grid')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} role="button" tabIndex={0}>
+                    <div className="oc-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg></div>
+                    <h3>Add songs by hand</h3>
+                    <p>Type them straight into the Song Library below — title, key, BPM, style.</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="main-grid">
               <SongLibrary
@@ -14328,6 +14430,7 @@ ${headerHtml}
 
             <VenueModal
               open={venueModal}
+              initialTab={venueInitialTab}
               onClose={() => setVenueModal(false)}
               venues={venues}
               bookings={bookings}
