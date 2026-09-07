@@ -220,6 +220,10 @@
     .onboard-card .oc-ic svg { width: 20px; height: 20px; }
     .onboard-card h3 { font-size: .95rem; margin-bottom: .25rem; }
     .onboard-card p { font-size: .78rem; color: var(--text-muted); line-height: 1.45; }
+    .onboard-demo { margin-top: 1.1rem; font-size: .78rem; color: var(--text-muted); }
+    .onboard-demo-link { background: none; border: 0; padding: 0; font: inherit; font-weight: 700;
+      color: var(--accent); cursor: pointer; text-decoration: underline; }
+    .onboard-demo-link:hover { color: var(--accent-dark); }
     @media (max-width: 640px) { .onboard-actions { grid-template-columns: 1fr; } }
 
     .btn {
@@ -1440,22 +1444,22 @@
 
     /******************* VENUE CRM CONSTANTS *******************/
     const VENUE_TYPES = ['Bar','Restaurant','Club','Event Space','Casino','Festival','Corporate','Hotel','Theater','Other'];
-    // Which Zemba Music act to pitch/tag a venue for (drives the EPK tracking link's
+    // Which act/lineup to pitch/tag a venue for (drives the EPK tracking link's
     // ?act= param — a quiet lounge tags differently than a high-energy casino room).
     const VENUE_FORMATS = ['solo', 'duo', 'trio', 'band', 'late_shift'];
-    const VENUE_FORMAT_LABELS = { solo: 'Solo', duo: 'Duo', trio: 'Trio', band: 'Full Band', late_shift: 'Late Shift Band' };
-    // The band's shareable EPK link — the venue-tailored cut of the live EPK
-    // (budget ladder hidden, booker-first hero copy), on the branded domain with
-    // no redirect hop so ?act/&track/&utm_* tagging reaches Plausible cleanly and
-    // the EPK's capture script (chriszemba-EPK) can attribute the click + any
-    // booking-form inquiry back to this venue. Overridable in EPK & Templates.
-    const EPK_LIVE_URL = 'https://zembamusicco.com/venues/';
-    // The full EPK front door + the public sync manifest the EPK build publishes.
-    const EPK_SITE_URL = 'https://zembamusicco.com';
-    const EPK_SYNC_URL = 'https://zembamusicco.com/epk.json';
-    // Prior default EPK/hub links, upgraded to the branded targets on load for
-    // installs that stored them before this change (see the EPK settings loader).
-    const EPK_LEGACY_URLS = ['https://bit.ly/Chris-Zemba-EPK'];
+    const VENUE_FORMAT_LABELS = { solo: 'Solo', duo: 'Duo', trio: 'Trio', band: 'Full Band', late_shift: 'Late-Night Band' };
+    // The band's shareable EPK link + sync manifest. BLANK by default so a fresh
+    // install starts identity-neutral (a stranger has no hosted EPK yet); the user
+    // sets their own in EPK & Templates, or one-click loads the demo profile below.
+    // Kept as constants (not inlined) so the EPK settings loader can backfill them
+    // and the demo profile can seed real values. Empty ⇒ the "EPK is live" state and
+    // the sync button self-hide until a URL exists.
+    const EPK_LIVE_URL = '';
+    const EPK_SITE_URL = '';
+    const EPK_SYNC_URL = '';
+    // Prior default EPK/hub links auto-upgraded on load (see the EPK settings loader).
+    // Empty in the public build; the demo profile carries its own upgrade targets.
+    const EPK_LEGACY_URLS = [];
     // Short per-venue tracking token (base36, 6 chars), generated once when a venue
     // enters the pipeline and carried on every EPK link tagged for it.
     const genTrackingToken = () => Math.random().toString(36).slice(2, 8).padEnd(6, '0').slice(0, 6);
@@ -1485,7 +1489,50 @@
     // A venue stuck in "Contacted" with no reply for this many days is flagged as follow-up due.
     const FOLLOWUP_DUE_DAYS = 7;
 
+    // Identity-neutral outreach scaffolding for a fresh public install. Every act
+    // detail flows from placeholders the user fills in EPK & Templates: {{band_name}}
+    // (the active band), {{location}}, {{contact_phone}}/{{contact_email}}, and the
+    // EPK-driven {{epk_link}}/{{one_sheet}}/{{tailored_pitch}}. A signature {{location}}
+    // line that resolves empty is collapsed by fillTemplate's blank-line hygiene, so a
+    // half-filled EPK never ships a dangling separator. The demo profile below overrides
+    // these with a fully-written example set.
     const EMAIL_TEMPLATES_DEFAULT = {
+      outreach: {
+        label: 'Initial Outreach',
+        subject: 'Live music for {{venue_name}} — {{band_name}}',
+        body: `Hi {{contact_name}},\n\nI'm reaching out on behalf of {{band_name}} — we'd love to bring live music to {{venue_name}}.\n\n{{tailored_pitch}}\n\nWe scale to fit the room, run our own professional sound, and promote every show through our own channels — so we help fill the room, not just play it. Video, photos, and the full song list are here:\n{{epk_link}}\nOne-page overview (PDF): {{one_sheet}}\n\nAre you booking live music right now? We'd love to be considered for an open date.\n\nBest,\n{{band_name}}\n{{location}}\n{{contact_phone}} | {{contact_email}}`
+      },
+      followup: {
+        label: 'Follow-Up',
+        subject: 'Following up — live music for {{venue_name}}',
+        body: `Hi {{contact_name}},\n\nJust circling back in case my note got buried — I know booking calendars move fast.\n\nThis is {{band_name}}, following up about live music for {{venue_name}}. We're fully self-contained and tailor every set to the room and crowd.\n\nEverything's in one place here:\n{{epk_link}}\n\nEven a quick "not right now, check back later" helps us time things well. Any openings coming up?\n\nBest,\n{{band_name}}\n{{location}}\n{{contact_phone}} | {{contact_email}}`
+      },
+      tailoredPitch: {
+        label: 'Venue-Tailored Pitch',
+        subject: 'A live-music fit for {{venue_name}} — {{band_name}}',
+        body: `Hi {{contact_name}},\n\nI'm reaching out from {{band_name}}. I came across {{venue_name}} and think we'd be a great fit for your stage.\n\n{{tailored_pitch}}\n\nWe tailor every set to the room, crowd, and run-of-show. Video, photos, complete song list, and references:\n{{epk_link}}\nOne-page overview (PDF): {{one_sheet}}\n\nCould we talk through open dates on your calendar?\n\nBest,\n{{band_name}}\n{{location}}\n{{contact_phone}} | {{contact_email}}`
+      },
+      callRequest: {
+        label: "Let's Connect",
+        subject: 'Quick call about {{venue_name}}?',
+        body: `Hi {{contact_name}},\n\nThanks for getting back to me — glad there's interest! The easiest next step is a quick 10-minute call to talk dates, format, and logistics so I can make this an easy yes for you.\n\nWhat's a good time in the next few days? Or call or text me anytime at {{contact_phone}} and we'll sort it fast.\n\nIf it helps beforehand, everything's here:\n{{epk_link}}\n\nTalk soon,\n{{band_name}}\n{{location}}\n{{contact_phone}} | {{contact_email}}`
+      },
+      postGig: {
+        label: 'Post-Gig Thanks & Rebook',
+        subject: "Thank you — let's do it again ({{venue_name}})",
+        body: `Hi {{contact_name}},\n\nThank you for having us at {{venue_name}} — we had a great time, and we hope your team and your guests did too.\n\nWe'd love to make this a regular thing. If the night worked for you, let's lock in the next date (or a recurring slot) while it's fresh — we'll promote it just like last time.\n\nAnd if you have a minute, a short review or a line we can quote would mean a lot.\n\nWhat does your calendar look like over the next few weeks?\n\nBest,\n{{band_name}}\n{{location}}\n{{contact_phone}} | {{contact_email}}`
+      },
+      bookingConfirmation: {
+        label: 'Booking Confirmed',
+        subject: 'Confirmed — {{band_name}} at {{venue_name}}, {{date}}',
+        body: `Hi {{contact_name}},\n\nWe're locked in — here are the details:\n\nAct: {{band_name}}\nVenue: {{venue_name}}\nDate: {{date}}\nStart time: {{start_time}}\nFee: {{fee}}\n\nTech rider (stage plot, input list, power) for your team: {{tech_rider}}\n\nWe'll follow up closer to the date with load-in details. If anything changes on your end, just let us know.\n\nLooking forward to a great night!\n\nBest,\n{{band_name}}\n{{location}}\n{{contact_email}} | {{contact_phone}}`
+      }
+    };
+
+    // The original Chris Zemba / Zemba Music outreach set, preserved verbatim as the
+    // opt-in demo profile (loaded by "Load demo band" — see DEMO_EPK_PROFILE). Not the
+    // public default; kept so the owner can one-click restore their real templates.
+    const EMAIL_TEMPLATES_DEMO = {
       outreach: {
         label: 'Initial Outreach',
         subject: 'Live music for {{venue_name}} — Chris Zemba (Las Vegas)',
@@ -1518,11 +1565,37 @@
       }
     };
 
-    // Preloaded with the Zemba Music brand profile so a fresh app starts pitch-ready.
-    // Media links, contact details, socials, riders, and testimonials stay blank until
-    // the user fills them in (the EPK completeness meter names what's missing).
+    // Identity-neutral by default so a fresh public install starts blank — the EPK
+    // completeness meter then names every field to fill in. The owner's original
+    // Zemba Music profile lives in DEMO_EPK_PROFILE below (opt-in "Load demo band").
+    // Fields are declared here (empty) so the schema, the form, and the settings
+    // loader's empty-field backfill all know every key. `syncUrl` (new) is the
+    // EPK-manifest endpoint the "Sync from EPK" button reads — blank ⇒ no sync target,
+    // so the button self-hides until the user (or the demo profile) sets one.
     const EPK_SETTINGS_DEFAULT = {
       // 1 — Branding & bio
+      tagline: '', actType: '', elevatorPitch: '', bio: '',
+      location: '', targetAudience: '', milestone: '', showFeel: '',
+      buyerConfidence: '', members: '', genres: '', formats: '',
+      pressPhotoData: '', pressPhotoUrl: '', logoData: '',
+      // 2 — Media assets (add your reel, audio links, and gallery)
+      demoVideoUrl: '', audioLinks: '', galleryUrl: '',
+      // 3 — Social proof & numbers (collect testimonials, then add them)
+      testimonials: '', demographics: '', stats: '',
+      // 4 — Booking essentials & logistics
+      techRiderUrl: '', oneSheetUrl: '', hospitalityRiderUrl: '', pressNews: '',
+      credibility: '', techAdvance: '',
+      // 5 — Contact & official links
+      contactEmail: '', contactPhone: '', pressEmail: '',
+      website: EPK_SITE_URL, linktree: '', socials: '', epkUrl: EPK_LIVE_URL, syncUrl: EPK_SYNC_URL,
+      templates: EMAIL_TEMPLATES_DEFAULT
+    };
+
+    // The owner's real Zemba Music press kit, preserved verbatim as the opt-in demo
+    // profile. Loading it (see loadDemoBand) writes it into EPK settings; it also
+    // carries the real hosted-EPK URLs + sync manifest so the "EPK is live" + Sync
+    // features light up exactly as they did before genericization.
+    const DEMO_EPK_PROFILE = {
       tagline: 'High-Energy Blues • Rock • Soul • R&B Entertainment',
       actType: 'Zemba Music — Professional Live Band • Solo Acoustic Artist • Duo • Trio • Variety Entertainment',
       elevatorPitch: 'Chris Zemba is a Las Vegas-based guitarist, vocalist, and bandleader delivering high-energy live entertainment ranging from intimate acoustic performances to full-band productions. With more than 25 years of professional experience, Chris performs an extensive repertoire of Classic Rock, Blues, Soul, R&B, Funk, Country, and Jazz tailored to each venue and audience.',
@@ -1536,25 +1609,38 @@
       genres: 'Classic Rock, Blues, Soul, R&B, Funk, Motown, Country, Jazz, Pop, Americana, Roots Rock, Southern Rock',
       formats: 'Solo Acoustic, Solo Electric, Duo, Trio, 4-Piece, 5-Piece, 8-Piece with Horn Section — custom lineups available (Chris Zemba Solo · Chris Zemba Duo · The Chris Zemba Band · Chris Zemba & The Late Shift Band)',
       pressPhotoData: '', pressPhotoUrl: '', logoData: '',
-      // 2 — Media assets (add your reel, audio links, and gallery)
       demoVideoUrl: '', audioLinks: '', galleryUrl: '',
-      // 3 — Social proof & numbers (collect testimonials, then add them)
       testimonials: '',
       demographics: 'Adults 30–75 · live music enthusiasts · restaurant & bar patrons · corporate and private event guests · festival attendees · Classic Rock, Blues, Soul & Country fans',
       stats: 'Years Performing | 25+\nSongs Available | 100+\nPerformance Formats | Solo – 8-Piece Band\nTypical Performance Length | 2–4 Hours\nPrimary Market | Las Vegas\nEvents Performed | Hundreds',
-      // 4 — Booking essentials & logistics (seeded from the live EPK's published assets)
       techRiderUrl: 'https://zembamusicco.com/assets/downloads/zemba-music-tech-rider.pdf',
       oneSheetUrl: 'https://zembamusicco.com/assets/downloads/chris-zemba-one-sheet.pdf',
       hospitalityRiderUrl: '', pressNews: '',
-      // Compact social-proof line pulled into venue-tailored pitches (see suggestForVenue).
       credibility: "Featured on FOX5 Las Vegas and in the Las Vegas Review-Journal; casino-lounge residencies including Sam's Town, Planet Hollywood, and Bally's.",
       techAdvance: 'Professional PA available when required\nProfessional lighting available\nPower requirements provided in advance\nFlexible stage footprint — indoor & outdoor capable\nQuick load-in / load-out\nBackground music during breaks available\nPublic address announcements available',
-      // 5 — Contact & official links (seeded from the live EPK; pressEmail/socials optional)
       contactEmail: 'booking@zembamusicco.com', contactPhone: '(702) 706-2145', pressEmail: '',
-      website: EPK_SITE_URL,
-      linktree: 'https://linktr.ee/chriszemba', socials: '', epkUrl: EPK_LIVE_URL,
-      templates: EMAIL_TEMPLATES_DEFAULT
+      website: 'https://zembamusicco.com',
+      linktree: 'https://linktr.ee/chriszemba', socials: '',
+      epkUrl: 'https://zembamusicco.com/venues/', syncUrl: 'https://zembamusicco.com/epk.json',
+      templates: EMAIL_TEMPLATES_DEMO
     };
+
+    // A neutral, ready-to-play demo library (classic rock / blues / soul — not act-specific).
+    // Shared by the "Get a sample CSV" download and the opt-in "Load demo band" seeder, which
+    // runs it through the same tested robust-import path a real CSV takes.
+    const DEMO_LIBRARY_CSV =
+`Title,Artist,Duration,Style,Key,BPM,Vocalist,Arr General,Arr Drums,Arr Keys,Arr Bass,Arr Guitar2,Arr Ending Cue
+"25 or 6 to 4","Chicago",4.82,uptempo,Am,147,Beau,"Keys intro 8 bars – no click. Stop-time figure at verse.","","[Keys Lead-In]","","","[Vamp Out]"
+"Call Me the Breeze","Lynyrd Skynyrd",5.15,midtempo,A,192,Kelly,"[OPENER] Guitar intro counts band in.","[Drum Intro]","","","","[Tag × 3]"
+"Hard To Handle","The Black Crowes",3.13,uptempo,B,103,Kelly,"","","","","","[Hard Stop on 1]"
+"Hold On Loosely","38 Special",4.68,midtempo,E,128,Beau,"Key change up a step at final chorus.","","","","","[Big Ending]"
+"La Grange","ZZ Top",3.83,uptempo,A,162,Chris,"Slow intro build before full band drops.","","","[Root Notes Only]","","[Trash-Can / Visual Cue]"
+"Come Together","The Beatles",4.5,groove,Dm,82,ALL,"","","","","","[Fade on Groove]"
+"Sweet Home Alabama","Lynyrd Skynyrd",4.75,midtempo,D,100,Chris,"","","","","","[Hard Stop on 1]"
+"Billie Jean","Michael Jackson",4.25,uptempo,F#m,117,ALL,"Drum machine pattern on intro – live kit joins at verse 2.","","","","","[Hard Stop on 1]"
+"Stormy Monday","Allman Brothers",7.25,blues,G,80,ALL,"Extended solo section – follow vocalist for outro cue.","","[Organ Tone]","","","[Vamp Out]"
+"Pride and Joy","Stevie Ray Vaughan",3.62,shuffle,E,127,ALL,"","[Fill on Bar 8]","","","","[Hard Stop on 1]"
+"Fly Away","Lenny Kravitz",3.62,rock,A,138,ALL,"[CLOSER] Extended outro – end on visual cue from drummer.","","","","","[Trash-Can / Visual Cue]"`;
 
     const BLANK_VENUE = { name: '', email: '', phone: '', contactName: '', type: 'Bar', city: '', state: '', website: '', notes: '', status: 'prospect', lastContactDate: '', preferredFormat: '', trackingToken: '' };
 
@@ -3764,7 +3850,7 @@
       return pages;
     }
 
-    // Known style values for BandHelper / Zemba-style PDFs. Derived from ENERGY_MAP so
+    // Known style values for BandHelper-style setlist PDFs. Derived from ENERGY_MAP so
     // every canonical GENRE_DATABASE style (Blues-Rock, Up-Tempo Funk, Smooth Jazz, the
     // added Minor Blues / Up-Tempo Boogie / Funk Shuffle / Gospel / Gospel Jazz, …) and
     // the legacy short tags are all recognised and preserved on PDF import.
@@ -3816,7 +3902,7 @@
 
     /**
      * Parse a row using detected column positions (header-mapped mode).
-     * Used for BandHelper / Zemba-style PDFs with clear column structure.
+     * Used for BandHelper-style PDFs with clear column structure.
      */
     function pdfParseWithColumnMap(line, colMap) {
       const trimmed = line.trim();
@@ -3992,7 +4078,7 @@
 
     /**
      * Parse all pages of extracted PDF text into song rows.
-     * First tries header-detection (BandHelper/Zemba format),
+     * First tries header-detection (BandHelper column format),
      * then falls back to heuristic parsing (DSJ format).
      */
     function pdfParseAllPages(pageTexts) {
@@ -9330,6 +9416,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const sug = suggestForVenue(venue);
         const repl = {
           '{{band_name}}': bandName || '',
+          '{{location}}': localEpk.location || '',
           '{{venue_name}}': venue?.name || '',
           '{{contact_name}}': (venue?.contactName || '').trim() || 'there',
           '{{epk_link}}': localEpk.epkUrl ? epkLinkForVenue(localEpk.epkUrl, venue, { utm: true, campaign: templateKey }) : '[EPK Link]',
@@ -10374,8 +10461,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         // contact/credibility is preserved when already filled. Marks dirty for review + Save.
         const keep = (mine, theirs) => (mine && String(mine).trim() ? mine : (theirs || mine));
         const syncFromEpk = async () => {
+          const syncUrl = (localEpk.syncUrl || '').trim();
+          if (!syncUrl) { showToast('No EPK sync manifest set — add one in EPK & Templates', 'warning'); return; }
           try {
-            const r = await fetch(EPK_SYNC_URL, { cache: 'no-store' });
+            const r = await fetch(syncUrl, { cache: 'no-store' });
             if (!r.ok) throw new Error('http ' + r.status);
             const d = await r.json();
             const dl = d.downloads || {};
@@ -10423,7 +10512,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                           <code style={{ fontSize: '.7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '18rem' }}>{url}</code>
                           <button className="btn btn-small" onClick={() => { const done = () => showToast('EPK link copied', 'success'); if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, done); else done(); }}>📋 Copy</button>
                           <a className="btn btn-small" style={{ textDecoration: 'none' }} href={/^https?:\/\//i.test(url) ? url : 'https://' + url} target="_blank" rel="noopener">Open ↗</a>
-                          <button className="btn btn-small" data-testid="epk-sync" onClick={syncFromEpk} title="Pull booking email, phone, links, and one-sheet/rider from your live EPK so the two stay in sync">🔄 Sync from EPK</button>
+                          {(localEpk.syncUrl || '').trim() && <button className="btn btn-small" data-testid="epk-sync" onClick={syncFromEpk} title="Pull booking email, phone, links, and one-sheet/rider from your live EPK so the two stay in sync">🔄 Sync from EPK</button>}
                         </div>
                         <div style={{ fontSize: '.66rem', color: 'var(--text-muted)', marginTop: '.25rem' }}>
                           Emails tag the link per venue with its pitched act and a tracking token (<code>?act=band&amp;track=v7x9p2</code>) plus <code>utm_*</code> — the live EPK records an <b>EPK Visit</b> and stamps any booking-form inquiry with the same tag, so you see <b>which buyer clicked and who booked</b>. 🔄 Sync pulls contact + asset links from the EPK so they never drift.
@@ -10497,7 +10586,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               </div>
 
               <div style={subHead}>Lineup &amp; Music</div>
-              <div className="input-group"><label>Members (one per line — "Chris Zemba — Guitar/Vocals")</label><textarea value={localEpk.members || ''} onChange={e => upd('members', e.target.value)} rows={3} style={{ resize: 'vertical' }} /></div>
+              <div className="input-group"><label>Members (one per line — e.g. "Jane Doe — Guitar / Lead Vocals")</label><textarea value={localEpk.members || ''} onChange={e => upd('members', e.target.value)} rows={3} style={{ resize: 'vertical' }} /></div>
               <div className="set-config">
                 <div className="input-group"><label>Genres</label><input value={localEpk.genres || ''} onChange={e => upd('genres', e.target.value)} placeholder="Classic Rock, Blues, Soul, R&B, Funk, Country" /></div>
                 <div className="input-group"><label>Formats</label><input value={localEpk.formats || ''} onChange={e => upd('formats', e.target.value)} placeholder="Solo acoustic, Duo, Trio, Full band" /></div>
@@ -10536,8 +10625,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <div className="input-group"><label>Website</label><input value={localEpk.website || ''} onChange={e => upd('website', e.target.value)} placeholder="https://yourband.com" /></div>
               </div>
               <div className="set-config">
-                <div className="input-group"><label>Linktree / Hub</label><input value={localEpk.linktree || ''} onChange={e => upd('linktree', e.target.value)} placeholder="linktr.ee/chriszemba" /></div>
+                <div className="input-group"><label>Linktree / Hub</label><input value={localEpk.linktree || ''} onChange={e => upd('linktree', e.target.value)} placeholder="linktr.ee/yourband" /></div>
                 <div className="input-group"><label>EPK URL (hosted)</label><input value={localEpk.epkUrl || ''} onChange={e => upd('epkUrl', e.target.value)} placeholder="https://your-epk.com" /></div>
+              </div>
+              <div className="set-config">
+                <div className="input-group"><label>EPK sync manifest (optional)</label><input value={localEpk.syncUrl || ''} onChange={e => upd('syncUrl', e.target.value)} placeholder="https://your-epk.com/epk.json" /><span style={{ fontSize: '.66rem', color: 'var(--text-muted)' }}>A published JSON of your EPK's links/contact — enables the 🔄 Sync button so the two never drift.</span></div>
               </div>
               <div className="input-group"><label>Social Links</label><textarea value={localEpk.socials || ''} onChange={e => upd('socials', e.target.value)} rows={3} placeholder={"Platform | URL — one per line\nInstagram | https://instagram.com/...\nTikTok | https://tiktok.com/@..."} style={{ resize: 'vertical' }} /></div>
               <div style={hint}>Format each line as <code>Platform | URL</code>.</div>
@@ -13224,26 +13316,26 @@ ${headerHtml}
       };
 
       const downloadSampleCSV = () => {
-        const sample =
-`Title,Artist,Duration,Style,Key,BPM,Vocalist,Arr General,Arr Drums,Arr Keys,Arr Bass,Arr Guitar2,Arr Ending Cue
-"25 or 6 to 4","Chicago",4.82,uptempo,Am,147,Beau,"Keys intro 8 bars – no click. Stop-time figure at verse.","","[Keys Lead-In]","","","[Vamp Out]"
-"Call Me the Breeze","Lynyrd Skynyrd",5.15,midtempo,A,192,Kelly,"[OPENER] Guitar intro counts band in.","[Drum Intro]","","","","[Tag × 3]"
-"Hard To Handle","The Black Crowes",3.13,uptempo,B,103,Kelly,"","","","","","[Hard Stop on 1]"
-"Hold On Loosely","38 Special",4.68,midtempo,E,128,Beau,"Key change up a step at final chorus.","","","","","[Big Ending]"
-"La Grange","ZZ Top",3.83,uptempo,A,162,Chris,"Slow intro build before full band drops.","","","[Root Notes Only]","","[Trash-Can / Visual Cue]"
-"Come Together","The Beatles",4.5,groove,Dm,82,ALL,"","","","","","[Fade on Groove]"
-"Sweet Home Alabama","Lynyrd Skynyrd",4.75,midtempo,D,100,Chris,"","","","","","[Hard Stop on 1]"
-"Billie Jean","Michael Jackson",4.25,uptempo,F#m,117,ALL,"Drum machine pattern on intro – live kit joins at verse 2.","","","","","[Hard Stop on 1]"
-"Stormy Monday","Allman Brothers",7.25,blues,G,80,ALL,"Extended solo section – follow vocalist for outro cue.","","[Organ Tone]","","","[Vamp Out]"
-"Pride and Joy","Stevie Ray Vaughan",3.62,shuffle,E,127,ALL,"","[Fill on Bar 8]","","","","[Hard Stop on 1]"
-"Fly Away","Lenny Kravitz",3.62,rock,A,138,ALL,"[CLOSER] Extended outro – end on visual cue from drummer.","","","","","[Trash-Can / Visual Cue]"`;
-        const blob = new Blob([sample], { type: 'text/csv' });
+        const blob = new Blob([DEMO_LIBRARY_CSV], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = 'sample-setlist.csv';
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 3000);
+      };
+
+      // Opt-in "Load demo band" (onboarding): populate an empty install so a first-time
+      // visitor can see setlist generation, the venue tools, and a press kit end-to-end.
+      // Seeds the neutral demo library through the SAME tested robust-import path a real
+      // CSV takes (a synthetic file-input event), and loads the example EPK profile.
+      // Guarded so it never silently overwrites a press kit the user already started.
+      const loadDemoBand = () => {
+        const hasEpk = !!(epkSettings && (String(epkSettings.tagline || '').trim() || String(epkSettings.bio || '').trim()));
+        if (hasEpk && !window.confirm('Load the demo press kit? This replaces the current EPK profile. (Your songs are added, not removed.)')) return;
+        importCSVRobust({ target: { files: [new File([DEMO_LIBRARY_CSV], 'demo-library.csv', { type: 'text/csv' })], value: '' } });
+        saveEpkSettings({ ...DEMO_EPK_PROFILE });
+        showToast('Demo band loaded — a sample library + press kit. Everything is editable.', 'success');
       };
 
       // Canonical import with dedup
@@ -14409,6 +14501,11 @@ ${headerHtml}
                     <p>Type them straight into the Song Library below — title, key, BPM, style.</p>
                   </div>
                 </div>
+                <p className="onboard-demo">
+                  Just exploring?{' '}
+                  <button type="button" className="onboard-demo-link" data-testid="load-demo" onClick={loadDemoBand}>Load a demo band →</button>
+                  <span> a sample library + press kit you can poke at and clear anytime.</span>
+                </p>
               </div>
             )}
 

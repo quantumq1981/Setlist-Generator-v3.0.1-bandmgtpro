@@ -1156,6 +1156,50 @@ the menu; 0 JS page errors.
 
 ---
 
+## 9z. Change log — 2026-09 genericize the Zemba seed data + opt-in demo band (PR 4)
+
+Productization pass: a stranger's fresh install is now identity-neutral, while the owner's
+real Chris Zemba / Zemba Music profile is preserved verbatim as an opt-in demo. This is the
+last phase of the BandLeaderHQ public roadmap. **No `localStorage` key changed** and the
+owner's already-saved data is untouched (it lives in `setlist_epk_settings_v3`, not in the
+defaults; genericizing the defaults only changes what a *never-saved* field falls back to).
+
+- **Neutral defaults.** `EPK_SETTINGS_DEFAULT` is now all-blank (every branding/bio/contact
+  field `''`), and `EMAIL_TEMPLATES_DEFAULT` was rewritten identity-neutral — the six
+  templates drive off `{{band_name}}` (the active band) + a **new `{{location}}` token**
+  (added to `fillTemplate`'s repl map, sourced from `epkSettings.location`) instead of the
+  hardcoded "Chris Zemba" / "Las Vegas, NV" signatures. A signature `{{location}}` line that
+  resolves empty is swallowed by `fillTemplate`'s existing blank-line hygiene, so a
+  half-filled EPK never ships a dangling separator.
+- **Blanked URL constants.** `EPK_LIVE_URL` / `EPK_SITE_URL` / `EPK_SYNC_URL` are `''` and
+  `EPK_LEGACY_URLS` is `[]` in the public build. The "EPK is live" block and the `🔄 Sync
+  from EPK` button already gate on a hosted URL, so they self-hide for strangers. The sync
+  fetch now reads a **new blank-default `syncUrl` EPK field** (with a user-settable input in
+  EPK & Templates) rather than the module constant, and the button additionally gates on it.
+- **The owner's profile preserved as `DEMO_EPK_PROFILE` + `EMAIL_TEMPLATES_DEMO`** (the exact
+  prior Zemba content, including the real hosted-EPK URL + sync manifest so "EPK is live" +
+  Sync light up again after loading it).
+- **Opt-in "Load demo band".** A `DEMO_LIBRARY_CSV` (the neutral classic-rock sample, now
+  shared with the "Get a sample CSV" download) + `loadDemoBand()` seed an 11-song library
+  through the **same tested `importCSVRobust` path** (via a synthetic file-input event) and
+  load the demo press kit via `saveEpkSettings`. Surfaced as a "Load a demo band →" link on
+  the first-run onboarding card; guarded with a confirm so it never silently overwrites a
+  press kit the user already started.
+- **Source hygiene:** the members-field hint and the three "Zemba-style PDF" code comments
+  were de-branded ("BandHelper-style"). The historical CLAUDE.md changelog, `LICENSE`, and
+  `drafts/` keep their references (they are records, not runtime).
+
+Verification: `npm test` → 149/149 (the template/EPK constants aren't lifted by
+`extract-algorithm.js`, and no algorithm logic was touched); Babel compile clean; headless
+Playwright drive — fresh install shows no "Zemba" on the home view or in a compose draft (the
+draft reads "…on behalf of Default Band…"), the fresh EPK tagline/bio are blank; "Load a demo
+band" seeds 11 songs and the demo press kit (tagline + bio verified via the live field values
++ persisted in `localStorage`), all surviving a reload; a pre-seeded custom EPK
+(`MY CUSTOM TAGLINE`) survives load with no Zemba injected — proving the owner's data is
+untouched; 0 JS page errors.
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing
