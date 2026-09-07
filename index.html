@@ -800,7 +800,8 @@
     .media-clip-row-ts { font-family: 'Space Mono', monospace; font-size: .68rem; color: var(--accent); white-space: nowrap; }
     .media-clip-add { display: flex; gap: .3rem; flex-wrap: wrap; margin-top: .3rem; align-items: center; }
     .media-clip-add input { font-size: .78rem; flex: 1; min-width: 80px; }
-    .media-clip-add input[placeholder="MM:SS"] { flex: 0 0 58px; }
+    .media-clip-add input[placeholder="Start MM:SS"], .media-clip-add input[placeholder="End MM:SS"] { flex: 0 0 84px; }
+    .media-clip-err { font-size: .72rem; color: var(--error); margin-top: .35rem; line-height: 1.4; }
     details.media-clip-player { margin-bottom: .25rem; }
     details.media-clip-player summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: .35rem; padding: .28rem .4rem; border-radius: 5px; background: var(--primary); border: 1px solid var(--border); font-size: .78rem; }
     details.media-clip-player summary::-webkit-details-marker { display: none; }
@@ -1115,19 +1116,53 @@
     }
 
     const getYTVideoId = (url) => {
-      const m = (url || '').match(/(?:youtu\.be\/|[?&]v=|\/embed\/)([A-Za-z0-9_-]{11})/);
+      // Accept every common single-video form: watch?v=, youtu.be/, /embed/, /shorts/, /live/.
+      // A watch?v=<id>&list=… link still resolves — the video id is what we want, not the playlist.
+      const m = (url || '').trim().match(/(?:youtu\.be\/|[?&]v=|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
       return m ? m[1] : null;
     };
+    // Never fail silently: when a pasted URL yields no video id, say exactly why in plain words.
+    const ytUrlIssue = (url) => {
+      const u = (url || '').trim();
+      if (!u) return 'Paste a YouTube link first.';
+      if (getYTVideoId(u)) return null;
+      if (/\/clip\//.test(u)) return "Clip links can't embed — open the full video, copy its URL, then set a start/end time below.";
+      if (/[?&]list=/.test(u)) return "That's a playlist link — open the individual video and paste its URL.";
+      if (/youtu\.?be|youtube\.com/.test(u)) return "Couldn't find a video id in that link — copy the URL straight from the video.";
+      return 'Enter a YouTube video URL (youtube.com/watch?v=… or youtu.be/…).';
+    };
     const tsToSeconds = (ts) => {
-      if (!ts) return 0;
-      const parts = String(ts).split(':').map(Number).reverse();
+      if (!ts && ts !== 0) return 0;
+      if (typeof ts === 'number') return ts;
+      const s = String(ts).trim();
+      if (!s) return 0;
+      if (/^\d+$/.test(s)) return Number(s);              // bare seconds
+      const parts = s.split(':').map(Number).reverse();   // [ss, mm, hh]
       return (parts[0] || 0) + (parts[1] || 0) * 60 + (parts[2] || 0) * 3600;
     };
-    const getYTEmbedUrl = (url, ts) => {
+    // Lift a start time already in the URL (?t=90, &t=1m30s, ?start=90) into an MM:SS string.
+    const ytStartFromUrl = (url) => {
+      const m = (url || '').match(/[?&](?:t|start)=([0-9hms]+)/i);
+      if (!m) return '';
+      const v = m[1];
+      let secs = 0;
+      if (/^\d+$/.test(v)) secs = Number(v);
+      else {
+        const h = v.match(/(\d+)h/), mi = v.match(/(\d+)m/), se = v.match(/(\d+)s/);
+        secs = (h ? +h[1] * 3600 : 0) + (mi ? +mi[1] * 60 : 0) + (se ? +se[1] : 0);
+      }
+      if (!secs) return '';
+      return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    };
+    // Embed a single video, optionally clipped to a start→end segment (?start=X&end=Y).
+    const getYTEmbedUrl = (url, ts, te) => {
       const id = getYTVideoId(url);
       if (!id) return null;
-      const secs = tsToSeconds(ts);
-      return `https://www.youtube.com/embed/${id}${secs ? `?start=${secs}` : ''}`;
+      const start = tsToSeconds(ts), end = tsToSeconds(te);
+      const params = [];
+      if (start) params.push(`start=${start}`);
+      if (end && end > start) params.push(`end=${end}`);
+      return `https://www.youtube.com/embed/${id}${params.length ? `?${params.join('&')}` : ''}`;
     };
 
     /******************* ARRANGEMENT MACROS *******************/
@@ -6420,8 +6455,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [form, setForm] = useState({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '', energy: '', arrangement: '', mediaLinks: [] });
       const [editingId, setEditingId] = useState(null);
       const [editForm, setEditForm] = useState({});
-      const [newClip, setNewClip] = useState({ url: '', ts: '', label: '' });
-      const [editClip, setEditClip] = useState({ url: '', ts: '', label: '' });
+      const [newClip, setNewClip] = useState({ url: '', ts: '', te: '', label: '' });
+      const [editClip, setEditClip] = useState({ url: '', ts: '', te: '', label: '' });
+      const [clipErr, setClipErr] = useState('');
+      const [editClipErr, setEditClipErr] = useState('');
 
       const handleAdd = () => {
         if (!form.title || !form.artist || !form.duration) return;
@@ -6584,21 +6621,26 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             {(form.mediaLinks || []).map(clip => (
               <div key={clip.id} className="media-clip-row">
                 <span className="media-clip-row-label">{clip.label || clip.url}</span>
-                {clip.ts && <span className="media-clip-row-ts">▸ {clip.ts}</span>}
+                {(clip.ts || clip.te) && <span className="media-clip-row-ts">▸ {clip.ts || '0:00'}{clip.te ? `–${clip.te}` : ''}</span>}
                 <button className="btn btn-small" style={{ color: 'var(--error)', borderColor: 'var(--error)', padding: '0 .3rem' }}
                   onClick={() => setForm({ ...form, mediaLinks: form.mediaLinks.filter(c => c.id !== clip.id) })}>✕</button>
               </div>
             ))}
             <div className="media-clip-add">
-              <input value={newClip.url} onChange={e => setNewClip({ ...newClip, url: e.target.value })} placeholder="YouTube URL" className="input" />
-              <input value={newClip.ts} onChange={e => setNewClip({ ...newClip, ts: e.target.value })} placeholder="MM:SS" className="input" />
+              <input value={newClip.url}
+                onChange={e => { const url = e.target.value; setNewClip({ ...newClip, url, ts: newClip.ts || ytStartFromUrl(url) }); if (clipErr) setClipErr(''); }}
+                placeholder="YouTube video URL" className="input" />
+              <input value={newClip.ts} onChange={e => setNewClip({ ...newClip, ts: e.target.value })} placeholder="Start MM:SS" className="input" />
+              <input value={newClip.te} onChange={e => setNewClip({ ...newClip, te: e.target.value })} placeholder="End MM:SS" className="input" />
               <input value={newClip.label} onChange={e => setNewClip({ ...newClip, label: e.target.value })} placeholder="Label (e.g. Extended ending)" className="input" />
               <button className="btn btn-small btn-primary" onClick={() => {
-                if (!newClip.url || !getYTVideoId(newClip.url)) return;
+                const issue = ytUrlIssue(newClip.url);
+                if (issue) { setClipErr(issue); return; }
                 setForm({ ...form, mediaLinks: [...(form.mediaLinks || []), { ...newClip, id: genId() }] });
-                setNewClip({ url: '', ts: '', label: '' });
+                setNewClip({ url: '', ts: '', te: '', label: '' }); setClipErr('');
               }}>+ Add</button>
             </div>
+            {clipErr && <div className="media-clip-err" role="alert">{clipErr}</div>}
           </div>
 
           <button className="btn btn-primary" onClick={handleAdd} style={{ width: '100%', marginBottom: '1rem' }}>
@@ -6733,21 +6775,26 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                         {(editForm.mediaLinks || []).map(clip => (
                           <div key={clip.id} className="media-clip-row">
                             <span className="media-clip-row-label">{clip.label || clip.url}</span>
-                            {clip.ts && <span className="media-clip-row-ts">▸ {clip.ts}</span>}
+                            {(clip.ts || clip.te) && <span className="media-clip-row-ts">▸ {clip.ts || '0:00'}{clip.te ? `–${clip.te}` : ''}</span>}
                             <button className="btn btn-small" style={{ color: 'var(--error)', borderColor: 'var(--error)', padding: '0 .3rem' }}
                               onClick={() => setEditForm({ ...editForm, mediaLinks: editForm.mediaLinks.filter(c => c.id !== clip.id) })}>✕</button>
                           </div>
                         ))}
                         <div className="media-clip-add">
-                          <input value={editClip.url} onChange={e => setEditClip({ ...editClip, url: e.target.value })} placeholder="YouTube URL" className="input" />
-                          <input value={editClip.ts} onChange={e => setEditClip({ ...editClip, ts: e.target.value })} placeholder="MM:SS" className="input" />
+                          <input value={editClip.url}
+                            onChange={e => { const url = e.target.value; setEditClip({ ...editClip, url, ts: editClip.ts || ytStartFromUrl(url) }); if (editClipErr) setEditClipErr(''); }}
+                            placeholder="YouTube video URL" className="input" />
+                          <input value={editClip.ts} onChange={e => setEditClip({ ...editClip, ts: e.target.value })} placeholder="Start MM:SS" className="input" />
+                          <input value={editClip.te} onChange={e => setEditClip({ ...editClip, te: e.target.value })} placeholder="End MM:SS" className="input" />
                           <input value={editClip.label} onChange={e => setEditClip({ ...editClip, label: e.target.value })} placeholder="Label (e.g. Extended ending)" className="input" />
                           <button className="btn btn-small btn-primary" onClick={() => {
-                            if (!editClip.url || !getYTVideoId(editClip.url)) return;
+                            const issue = ytUrlIssue(editClip.url);
+                            if (issue) { setEditClipErr(issue); return; }
                             setEditForm({ ...editForm, mediaLinks: [...(editForm.mediaLinks || []), { ...editClip, id: genId() }] });
-                            setEditClip({ url: '', ts: '', label: '' });
+                            setEditClip({ url: '', ts: '', te: '', label: '' }); setEditClipErr('');
                           }}>+ Add</button>
                         </div>
+                        {editClipErr && <div className="media-clip-err" role="alert">{editClipErr}</div>}
                       </div>
                       <div className="toolbar" style={{ justifyContent: 'flex-end', gap: '.3rem' }}>
                         <button className="btn btn-small" onClick={saveEdit} style={{ borderColor: 'var(--success)', color: 'var(--success)' }}>Save</button>
@@ -7782,7 +7829,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     <div className="arrangement-label">Clips</div>
                     <div className="arrangement-notes-content" style={{ padding: '.3rem 0' }}>
                       {song.mediaLinks.map(clip => {
-                        const embedUrl = getYTEmbedUrl(clip.url, clip.ts);
+                        const embedUrl = getYTEmbedUrl(clip.url, clip.ts, clip.te);
                         if (!embedUrl) return null;
                         return (
                           <details key={clip.id} className="media-clip-player">
