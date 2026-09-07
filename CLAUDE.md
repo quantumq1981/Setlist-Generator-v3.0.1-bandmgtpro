@@ -109,7 +109,8 @@ runbook. Project design/engineering conventions now also live in
   arrangement,// JSON { global, drums, keys, bass, guitar2, endingCue,      <- roles
               //        intro_cue, form_harmony, transition_outro, general_notes }  <- sections
               // or legacy free text. See §11.
-  styleInferred?, mediaLinks?
+  styleInferred?, mediaLinks?,
+  attachments?  // [{id,name,mime,size,kind}] — metadata only; blob bytes live in IndexedDB (§9x)
 }
 ```
 
@@ -1085,6 +1086,40 @@ messages, `tsToSeconds`, start-from-URL, start-only vs start→end embeds); Babe
 headless drive — a playlist URL shows the inline error and adds nothing, a valid video with a
 1:30–2:00 segment adds and displays the range, error clears on the next valid add, 0 JS page
 errors.
+
+---
+
+## 9x. Change log — 2026-09 offline document attachments (PR 5b)
+
+Second half of "airtight gig prep": a player can now open the **charts** a note refers to
+(PDF lead sheets, drum-chart images) from the Advance/rehearsal view, **offline**. Owner chose
+embed-offline, so the app gains its **first IndexedDB** store — `localStorage` (~5 MB, and it
+holds the whole library) is the wrong place for PDFs/scans.
+
+- **Storage layer** (module scope, after the reference-clip helpers): IndexedDB `bandleaderhq`,
+  object store `attachments` keyed by attachment id; `attStore` = `put/get/del/clear/keys/all`.
+  Pure `bytesToB64`/`b64ToBytes`/`blobToB64`/`b64ToBlob`/`fmtBytes` for the backup path (the b64
+  pair is unit-tested — byte-exact incl. binary + chunked large payloads).
+- **Song schema** gains `attachments: [{id, name, mime, size, kind}]` — **metadata only** in the
+  song (persists through the existing `addSong`/`updateSong` spread); the **bytes live in IDB**
+  keyed by `id`. `form`/`editForm` init + reset carry `attachments: []`.
+- **`SongAttachments`** shared editor in both song forms (file input `application/pdf,image/*`,
+  per-file kind selector + size + remove, a 15 MB/file guard, a live `navigator.storage.estimate()`
+  meter). **`AttachmentRow`** on the Advance view lazily pulls the blob from IDB on click and
+  opens it (revokes the object URL on unmount). Both mirror the Reference-Clips row styling.
+- **Backup/restore made async** (`exportBackup`/`importBackup`): export base64s every IDB blob
+  into `payload.attachments = {id:{name,mime,b64}}`; import clears IDB then writes each blob back
+  **before** reload. Old backups (no `attachments` key) restore exactly as before —
+  `kind:'full-backup'` unchanged, fully backward-compatible. `deleteSong` frees a song's blobs.
+- **Deferred:** listing attachments in the Arrangement Guide PDF (kept off the heavily-tested PDF
+  pipeline this pass) and a global orphan sweep (band-delete / abandoned add-form leaks are
+  space-only, not correctness).
+
+Verification: `npm test` → 149/149 (5 new: b64<->bytes/blob round-trips incl. binary, chunked
+200 KB payload, mime default, `fmtBytes`); Babel compile clean; headless Playwright drive —
+attach a PDF → song saved with attachment metadata → **reload: metadata + the IDB blob both
+persist** (added 1 / after-reload 1 / idb-blob 1) → Backup carries the base64; 0 JS page errors.
+The restore leg reuses the unit-tested `b64ToBlob` + the same `attStore.put` proven on attach.
 
 ---
 

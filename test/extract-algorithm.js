@@ -205,6 +205,8 @@ for (const f of [
   'templateStylePenalty',
   // Reference-clip (YouTube) helpers — parser, timestamp math, feedback, start-from-URL, embed.
   'getYTVideoId', 'tsToSeconds', 'ytStartFromUrl', 'ytUrlIssue', 'getYTEmbedUrl',
+  // Attachment backup helpers — base64 <-> bytes/blob round-trip + byte formatter.
+  'bytesToB64', 'b64ToBytes', 'blobToB64', 'b64ToBlob', 'fmtBytes',
   // Tonal-gravity helpers + the transition scorer they compose into.
   'normalizeKey_TG', 'getCircleIndex_TG', 'circleDistance_TG', 'areRelativeKeys_TG',
   'areParallelKeys_TG', 'circleDirection_TG', 'anchorKeyBonus_TG', 'determineAnchorKey_TG',
@@ -218,6 +220,7 @@ const EXPORTS = [
   'GENRE_DATABASE', 'GENRE_PARAMS', 'ENERGY_MAP', 'ENERGY_ARC_SHAPES', 'SET_STRUCTURE_TEMPLATES',
   'parseDuration', 'getGenreParams', 'getCompositeEnergy', 'targetEnergyCurve', 'templateStylePenalty',
   'getYTVideoId', 'tsToSeconds', 'ytStartFromUrl', 'ytUrlIssue', 'getYTEmbedUrl',
+  'bytesToB64', 'b64ToBytes', 'blobToB64', 'b64ToBlob', 'fmtBytes',
   'normalizeKey_TG', 'circleDistance_TG', 'determineAnchorKey_TG', 'calculateTonalTransitionScore_TG',
   'calculateSetlistQualityScore', 'generateTonalDiagnostics_TG', 'simulatedAnnealingOptimize',
   'generateSetlistsCore', 'generateSetlistsCore_WithTonalGravity', 'validateGenerationConstraints',

@@ -802,6 +802,19 @@
     .media-clip-add input { font-size: .78rem; flex: 1; min-width: 80px; }
     .media-clip-add input[placeholder="Start MM:SS"], .media-clip-add input[placeholder="End MM:SS"] { flex: 0 0 84px; }
     .media-clip-err { font-size: .72rem; color: var(--error); margin-top: .35rem; line-height: 1.4; }
+    /* Song attachments (charts / lead sheets, embedded offline) */
+    .attach-section { margin-top: .55rem; border-top: 1px solid var(--border); padding-top: .45rem; }
+    .attach-row { display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem; border-radius: 5px; background: var(--primary); border: 1px solid var(--border); margin-bottom: .25rem; font-size: .78rem; }
+    .attach-ic { flex: none; }
+    .attach-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .attach-kind { flex: 0 0 auto; font-size: .72rem; padding: .15rem .3rem; }
+    .attach-size { font-family: 'Space Mono', monospace; font-size: .66rem; color: var(--text-muted); white-space: nowrap; }
+    .attach-add { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; margin-top: .3rem; }
+    .attach-hint { font-size: .66rem; color: var(--text-muted); }
+    .attach-open { display: inline-flex; align-items: center; gap: .35rem; padding: .3rem .5rem; border-radius: 6px; background: var(--primary); border: 1px solid var(--border); color: var(--text); font-size: .76rem; cursor: pointer; }
+    .attach-open:hover { border-color: var(--accent); }
+    .attach-open-name { font-weight: 600; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .attach-open-kind { font-size: .64rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
     details.media-clip-player { margin-bottom: .25rem; }
     details.media-clip-player summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: .35rem; padding: .28rem .4rem; border-radius: 5px; background: var(--primary); border: 1px solid var(--border); font-size: .78rem; }
     details.media-clip-player summary::-webkit-details-marker { display: none; }
@@ -1164,6 +1177,145 @@
       if (end && end > start) params.push(`end=${end}`);
       return `https://www.youtube.com/embed/${id}${params.length ? `?${params.join('&')}` : ''}`;
     };
+
+    /******************* SONG ATTACHMENTS (offline, IndexedDB) *******************/
+    // Lead sheets / drum charts embed as blobs in IndexedDB — localStorage (~5 MB, and it holds
+    // the whole library) is the wrong store for PDFs/scans. Song objects carry only metadata
+    // ({id,name,mime,size,kind}); the bytes live here keyed by attachment id, so a player has the
+    // charts offline. Backup/restore serialise this store to base64 (see exportBackup/importBackup).
+    const ATT_DB = 'bandleaderhq', ATT_STORE = 'attachments', ATT_MAX_BYTES = 15 * 1024 * 1024;
+    const ATT_KIND_LABELS = { leadsheet: 'Lead sheet', chart: 'Drum / chart', other: 'Document' };
+    let _attDbPromise = null;
+    const attOpen = () => {
+      if (_attDbPromise) return _attDbPromise;
+      _attDbPromise = new Promise((resolve, reject) => {
+        if (typeof indexedDB === 'undefined' || !indexedDB) { reject(new Error('IndexedDB unavailable')); return; }
+        const req = indexedDB.open(ATT_DB, 1);
+        req.onupgradeneeded = () => { const db = req.result; if (!db.objectStoreNames.contains(ATT_STORE)) db.createObjectStore(ATT_STORE); };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      return _attDbPromise;
+    };
+    const attTx = (mode, fn) => attOpen().then(db => new Promise((resolve, reject) => {
+      const tx = db.transaction(ATT_STORE, mode);
+      const req = fn(tx.objectStore(ATT_STORE));
+      tx.oncomplete = () => resolve(req ? req.result : undefined);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('attachment transaction aborted'));
+    }));
+    const attStore = {
+      put: (id, blob) => attTx('readwrite', s => s.put(blob, id)),
+      get: (id) => attTx('readonly', s => s.get(id)),
+      del: (id) => attTx('readwrite', s => s.delete(id)),
+      clear: () => attTx('readwrite', s => s.clear()),
+      keys: () => attTx('readonly', s => s.getAllKeys()),
+      all: () => attOpen().then(db => new Promise((resolve, reject) => {
+        const tx = db.transaction(ATT_STORE, 'readonly');
+        const out = {};
+        const cur = tx.objectStore(ATT_STORE).openCursor();
+        cur.onsuccess = () => { const c = cur.result; if (c) { out[c.key] = c.value; c.continue(); } else resolve(out); };
+        cur.onerror = () => reject(cur.error);
+      })).catch(() => ({})),
+    };
+    // Pure base64 <-> blob helpers for the backup payload (unit-testable in Node).
+    const bytesToB64 = (bytes) => {
+      let bin = ''; const CH = 0x8000;
+      for (let i = 0; i < bytes.length; i += CH) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+      return btoa(bin);
+    };
+    const b64ToBytes = (b64) => {
+      const bin = atob(b64 || ''), len = bin.length, arr = new Uint8Array(len);
+      for (let i = 0; i < len; i++) arr[i] = bin.charCodeAt(i);
+      return arr;
+    };
+    const blobToB64 = (blob) => blob.arrayBuffer().then(buf => bytesToB64(new Uint8Array(buf)));
+    const b64ToBlob = (b64, mime) => new Blob([b64ToBytes(b64)], { type: mime || 'application/octet-stream' });
+    const fmtBytes = (n) => n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n || 0} B`;
+
+    // Shared attach editor for both song forms — file picker + list + kind + remove, writing
+    // blobs to IndexedDB and only metadata back to the form. Mirrors the Reference-Clips rows.
+    function SongAttachments({ attachments, onChange }) {
+      const list = attachments || [];
+      const [busy, setBusy] = React.useState(false);
+      const [err, setErr] = React.useState('');
+      const [usage, setUsage] = React.useState('');
+      const fileRef = React.useRef(null);
+      const refreshUsage = () => {
+        if (navigator.storage && navigator.storage.estimate) {
+          navigator.storage.estimate().then(e => { if (e && e.usage != null) setUsage(fmtBytes(e.usage)); }).catch(() => {});
+        }
+      };
+      React.useEffect(() => { refreshUsage(); }, [list.length]);
+      const onPick = async (e) => {
+        const files = Array.from(e.target.files || []); e.target.value = '';
+        if (!files.length) return;
+        setErr(''); setBusy(true);
+        const added = [];
+        for (const f of files) {
+          if (f.size > ATT_MAX_BYTES) { setErr(`${f.name} is ${fmtBytes(f.size)} — over the ${fmtBytes(ATT_MAX_BYTES)} limit. Compress it and try again.`); continue; }
+          const id = genId();
+          const kind = /image\//i.test(f.type) ? 'chart' : 'leadsheet';
+          try { await attStore.put(id, f); added.push({ id, name: f.name, mime: f.type || 'application/octet-stream', size: f.size, kind }); }
+          catch (ex) { setErr('Could not save attachment (is private browsing on?): ' + ex.message); }
+        }
+        setBusy(false);
+        if (added.length) onChange([...(attachments || []), ...added]);
+        refreshUsage();
+      };
+      const remove = (att) => { attStore.del(att.id).catch(() => {}); onChange((attachments || []).filter(a => a.id !== att.id)); };
+      const setKind = (att, kind) => onChange((attachments || []).map(a => a.id === att.id ? { ...a, kind } : a));
+      return (
+        <div className="attach-section">
+          <div className="media-clips-label">Charts &amp; Lead Sheets</div>
+          {list.map(att => (
+            <div key={att.id} className="attach-row">
+              <span className="attach-ic">{att.mime && att.mime.startsWith('image/') ? '🖼' : '📄'}</span>
+              <span className="attach-name" title={att.name}>{att.name}</span>
+              <select className="attach-kind" value={att.kind || 'other'} onChange={e => setKind(att, e.target.value)}>
+                <option value="leadsheet">Lead sheet</option>
+                <option value="chart">Drum / chart</option>
+                <option value="other">Document</option>
+              </select>
+              <span className="attach-size">{fmtBytes(att.size)}</span>
+              <button className="btn btn-small" style={{ color: 'var(--error)', borderColor: 'var(--error)', padding: '0 .3rem' }} onClick={() => remove(att)} title="Remove attachment">✕</button>
+            </div>
+          ))}
+          <div className="attach-add">
+            <input ref={fileRef} type="file" accept="application/pdf,image/*" multiple style={{ display: 'none' }} onChange={onPick} />
+            <button className="btn btn-small" onClick={() => fileRef.current && fileRef.current.click()} disabled={busy}>{busy ? 'Saving…' : '📎 Attach chart / lead sheet'}</button>
+            <span className="attach-hint">PDF or image · embedded offline{usage ? ` · ${usage} stored` : ''}</span>
+          </div>
+          {err && <div className="media-clip-err" role="alert">{err}</div>}
+        </div>
+      );
+    }
+
+    // Player-facing attachment row (Advance/rehearsal view): lazily pulls the blob from IDB on
+    // click and opens it — a drummer taps the drum chart and reads it, offline.
+    function AttachmentRow({ att }) {
+      const [url, setUrl] = React.useState(null);
+      const [loading, setLoading] = React.useState(false);
+      React.useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+      const open = async () => {
+        if (url) { window.open(url, '_blank', 'noopener'); return; }
+        setLoading(true);
+        try {
+          const blob = await attStore.get(att.id);
+          if (blob) { const u = URL.createObjectURL(blob); setUrl(u); window.open(u, '_blank', 'noopener'); }
+        } catch (e) { /* offline/unsupported — button simply does nothing */ }
+        setLoading(false);
+      };
+      const isImg = att.mime && att.mime.startsWith('image/');
+      return (
+        <button className="attach-open" onClick={open} title={`Open ${att.name}`} data-testid="attach-open">
+          <span className="attach-ic">{isImg ? '🖼' : '📄'}</span>
+          <span className="attach-open-name">{att.name}</span>
+          <span className="attach-open-kind">{ATT_KIND_LABELS[att.kind] || 'Document'}</span>
+          {loading && <span className="attach-open-kind">…</span>}
+        </button>
+      );
+    }
 
     /******************* ARRANGEMENT MACROS *******************/
     const ARRANGEMENT_MACROS = [
@@ -6452,7 +6604,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       onClearAll,
       latestImport
     }) {
-      const [form, setForm] = useState({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '', energy: '', arrangement: '', mediaLinks: [] });
+      const [form, setForm] = useState({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '', energy: '', arrangement: '', mediaLinks: [], attachments: [] });
       const [editingId, setEditingId] = useState(null);
       const [editForm, setEditForm] = useState({});
       const [newClip, setNewClip] = useState({ url: '', ts: '', te: '', label: '' });
@@ -6463,7 +6615,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const handleAdd = () => {
         if (!form.title || !form.artist || !form.duration) return;
         onAddSong({ ...form, energy: form.energy === '' ? '' : String(form.energy).trim() });
-        setForm({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '', energy: '', arrangement: '', mediaLinks: [] });
+        setForm({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '', energy: '', arrangement: '', mediaLinks: [], attachments: [] });
         setNewClip({ url: '', ts: '', label: '' });
       };
 
@@ -6479,7 +6631,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           energy: song.energy ?? '',
           vocalist: song.vocalist || '',
           arrangement: song.arrangement || '',
-          mediaLinks: song.mediaLinks || []
+          mediaLinks: song.mediaLinks || [],
+          attachments: song.attachments || []
         });
         setEditClip({ url: '', ts: '', label: '' });
       };
@@ -6643,6 +6796,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             {clipErr && <div className="media-clip-err" role="alert">{clipErr}</div>}
           </div>
 
+          <SongAttachments attachments={form.attachments} onChange={a => setForm({ ...form, attachments: a })} />
+
           <button className="btn btn-primary" onClick={handleAdd} style={{ width: '100%', marginBottom: '1rem' }}>
             Add Song (to Active)
           </button>
@@ -6796,6 +6951,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                         </div>
                         {editClipErr && <div className="media-clip-err" role="alert">{editClipErr}</div>}
                       </div>
+                      <SongAttachments attachments={editForm.attachments} onChange={a => setEditForm({ ...editForm, attachments: a })} />
                       <div className="toolbar" style={{ justifyContent: 'flex-end', gap: '.3rem' }}>
                         <button className="btn btn-small" onClick={saveEdit} style={{ borderColor: 'var(--success)', color: 'var(--success)' }}>Save</button>
                         <button className="btn btn-small" onClick={cancelEdit}>Cancel</button>
@@ -7844,6 +8000,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                           </details>
                         );
                       })}
+                    </div>
+                  </div>
+                )}
+                {viewMode === 'advance' && song.attachments && song.attachments.length > 0 && (
+                  <div className="arrangement-notes-row">
+                    <div className="arrangement-label">Charts</div>
+                    <div className="arrangement-notes-content" style={{ padding: '.3rem 0', display: 'flex', flexWrap: 'wrap', gap: '.35rem' }}>
+                      {song.attachments.map(att => <AttachmentRow key={att.id} att={att} />)}
                     </div>
                   </div>
                 )}
@@ -12122,13 +12286,21 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       // Everything lives in localStorage, so one JSON file IS the whole app state:
       // bands, songs, settings, venues + contact history, bookings, EPK, roster.
       const backupFileRef = React.useRef(null);
-      const exportBackup = () => {
+      const exportBackup = async () => {
         const stores = {};
         for (let i = 0; i < localStorage.length; i++) {
           const k = localStorage.key(i);
           if (k && k.startsWith('setlist_')) stores[k] = localStorage.getItem(k);
         }
-        const payload = JSON.stringify({ app: 'bandleaderhq', kind: 'full-backup', exportedAt: new Date().toISOString(), stores }, null, 1);
+        // Embed attachment blobs (charts / lead sheets) as base64 so a restore is complete + offline.
+        const attachments = {};
+        try {
+          const blobs = await attStore.all();
+          for (const [id, blob] of Object.entries(blobs)) {
+            attachments[id] = { mime: blob.type || 'application/octet-stream', b64: await blobToB64(blob) };
+          }
+        } catch (e) { /* no IDB / no attachments — back up localStorage only */ }
+        const payload = JSON.stringify({ app: 'bandleaderhq', kind: 'full-backup', exportedAt: new Date().toISOString(), stores, attachments }, null, 1);
         const blob = new Blob([payload], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -12137,19 +12309,28 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         a.click();
         URL.revokeObjectURL(url);
         localStorage.setItem('setlist_last_backup_at', String(Date.now()));
-        showToast('Backup downloaded — keep it somewhere safe (Drive, Dropbox…)', 'success');
+        const nAtt = Object.keys(attachments).length;
+        showToast(`Backup downloaded${nAtt ? ` (incl. ${nAtt} attachment${nAtt > 1 ? 's' : ''})` : ''} — keep it somewhere safe (Drive, Dropbox…)`, 'success');
       };
       const importBackup = (file) => {
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = (ev) => {
+        reader.onload = async (ev) => {
           try {
             const data = JSON.parse(ev.target.result);
             if (!data || data.kind !== 'full-backup' || !data.stores) { showToast('Not a BandLeaderHQ backup file', 'error'); return; }
             const n = Object.keys(data.stores).length;
-            if (!window.confirm(`Restore backup from ${(data.exportedAt || '').slice(0, 10)}?\n\nThis replaces ALL current app data (${n} stores) — bands, songs, venues, bookings, EPK. The app will reload.`)) return;
+            const nAtt = data.attachments ? Object.keys(data.attachments).length : 0;
+            if (!window.confirm(`Restore backup from ${(data.exportedAt || '').slice(0, 10)}?\n\nThis replaces ALL current app data (${n} stores${nAtt ? `, ${nAtt} attachments` : ''}) — bands, songs, venues, bookings, EPK. The app will reload.`)) return;
             Object.keys(localStorage).filter(k => k.startsWith('setlist_')).forEach(k => localStorage.removeItem(k));
             Object.entries(data.stores).forEach(([k, v]) => { if (k.startsWith('setlist_')) localStorage.setItem(k, v); });
+            // Restore embedded attachment blobs into IndexedDB (older backups have none — skipped).
+            try {
+              await attStore.clear();
+              if (data.attachments) {
+                for (const [id, a] of Object.entries(data.attachments)) { await attStore.put(id, b64ToBlob(a.b64, a.mime)); }
+              }
+            } catch (e) { /* IDB unavailable — localStorage was still restored */ }
             localStorage.setItem('setlist_last_backup_at', String(Date.now()));
             window.location.reload();
           } catch (e) { showToast('Could not read backup file: ' + e.message, 'error'); }
@@ -12638,6 +12819,9 @@ ${headerHtml}
           message: 'This removes the song from your library.',
           confirmLabel: 'Delete song',
           onConfirm: () => {
+            // Free any embedded chart/lead-sheet blobs so IndexedDB doesn't accumulate orphans.
+            const gone = songs.find(s => s.id === id);
+            (gone && gone.attachments || []).forEach(a => { attStore.del(a.id).catch(() => {}); });
             setSongs(prev => prev.filter(s => s.id !== id));
             showToast('Song deleted', 'warning');
             setConfirmDialog(prev => ({ ...prev, open: false }));
