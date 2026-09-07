@@ -680,6 +680,26 @@
     /* Venue outreach: search, filter chips, bulk select, compose queue */
     .venue-toolbar { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; margin-bottom: .5rem; }
     .venue-search { flex: 1 1 170px; min-width: 150px; font-size: .8rem; padding: .4rem .55rem; }
+    /* "Find rooms ▾" — native <details> menu folding the discovery/import actions */
+    .findrooms-menu { position: relative; }
+    .findrooms-menu > summary { list-style: none; cursor: pointer; font-size: .68rem; border-color: var(--accent); color: var(--accent); }
+    .findrooms-menu > summary::-webkit-details-marker { display: none; }
+    .findrooms-menu[open] > summary { background: var(--accent-soft); }
+    .findrooms-menu-list {
+      position: absolute; z-index: 40; top: calc(100% + .3rem); left: 0; min-width: 250px;
+      display: flex; flex-direction: column; gap: .1rem; padding: .3rem;
+      background: var(--secondary); border: 1px solid var(--border); border-radius: 10px;
+      box-shadow: 0 10px 28px rgba(0,0,0,.45);
+    }
+    .findrooms-menu-list button {
+      display: flex; align-items: flex-start; gap: .55rem; text-align: left; width: 100%;
+      background: transparent; border: 0; border-radius: 7px; padding: .45rem .5rem; cursor: pointer; color: var(--text);
+    }
+    .findrooms-menu-list button:hover, .findrooms-menu-list button:focus-visible { background: var(--primary); outline: none; }
+    .findrooms-menu-list .fr-ic { flex: 0 0 auto; font-size: .95rem; line-height: 1.2; width: 1.1rem; text-align: center; }
+    .findrooms-menu-list .fr-txt { display: flex; flex-direction: column; gap: .08rem; }
+    .findrooms-menu-list .fr-txt strong { font-size: .74rem; font-weight: 700; }
+    .findrooms-menu-list .fr-txt span { font-size: .66rem; color: var(--text-muted); line-height: 1.25; }
     .venue-filter-chips { display: flex; gap: .3rem; flex-wrap: wrap; margin-bottom: .55rem; }
     .venue-filter-chip {
       border: 1px solid var(--border); background: var(--primary); color: var(--text-muted);
@@ -9808,10 +9828,27 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               onChange={e => { handleVenueCSV(e.target.files[0]); e.target.value = ''; }} />
             <div className="venue-toolbar">
               <input className="venue-search" value={venueSearch} onChange={e => setVenueSearch(e.target.value)} placeholder="🔍 Search name, city, contact…" />
-              <button className="btn btn-small" onClick={downloadSampleVenueCSV} title="Download sample CSV template" style={{ fontSize: '.68rem', color: 'var(--text-muted)' }}>⬇ Sample CSV</button>
-              <button className="btn btn-small" onClick={() => venueCsvRef.current?.click()} title="Bulk-import venues from a CSV file" style={{ fontSize: '.68rem' }}>⬆ Import CSV</button>
-              <button className="btn btn-small" onClick={openDirectory} title={`Browse ${VENUE_DIRECTORY.length} Las Vegas / Henderson / Boulder City live-music venues with booking contacts and add them to your pipeline`} style={{ fontSize: '.68rem', borderColor: 'var(--accent)', color: 'var(--accent)' }}>📂 Vegas Directory</button>
-              <button className="btn btn-small" onClick={openProspector} title="Search the open map for bars, restaurants & clubs in an area — even ones that don't advertise entertainment — scored for solo/duo potential" style={{ fontSize: '.68rem', borderColor: 'var(--success)', color: 'var(--success)' }}>🔎 Prospector</button>
+              <details className="findrooms-menu">
+                <summary className="btn btn-small" data-testid="find-rooms" title="Ways to find and add rooms — the built-in directory, map prospecting, or a CSV import">🔎 Find rooms ▾</summary>
+                <div className="findrooms-menu-list" role="menu">
+                  <button role="menuitem" onClick={e => { e.currentTarget.closest('details').open = false; openDirectory(); }} title={`Browse ${VENUE_DIRECTORY.length} Las Vegas / Henderson / Boulder City live-music venues with booking contacts and add them to your pipeline`}>
+                    <span className="fr-ic" style={{ color: 'var(--accent)' }}>📂</span>
+                    <span className="fr-txt"><strong>Vegas Directory</strong><span>{VENUE_DIRECTORY.length} curated live-music rooms with booking contacts</span></span>
+                  </button>
+                  <button role="menuitem" onClick={e => { e.currentTarget.closest('details').open = false; openProspector(); }} title="Search the open map for bars, restaurants & clubs in an area — even ones that don't advertise entertainment — scored for solo/duo potential">
+                    <span className="fr-ic" style={{ color: 'var(--success)' }}>🔎</span>
+                    <span className="fr-txt"><strong>Prospector</strong><span>Discover rooms on the map, scored for solo/duo fit</span></span>
+                  </button>
+                  <button role="menuitem" onClick={e => { e.currentTarget.closest('details').open = false; venueCsvRef.current?.click(); }} title="Bulk-import venues from a CSV file">
+                    <span className="fr-ic">⬆</span>
+                    <span className="fr-txt"><strong>Import CSV</strong><span>Bulk-add venues from your own spreadsheet</span></span>
+                  </button>
+                  <button role="menuitem" onClick={e => { e.currentTarget.closest('details').open = false; downloadSampleVenueCSV(); }} title="Download a sample CSV template">
+                    <span className="fr-ic" style={{ color: 'var(--text-muted)' }}>⬇</span>
+                    <span className="fr-txt"><strong>Sample CSV</strong><span>Download the import template to fill in</span></span>
+                  </button>
+                </div>
+              </details>
               <button className="btn btn-small" onClick={() => setTodayOpen(true)} data-testid="today-btn" title="Your daily queue — every venue whose sequence is due today, ready to run in one pass" style={{ fontSize: '.68rem', borderColor: 'var(--warning)', color: 'var(--warning)', fontWeight: 700 }}>📆 Today{todayDueCount > 0 ? ` (${todayDueCount})` : ''}</button>
               <button className="btn btn-small btn-primary" onClick={() => setVenueForm({...BLANK_VENUE})}>+ Add Venue</button>
             </div>

@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-09-05.
+Last updated: 2026-09-07.
 
 ---
 
@@ -1120,6 +1120,39 @@ Verification: `npm test` → 149/149 (5 new: b64<->bytes/blob round-trips incl. 
 attach a PDF → song saved with attachment metadata → **reload: metadata + the IDB blob both
 persist** (added 1 / after-reload 1 / idb-blob 1) → Backup carries the base64; 0 JS page errors.
 The restore leg reuses the unit-tested `b64ToBlob` + the same `attStore.put` proven on attach.
+
+---
+
+## 9y. Change log — 2026-09 venue toolbar "Find rooms ▾" consolidation (PR 3b)
+
+The venue subsystem is the highest-regression-risk area, so PR 3b delivers only the one
+contained, high-visibility IA win the approved nav mockup already promised: the overloaded
+7-item `.venue-toolbar` is folded so the four *discovery/import* actions no longer crowd the
+daily workflow.
+
+- **Toolbar now four top-level controls:** Search, **🔎 Find rooms ▾**, 📆 Today, + Add Venue.
+  Search and the daily action stay one click; adding a venue by hand stays primary.
+- **"🔎 Find rooms ▾"** is a native `<details className="findrooms-menu">` + `<summary>` (no new
+  React state or click-outside machinery — the lowest-risk implementation). Its `.findrooms-menu-list`
+  holds the four moved actions as labelled rows (icon + title + one-line description): **Vegas
+  Directory** (`openDirectory`), **Prospector** (`openProspector`), **Import CSV**
+  (`venueCsvRef.click`), **Sample CSV** (`downloadSampleVenueCSV`). Each item runs its **existing
+  handler unchanged** and closes the menu (`e.currentTarget.closest('details').open = false`).
+- New CSS `.findrooms-menu` / `.findrooms-menu-list` next to `.venue-toolbar` (index.html L681),
+  built entirely on the PR-2 design tokens (`--secondary` surface, `--border`, `--accent` summary,
+  `--accent-soft` open state); absolutely positioned dropdown, `::-webkit-details-marker` hidden.
+- **No behavior change** — the directory, prospector, and both CSV paths are byte-identical; only
+  their entry point moved. `data-testid="find-rooms"` added for the drive; `today-btn` preserved.
+
+Deferred (explicitly out of PR-3b scope, higher risk): flattening the Today→Compose overlay
+stack, splitting the `SetConfiguration` wall, and extending the `InfoTrigger`/`featureHelp` help
+system into the venue/EPK area.
+
+Verification: `npm test` → 149/149 (no logic touched — pure UI markup/CSS); Babel compile clean
+(index.html + 3 companion files); headless Playwright drive — the venue toolbar shows Search +
+Find rooms ▾ + Today + Add Venue with **0** discovery buttons left inline, the menu is closed by
+default, opens to exactly 4 items, clicking Vegas Directory opens the directory overlay and closes
+the menu; 0 JS page errors.
 
 ---
 
