@@ -207,6 +207,8 @@ for (const f of [
   'getYTVideoId', 'tsToSeconds', 'ytStartFromUrl', 'ytUrlIssue', 'getYTEmbedUrl',
   // Attachment backup helpers — base64 <-> bytes/blob round-trip + byte formatter.
   'bytesToB64', 'b64ToBytes', 'blobToB64', 'b64ToBlob', 'fmtBytes',
+  // Stage chart viewer — pure navigation core (renderer key, queue, page clamp, nav step).
+  'resolveChartKind', 'buildChartQueue', 'clampChartPage', 'stageNavStep',
   // Tonal-gravity helpers + the transition scorer they compose into.
   'normalizeKey_TG', 'getCircleIndex_TG', 'circleDistance_TG', 'areRelativeKeys_TG',
   'areParallelKeys_TG', 'circleDirection_TG', 'anchorKeyBonus_TG', 'determineAnchorKey_TG',
@@ -221,6 +223,7 @@ const EXPORTS = [
   'parseDuration', 'getGenreParams', 'getCompositeEnergy', 'targetEnergyCurve', 'templateStylePenalty',
   'getYTVideoId', 'tsToSeconds', 'ytStartFromUrl', 'ytUrlIssue', 'getYTEmbedUrl',
   'bytesToB64', 'b64ToBytes', 'blobToB64', 'b64ToBlob', 'fmtBytes',
+  'resolveChartKind', 'buildChartQueue', 'clampChartPage', 'stageNavStep',
   'normalizeKey_TG', 'circleDistance_TG', 'determineAnchorKey_TG', 'calculateTonalTransitionScore_TG',
   'calculateSetlistQualityScore', 'generateTonalDiagnostics_TG', 'simulatedAnnealingOptimize',
   'generateSetlistsCore', 'generateSetlistsCore_WithTonalGravity', 'validateGenerationConstraints',

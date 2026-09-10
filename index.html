@@ -583,6 +583,79 @@
       margin-top: .18rem; font-style: italic;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+
+    /* ── Stage Chart Viewer — the full-screen performance music stand ── */
+    .stage-chart {
+      position: fixed; inset: 0; z-index: 10000;
+      display: flex; flex-direction: column;
+      background: var(--sc-bg); color: var(--sc-fg);
+      --sc-bg: #0d0d0f; --sc-fg: rgba(255,255,255,.92);
+      --sc-paper: #f7f7f5; --sc-panel: rgba(18,18,24,.97); --sc-chart-filter: none;
+      touch-action: pan-y;
+    }
+    .stage-chart[data-contrast="light"] {
+      --sc-bg: #e7e8ec; --sc-fg: #17171c; --sc-paper: #ffffff; --sc-panel: rgba(255,255,255,.97); --sc-chart-filter: none;
+    }
+    .stage-chart[data-contrast="amber"] {
+      --sc-bg: #110c04; --sc-fg: #ffce88; --sc-paper: #f2e2c1; --sc-panel: rgba(26,17,5,.97);
+      --sc-chart-filter: sepia(.35) saturate(1.08) brightness(.95);
+    }
+    .stage-chart-stage {
+      flex: 1; min-height: 0; position: relative; overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      display: flex; align-items: flex-start; justify-content: center;
+      padding: 8px; box-sizing: border-box; cursor: pointer;
+    }
+    .stage-chart-canvas, .stage-chart-img {
+      display: block; background: var(--sc-paper);
+      box-shadow: 0 2px 26px rgba(0,0,0,.5); border-radius: 2px;
+      filter: var(--sc-chart-filter);
+    }
+    .stage-chart-canvas { max-width: 100%; }
+    .stage-chart-img[data-fit="width"] { width: 100%; height: auto; max-width: 1100px; }
+    .stage-chart-img[data-fit="page"] { max-width: 100%; max-height: 100%; width: auto; height: auto; }
+    .stage-chart-loading { margin: auto; color: var(--sc-fg); opacity: .6; font-size: .95rem; text-align: center; }
+
+    .stage-chart-bar, .stage-chart-foot {
+      flex-shrink: 0; display: flex; align-items: center; gap: .5rem;
+      padding: .5rem .7rem; background: var(--sc-panel);
+      transition: opacity .2s ease, transform .2s ease;
+    }
+    .stage-chart-bar { border-bottom: 1px solid rgba(128,128,128,.18); }
+    .stage-chart-foot { border-top: 1px solid rgba(128,128,128,.18); justify-content: center; gap: .35rem; flex-wrap: wrap; }
+    .stage-chart.chrome-hidden .stage-chart-bar { opacity: 0; transform: translateY(-100%); pointer-events: none; }
+    .stage-chart.chrome-hidden .stage-chart-foot { opacity: 0; transform: translateY(100%); pointer-events: none; }
+    .stage-chart-title { font-weight: 800; font-size: 1.05rem; color: var(--sc-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .stage-chart-sub { font-size: .78rem; opacity: .62; display: flex; gap: .5rem; flex-shrink: 0; align-items: center; }
+    .stage-chart-sub .sc-key { color: #8ab4ff; font-weight: 700; opacity: 1; }
+    .stage-chart-spacer { flex: 1; min-width: .3rem; }
+    .stage-ctrl {
+      background: rgba(128,128,128,.14); border: 1px solid rgba(128,128,128,.24);
+      color: var(--sc-fg); border-radius: 7px; padding: .34rem .62rem; font-size: .82rem;
+      cursor: pointer; line-height: 1; white-space: nowrap; font-family: inherit;
+    }
+    .stage-ctrl:hover { background: rgba(128,128,128,.28); }
+    .stage-ctrl:disabled { opacity: .35; cursor: default; }
+    .stage-ctrl.sc-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .stage-ctrl-lg { font-size: 1.15rem; padding: .4rem 1rem; }
+    .stage-page-ind { font-variant-numeric: tabular-nums; font-size: .85rem; min-width: 5rem; text-align: center; opacity: .85; }
+    .stage-chart-chips { display: flex; gap: .25rem; }
+    .stage-chip { font-size: .68rem; padding: .18rem .48rem; border-radius: 10px; border: 1px solid rgba(128,128,128,.3); background: transparent; color: var(--sc-fg); cursor: pointer; opacity: .6; font-family: inherit; }
+    .stage-chip.sc-active { opacity: 1; background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    .stage-cue-card { margin: auto; max-width: 760px; padding: 2rem 1.5rem; text-align: center; color: var(--sc-fg); }
+    .stage-cue-title { font-size: clamp(2rem, 6vw, 3.4rem); font-weight: 900; line-height: 1.05; margin-bottom: .6rem; }
+    .stage-cue-meta { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; font-size: 1.05rem; opacity: .72; margin-bottom: 1.4rem; }
+    .stage-cue-meta .stage-cue-key { color: #8ab4ff; font-weight: 800; opacity: 1; }
+    .stage-cue-sections { text-align: left; display: flex; flex-direction: column; gap: .9rem; }
+    .stage-cue-section-label { font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; opacity: .55; margin-bottom: .2rem; }
+    .stage-cue-section-text { font-size: clamp(1.05rem, 2.6vw, 1.5rem); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .stage-cue-empty { opacity: .5; font-size: 1.1rem; margin-top: 1rem; }
+
+    .stage-index { position: absolute; inset: 0; z-index: 5; overflow-y: auto; background: rgba(6,6,9,.975); -webkit-overflow-scrolling: touch; }
+    .stage-index-inner { max-width: 680px; margin: 0 auto; padding: 1rem 1rem 4rem; }
+    .stage-err-toast { position: absolute; top: 3.6rem; left: 50%; transform: translateX(-50%); z-index: 8; background: rgba(185,42,42,.96); color: #fff; padding: .4rem .85rem; border-radius: 8px; font-size: .8rem; max-width: 90%; }
+
     .arrangement-cue {
       font-size: .72rem; color: var(--text-muted); font-family: 'Space Mono', monospace;
       margin-top: .2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px;
@@ -1256,6 +1329,89 @@
     const blobToB64 = (blob) => blob.arrayBuffer().then(buf => bytesToB64(new Uint8Array(buf)));
     const b64ToBlob = (b64, mime) => new Blob([b64ToBytes(b64)], { type: mime || 'application/octet-stream' });
     const fmtBytes = (n) => n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n || 0} B`;
+
+    /******** STAGE CHART VIEWER — pure navigation core (headless-testable) ********/
+    // The performance "music stand": from a generated setlist, render the selected
+    // song's chart full-screen and page through the whole set. These four helpers are
+    // pure (no React, no DOM) and are exercised by test/stage-chart.test.js.
+
+    // Renderer-registry key: which inline renderer handles an attachment MIME type.
+    // This is the extension seam the spec's ChartType calls for — future notation
+    // formats (musicxml/guitarpro/abc/chordpro) slot in here without touching callers.
+    function resolveChartKind(mime) {
+      const m = (mime || '').toLowerCase();
+      if (m === 'application/pdf' || m === 'application/x-pdf') return 'pdf';
+      if (m.indexOf('image/') === 0) return 'image';
+      return 'unsupported';
+    }
+
+    // Flatten setlists into an ordered stage-navigation queue. One entry per
+    // renderable chart attachment; a song with no renderable chart yields a single
+    // { att: null } entry (drawn as a cue card) so page-turns walk the entire set and
+    // every song always shows *something*. Pure over the { id, name, songs:[…] } set
+    // shape — passing minimal song stubs is enough for tests.
+    function buildChartQueue(setlists) {
+      const queue = [];
+      (setlists || []).forEach((set, si) => {
+        (set.songs || []).forEach((song, songIdx) => {
+          const charts = (song.attachments || []).filter(a => resolveChartKind(a.mime) !== 'unsupported');
+          if (charts.length) {
+            charts.forEach((att, ci) => queue.push({
+              key: si + '-' + songIdx + '-' + ci, si, songIdx, chartIdx: ci, chartCount: charts.length, song, att,
+            }));
+          } else {
+            queue.push({ key: si + '-' + songIdx + '-x', si, songIdx, chartIdx: 0, chartCount: 0, song, att: null });
+          }
+        });
+      });
+      return queue;
+    }
+
+    // 1-based page clamp. numPages < 1 collapses to a single page.
+    function clampChartPage(page, numPages) {
+      const n = Math.max(1, numPages | 0);
+      const p = page | 0;
+      return p < 1 ? 1 : (p > n ? n : p);
+    }
+
+    // One navigation step over the queue. `dir`:
+    //   'nextPage'/'prevPage' — page within the current entry, spilling to the
+    //        adjacent entry (page 1) at a boundary; holds at the very ends.
+    //   'nextSong'/'prevSong' — jump to the next/previous *song* group's first entry
+    //        (skipping a song's extra charts — the chart chips switch between those).
+    //   'first'/'last' — first entry / last song's first entry.
+    // `numPages` is the current entry's known page count (1 for image/cue card, or an
+    // unrendered PDF). Returns { cursor, page }. Edge/empty-queue safe.
+    function stageNavStep(queue, cursor, page, numPages, dir) {
+      const q = queue || [];
+      const len = q.length;
+      if (len === 0) return { cursor: 0, page: 1 };
+      const c = Math.min(Math.max(0, cursor | 0), len - 1);
+      const n = Math.max(1, numPages | 0);
+      const p = clampChartPage(page, n);
+      const songKey = (i) => q[i].si + '-' + q[i].songIdx;
+      const groupStart = (i) => { let s = i; while (s > 0 && songKey(s - 1) === songKey(i)) s--; return s; };
+      switch (dir) {
+        case 'nextPage':
+          if (p < n) return { cursor: c, page: p + 1 };
+          return c < len - 1 ? { cursor: c + 1, page: 1 } : { cursor: c, page: p };
+        case 'prevPage':
+          if (p > 1) return { cursor: c, page: p - 1 };
+          return c > 0 ? { cursor: c - 1, page: 1 } : { cursor: c, page: 1 };
+        case 'nextSong': {
+          const k = songKey(c); let i = c + 1;
+          while (i < len && songKey(i) === k) i++;
+          return { cursor: i < len ? i : c, page: 1 };
+        }
+        case 'prevSong': {
+          const gs = groupStart(c);
+          return { cursor: gs > 0 ? groupStart(gs - 1) : 0, page: 1 };
+        }
+        case 'first': return { cursor: 0, page: 1 };
+        case 'last': return { cursor: groupStart(len - 1), page: 1 };
+        default: return { cursor: c, page: p };
+      }
+    }
 
     // Shared attach editor for both song forms — file picker + list + kind + remove, writing
     // blobs to IndexedDB and only metadata back to the form. Mirrors the Reference-Clips rows.
@@ -9149,96 +9305,354 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    /******************* STAGE MODE OVERLAY *******************/
+    /******************* STAGE MODE OVERLAY (music stand) *******************/
+    // Device-level stage preferences (fit + contrast). Additive localStorage key —
+    // never collides with the per-band data stores.
+    const STAGE_PREFS_KEY = 'setlist_stage_prefs_v3';
+    function loadStagePrefs() { try { return JSON.parse(localStorage.getItem(STAGE_PREFS_KEY) || '{}') || {}; } catch (e) { return {}; } }
+    function saveStagePrefs(p) { try { localStorage.setItem(STAGE_PREFS_KEY, JSON.stringify(p)); } catch (e) {} }
+    const STAGE_CONTRASTS = ['dark', 'amber', 'light'];
+    const STAGE_CONTRAST_ICON = { dark: '🌙', amber: '🔶', light: '☀️' };
+
+    // Renders one page of a PDF attachment to a canvas via the already-loaded PDF.js.
+    // Loads the document once per blob; cancels any in-flight render on page/size change
+    // (PDF.js throws on concurrent renders to one canvas) and re-renders on resize.
+    function PdfPageCanvas({ blob, page, fit, onPages, onError }) {
+      const canvasRef = React.useRef(null);
+      const pdfRef = React.useRef(null);
+      const taskRef = React.useRef(null);
+      const [ready, setReady] = React.useState(false);
+      const [resizeTick, setResizeTick] = React.useState(0);
+
+      React.useEffect(() => {
+        const onR = () => setResizeTick(t => t + 1);
+        window.addEventListener('resize', onR);
+        window.addEventListener('orientationchange', onR);
+        return () => { window.removeEventListener('resize', onR); window.removeEventListener('orientationchange', onR); };
+      }, []);
+
+      // Open the document once per blob.
+      React.useEffect(() => {
+        let cancelled = false;
+        setReady(false); pdfRef.current = null;
+        if (!blob) return;
+        if (!window.pdfjsLib) { onError && onError('PDF viewer unavailable (offline libraries not loaded).'); return; }
+        blob.arrayBuffer()
+          .then(buf => pdfjsLib.getDocument({ data: buf }).promise)
+          .then(pdf => {
+            if (cancelled) { try { pdf.destroy(); } catch (e) {} return; }
+            pdfRef.current = pdf;
+            onPages && onPages(pdf.numPages);
+            setReady(true);
+          })
+          .catch(err => { if (!cancelled) onError && onError('Could not open this PDF chart.'); });
+        return () => { cancelled = true; const pdf = pdfRef.current; pdfRef.current = null; if (pdf) { try { pdf.destroy(); } catch (e) {} } };
+      }, [blob]);
+
+      // Render the requested page.
+      React.useEffect(() => {
+        if (!ready || !pdfRef.current) return;
+        let cancelled = false;
+        const pdf = pdfRef.current;
+        const pageNum = clampChartPage(page, pdf.numPages);
+        if (taskRef.current) { try { taskRef.current.cancel(); } catch (e) {} taskRef.current = null; }
+        pdf.getPage(pageNum).then(pg => {
+          if (cancelled) return;
+          const canvas = canvasRef.current; if (!canvas) return;
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          const box = canvas.parentElement;
+          const base = pg.getViewport({ scale: 1 });
+          const availW = (box ? box.clientWidth : base.width) - 16;
+          const availH = (box ? box.clientHeight : base.height) - 16;
+          let cssScale = fit === 'page'
+            ? Math.min(availW / base.width, availH / base.height)
+            : (availW / base.width);
+          cssScale = Math.max(0.2, cssScale);
+          const vp = pg.getViewport({ scale: cssScale * dpr });
+          canvas.width = Math.floor(vp.width);
+          canvas.height = Math.floor(vp.height);
+          canvas.style.width = Math.floor(vp.width / dpr) + 'px';
+          canvas.style.height = Math.floor(vp.height / dpr) + 'px';
+          const task = pg.render({ canvasContext: canvas.getContext('2d'), viewport: vp });
+          taskRef.current = task;
+          task.promise.then(() => { taskRef.current = null; }).catch(() => {});
+          if (pageNum < pdf.numPages) pdf.getPage(pageNum + 1).catch(() => {}); // warm the next page
+        }).catch(() => { if (!cancelled) onError && onError('Could not render this page.'); });
+        return () => { cancelled = true; if (taskRef.current) { try { taskRef.current.cancel(); } catch (e) {} taskRef.current = null; } };
+      }, [ready, page, fit, resizeTick]);
+
+      return <canvas ref={canvasRef} className="stage-chart-canvas" />;
+    }
+
+    // Renders an image attachment (scanned chart / photo of a lead sheet).
+    function ImageChart({ blob, fit, onError }) {
+      const [url, setUrl] = React.useState(null);
+      React.useEffect(() => {
+        if (!blob) return;
+        const u = URL.createObjectURL(blob);
+        setUrl(u);
+        return () => URL.revokeObjectURL(u);
+      }, [blob]);
+      if (!url) return null;
+      return <img src={url} className="stage-chart-img" data-fit={fit} alt="" onError={() => onError && onError('Could not load this image chart.')} />;
+    }
+
+    // The "chart" for a song with no attachment: title + arrangement roadmap, big.
+    function CueCard({ song }) {
+      const sections = deriveArrangementSections(song.arrangement || '');
+      const present = ARR_SECTIONS.filter(k => sections[k] && sections[k].trim());
+      return (
+        <div className="stage-cue-card">
+          <div className="stage-cue-title">{song.title || 'Untitled'}</div>
+          <div className="stage-cue-meta">
+            {song.artist && <span>{song.artist}</span>}
+            {song.key && <span className="stage-cue-key">{song.key}</span>}
+            {song.bpm && <span>{song.bpm} BPM</span>}
+            {song.style && <span>{song.style}</span>}
+          </div>
+          {present.length > 0 ? (
+            <div className="stage-cue-sections">
+              {present.map(k => (
+                <div key={k} className="stage-cue-section">
+                  <div className="stage-cue-section-label">{ARR_SECTION_LABELS[k]}</div>
+                  <div className="stage-cue-section-text">{sanitizeNotation(sections[k])}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="stage-cue-empty">No chart attached · no arrangement notes.</div>
+          )}
+        </div>
+      );
+    }
+
+    // Dispatches a queue entry to the right renderer, lazily pulling the blob from IDB.
+    function ChartViewer({ entry, page, fit, onPages, onError }) {
+      const att = entry && entry.att;
+      const kind = att ? resolveChartKind(att.mime) : 'cue';
+      const [blob, setBlob] = React.useState(null);
+      const [state, setState] = React.useState('idle'); // idle | loading | ready | missing
+
+      // Cue cards and images are single-page; report that up so nav math is correct.
+      React.useEffect(() => { if (kind !== 'pdf') onPages && onPages(1); }, [kind, att && att.id]);
+
+      React.useEffect(() => {
+        let cancelled = false;
+        setBlob(null);
+        if (!att) { setState('idle'); return; }
+        setState('loading');
+        attStore.get(att.id).then(b => {
+          if (cancelled) return;
+          if (b) { setBlob(b); setState('ready'); } else { setState('missing'); }
+        }).catch(() => { if (!cancelled) setState('missing'); });
+        return () => { cancelled = true; };
+      }, [att && att.id]);
+
+      if (!att) return <CueCard song={entry.song} />;
+      if (state === 'loading') return <div className="stage-chart-loading">Loading chart…</div>;
+      if (state === 'missing' || !blob) return <div className="stage-chart-loading">Chart isn’t available offline on this device.</div>;
+      if (kind === 'pdf') return <PdfPageCanvas blob={blob} page={page} fit={fit} onPages={onPages} onError={onError} />;
+      if (kind === 'image') return <ImageChart blob={blob} fit={fit} onError={onError} />;
+      return <div className="stage-chart-loading">Unsupported chart format.</div>;
+    }
+
     function StageModeOverlay({ open, onClose, setlists }) {
-      const [currentKey, setCurrentKey] = React.useState(null);
-      const currentRef = React.useRef(null);
+      const queue = React.useMemo(() => buildChartQueue(setlists), [setlists]);
+      const [nav, setNav] = React.useState({ cursor: 0, page: 1 });
+      const navRef = React.useRef(nav);
+      const numPagesRef = React.useRef(1);
+      const [numPages, setNumPages] = React.useState(1);
+      const [indexOpen, setIndexOpen] = React.useState(false);
+      const [chromeHidden, setChromeHidden] = React.useState(false);
+      const [err, setErr] = React.useState('');
+      const prefs = React.useMemo(loadStagePrefs, []);
+      const [fit, setFit] = React.useState(() => (prefs.fit === 'page' ? 'page' : 'width'));
+      const [contrast, setContrast] = React.useState(() => (STAGE_CONTRASTS.indexOf(prefs.contrast) >= 0 ? prefs.contrast : 'dark'));
+      const swipeGuardRef = React.useRef(0);
+      const touchRef = React.useRef(null);
 
-      // Reset highlight when overlay opens
-      useEffect(() => { if (open) setCurrentKey(null); }, [open]);
+      React.useEffect(() => { navRef.current = nav; }, [nav]);
+      React.useEffect(() => { saveStagePrefs({ fit, contrast }); }, [fit, contrast]);
 
-      // Auto-scroll to current song
-      useEffect(() => {
-        if (currentKey && currentRef.current) {
-          currentRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      }, [currentKey]);
-
-      // Build flat song key list for keyboard nav
-      const flatKeys = React.useMemo(() => {
-        if (!setlists) return [];
-        const keys = [];
-        setlists.forEach((sl, si) => {
-          sl.songs.forEach((_, idx) => keys.push(`${si}-${idx}`));
-        });
-        return keys;
-      }, [setlists]);
-
-      useEffect(() => {
+      // Reset when the overlay opens.
+      React.useEffect(() => {
         if (!open) return;
-        const handler = (e) => {
-          if (e.key === 'Escape') { onClose(); return; }
-          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-            e.preventDefault();
-            setCurrentKey(prev => {
-              if (!flatKeys.length) return prev;
-              const idx = flatKeys.indexOf(prev);
-              if (e.key === 'ArrowDown') return flatKeys[Math.min(idx + 1, flatKeys.length - 1)];
-              return flatKeys[Math.max(idx - 1, 0)];
-            });
+        navRef.current = { cursor: 0, page: 1 };
+        numPagesRef.current = 1;
+        setNav({ cursor: 0, page: 1 }); setNumPages(1);
+        setIndexOpen(false); setChromeHidden(false); setErr('');
+      }, [open]);
+
+      const step = React.useCallback((dir) => {
+        const cur = navRef.current;
+        const next = stageNavStep(queue, cur.cursor, cur.page, numPagesRef.current, dir);
+        if (next.cursor !== cur.cursor) { numPagesRef.current = 1; setNumPages(1); }
+        navRef.current = next;
+        setNav(next);
+        setChromeHidden(false);
+      }, [queue]);
+
+      const openAt = React.useCallback((si, songIdx) => {
+        const idx = queue.findIndex(e => e.si === si && e.songIdx === songIdx);
+        const cursor = idx >= 0 ? idx : 0;
+        numPagesRef.current = 1; setNumPages(1);
+        navRef.current = { cursor, page: 1 };
+        setNav({ cursor, page: 1 });
+        setIndexOpen(false); setChromeHidden(false);
+      }, [queue]);
+
+      const handlePages = React.useCallback((n) => {
+        const total = Math.max(1, n | 0);
+        numPagesRef.current = total; setNumPages(total);
+        setNav(prev => { const p = clampChartPage(prev.page, total); return p === prev.page ? prev : { cursor: prev.cursor, page: p }; });
+      }, []);
+
+      // Keyboard + Bluetooth foot-pedal navigation (most pedals emit arrow/PageUp-Down keys).
+      React.useEffect(() => {
+        if (!open) return;
+        const onKey = (e) => {
+          if (e.key === 'Escape') { if (indexOpen) setIndexOpen(false); else onClose(); return; }
+          if (indexOpen) return;
+          switch (e.key) {
+            case 'ArrowRight': case 'PageDown': e.preventDefault(); step('nextPage'); break;
+            case ' ': case 'Spacebar': e.preventDefault(); step(e.shiftKey ? 'prevPage' : 'nextPage'); break;
+            case 'ArrowLeft': case 'PageUp': e.preventDefault(); step('prevPage'); break;
+            case 'ArrowDown': case 'j': e.preventDefault(); step('nextSong'); break;
+            case 'ArrowUp': case 'k': e.preventDefault(); step('prevSong'); break;
+            case 'Home': e.preventDefault(); step('first'); break;
+            case 'End': e.preventDefault(); step('last'); break;
+            case 'f': case 'F': setFit(f => f === 'width' ? 'page' : 'width'); break;
+            default: break;
           }
         };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
-      }, [open, flatKeys]);
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+      }, [open, indexOpen, step, onClose]);
 
-      if (!open || !setlists || setlists.length === 0) return null;
+      // Auto-hide chrome after a few idle seconds.
+      React.useEffect(() => {
+        if (!open || indexOpen || chromeHidden) return;
+        const id = setTimeout(() => setChromeHidden(true), 4500);
+        return () => clearTimeout(id);
+      }, [open, indexOpen, chromeHidden, nav]);
+
+      if (!open || queue.length === 0) return null;
+
+      const ci = Math.min(nav.cursor, queue.length - 1);
+      const entry = queue[ci] || queue[0];
+      const song = entry.song;
+      // Which numbered song within the whole setlist is this (multi-chart songs count once)?
+      const songKeyOf = (e) => e.si + '-' + e.songIdx;
+      const songOrdinal = new Set(queue.slice(0, ci + 1).map(songKeyOf)).size;
+      const totalSongs = new Set(queue.map(songKeyOf)).size;
+      const showPages = entry.att && resolveChartKind(entry.att.mime) === 'pdf' && numPages > 1;
+
+      const onStageClick = (e) => {
+        if (Date.now() - swipeGuardRef.current < 350) return; // a swipe, not a tap
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left, w = rect.width;
+        if (x < w * 0.28) step('prevPage');
+        else if (x > w * 0.72) step('nextPage');
+        else setChromeHidden(h => !h);
+      };
+      const onTouchStart = (e) => { if (e.touches.length === 1) { const t = e.touches[0]; touchRef.current = { x: t.clientX, y: t.clientY }; } else touchRef.current = null; };
+      const onTouchEnd = (e) => {
+        const s = touchRef.current; touchRef.current = null; if (!s) return;
+        const t = e.changedTouches[0]; const dx = t.clientX - s.x, dy = t.clientY - s.y;
+        if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+          swipeGuardRef.current = Date.now();
+          step(dx < 0 ? 'nextPage' : 'prevPage');
+        }
+      };
+
       return (
-        <div className="stage-overlay">
-          <div className="stage-overlay-inner">
-            <button className="stage-overlay-close" onClick={onClose}>✕  EXIT STAGE MODE  (Esc)</button>
-            {setlists.map((setlist, si) => {
-              let runningTime = 0;
-              return (
-                <div key={si} className="stage-overlay-set">
-                  <div className="stage-overlay-set-header">
-                    {setlist.name} · {setlist.songs.length} songs · {Math.round(setlist.totalTime)} min
-                  </div>
-                  {setlist.songs.map((song, songIdx) => {
-                    const t = runningTime;
-                    runningTime += Number(song.duration) || 0;
-                    const cue = song.arrangement ? getArrangementCue(song.arrangement) : '';
-                    const key = `${si}-${songIdx}`;
-                    const isCurrent = currentKey === key;
-                    const isDimmed = currentKey !== null && !isCurrent;
-                    return (
-                      <div
-                        key={song.id + '-' + songIdx}
-                        ref={isCurrent ? currentRef : null}
-                        className={`stage-overlay-song${isCurrent ? ' stage-current' : ''}${isDimmed ? ' stage-dimmed' : ''}`}
-                        onClick={() => setCurrentKey(isCurrent ? null : key)}
-                      >
-                        <span className="stage-song-num">{songIdx + 1}</span>
-                        <div className="stage-song-body">
-                          <div className="stage-song-title">
-                            {song.title}
-                            {isCurrent && <span className="stage-current-badge">▶ NOW</span>}
-                          </div>
-                          <div className="stage-song-meta">
-                            <span>{song.artist}</span>
-                            {song.key && <span className="stage-song-key">{song.key}</span>}
-                            {song.bpm && <span className="stage-song-bpm">{song.bpm} bpm</span>}
-                            <span className="stage-song-time">+{Math.round(t)}m</span>
-                          </div>
-                          {cue && <div className="stage-song-cue">▸ {cue}</div>}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
+        <div className={`stage-chart${chromeHidden ? ' chrome-hidden' : ''}`} data-contrast={contrast} data-testid="stage-chart">
+          <div className="stage-chart-bar">
+            <button className="stage-ctrl" onClick={() => setIndexOpen(o => !o)} title="Setlist (jump to song)" data-testid="stage-index-toggle">☰ Setlist</button>
+            <div className="stage-chart-title" data-testid="stage-song-title">{song.title || 'Untitled'}</div>
+            <div className="stage-chart-sub">
+              {song.key && <span className="sc-key">{song.key}</span>}
+              {song.bpm && <span>{song.bpm} BPM</span>}
+              <span>{songOrdinal}/{totalSongs}</span>
+            </div>
+            <div className="stage-chart-spacer" />
+            <button className="stage-ctrl" onClick={() => setFit(f => f === 'width' ? 'page' : 'width')} title="Fit width / whole page (F)" data-testid="stage-fit">{fit === 'width' ? '↔ Width' : '⤢ Page'}</button>
+            <button className="stage-ctrl" onClick={() => setContrast(c => STAGE_CONTRASTS[(STAGE_CONTRASTS.indexOf(c) + 1) % STAGE_CONTRASTS.length])} title="Contrast (dark / amber / light)" data-testid="stage-contrast">{STAGE_CONTRAST_ICON[contrast]}</button>
+            <button className="stage-ctrl" onClick={onClose} title="Exit Stage Mode (Esc)">✕ Exit</button>
           </div>
+
+          {err && <div className="stage-err-toast" role="alert" onClick={() => setErr('')}>{err}</div>}
+
+          <div className="stage-chart-stage" onClick={onStageClick} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} data-testid="stage-stage">
+            <ChartViewer entry={entry} page={nav.page} fit={fit} onPages={handlePages} onError={setErr} />
+          </div>
+
+          <div className="stage-chart-foot">
+            <button className="stage-ctrl stage-ctrl-lg" onClick={() => step('prevSong')} title="Previous song (↑)">⏮</button>
+            <button className="stage-ctrl stage-ctrl-lg" onClick={() => step('prevPage')} title="Back (←)">◀</button>
+            <span className="stage-page-ind" data-testid="stage-page-ind">
+              {showPages ? `p ${nav.page}/${numPages}` : (entry.att ? 'chart' : 'cue card')}
+            </span>
+            <button className="stage-ctrl stage-ctrl-lg" onClick={() => step('nextPage')} title="Forward (→ / Space / pedal)">▶</button>
+            <button className="stage-ctrl stage-ctrl-lg" onClick={() => step('nextSong')} title="Next song (↓)">⏭</button>
+            {entry.chartCount > 1 && (
+              <span className="stage-chart-chips" data-testid="stage-chart-chips">
+                {Array.from({ length: entry.chartCount }).map((_, ci) => {
+                  const target = queue.findIndex(e => e.si === entry.si && e.songIdx === entry.songIdx && e.chartIdx === ci);
+                  return (
+                    <button key={ci} className={`stage-chip${ci === entry.chartIdx ? ' sc-active' : ''}`}
+                      onClick={() => { numPagesRef.current = 1; setNumPages(1); setNav({ cursor: target, page: 1 }); }}
+                      title={`Chart ${ci + 1}`}>{ci + 1}</button>
+                  );
+                })}
+              </span>
+            )}
+          </div>
+
+          {indexOpen && (
+            <div className="stage-index" data-testid="stage-index">
+              <div className="stage-index-inner">
+                <button className="stage-overlay-close" onClick={() => setIndexOpen(false)}>✕  CLOSE SETLIST</button>
+                {setlists.map((setlist, si) => {
+                  let runningTime = 0;
+                  return (
+                    <div key={si} className="stage-overlay-set">
+                      <div className="stage-overlay-set-header">
+                        {setlist.name} · {setlist.songs.length} songs · {Math.round(setlist.totalTime)} min
+                      </div>
+                      {setlist.songs.map((s, songIdx) => {
+                        const t = runningTime; runningTime += Number(s.duration) || 0;
+                        const cue = s.arrangement ? getArrangementCue(s.arrangement) : '';
+                        const isCurrent = entry.si === si && entry.songIdx === songIdx;
+                        const chartCount = (s.attachments || []).filter(a => resolveChartKind(a.mime) !== 'unsupported').length;
+                        return (
+                          <div key={s.id + '-' + songIdx}
+                            className={`stage-overlay-song${isCurrent ? ' stage-current' : ''}`}
+                            onClick={() => openAt(si, songIdx)}>
+                            <span className="stage-song-num">{songIdx + 1}</span>
+                            <div className="stage-song-body">
+                              <div className="stage-song-title">
+                                {s.title}
+                                {isCurrent && <span className="stage-current-badge">▶ NOW</span>}
+                                {chartCount > 0 && <span className="stage-song-bpm"> · 📄{chartCount > 1 ? `×${chartCount}` : ''}</span>}
+                              </div>
+                              <div className="stage-song-meta">
+                                <span>{s.artist}</span>
+                                {s.key && <span className="stage-song-key">{s.key}</span>}
+                                {s.bpm && <span className="stage-song-bpm">{s.bpm} bpm</span>}
+                                <span className="stage-song-time">+{Math.round(t)}m</span>
+                              </div>
+                              {cue && <div className="stage-song-cue">▸ {cue}</div>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       );
     }
