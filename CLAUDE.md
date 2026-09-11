@@ -1332,6 +1332,42 @@ PowerTab shows the guidance card; §9aa (13/13) and §9ab (6/6) drives re-run gr
 
 ---
 
+## 9ad. Change log — 2026-09 StageStand: audio / click + MIDI (PR 9, third of the trio)
+
+Final follow-on phase — the **pragmatic subset** of spec F6/F7 the owner chose. Adds a Stage
+Mode transport: a per-song backing track (offline), a BPM-derived metronome click, and MIDI
+Program Change on song select. **No multichannel routing, no MIDI clock/SysEx** (not reliably
+achievable client-side — see `docs/ASSUMPTIONS.md`). Shipped **stacked onto PR #150's branch**
+at the owner's request (that PR then merged notation + audio/MIDI together).
+
+- **Pure helpers** (whitelisted + tested — `test/audio-midi.test.js`, +6): `beatIntervalMs(bpm)`
+  (clamped 20–400), `midiProgramChange(ch, prog)` / `midiControlChange(ch, cc, val)` (status-byte
+  build + clamping), `isRenderableChart(fmt)`. `resolveChartFormat` gains an **audio** branch
+  (mp3/m4a/wav/ogg/aac/flac/… + `audio/*`), and `buildChartQueue` filters via `isRenderableChart`
+  so a backing-track attachment is **not** drawn as a chart (it plays through the transport; a
+  song with only audio still gets a cue-card queue entry).
+- **Backing track**: reuses the existing IndexedDB `attStore` — audio files import as attachments
+  with `kind:'audio'` ("Backing track"), fully offline, and ride the existing backup path. No new
+  store. `AudioTransport` loads the blob → `<audio>` with play/pause + loop.
+- **Metronome**: `useMetronome` — Web Audio lookahead scheduler, accent on beat 1, click generated
+  from the song's BPM (no file needed). Auto-stops on song change and on overlay close.
+- **MIDI**: `MidiManager` (lazy — `navigator.requestMIDIAccess` only on connect; graceful when Web
+  MIDI is absent). A per-song preset `song.midi = { ch, program }` (edited via the shared
+  `MidiPresetFields` in both song forms; additive schema, persists through the `addSong`/`updateSong`
+  spread) is sent as a Program Change when the song becomes current in Stage Mode.
+- **Stage transport row** (auto-hides with the chrome): 🥁 click toggle (shows BPM), the audio
+  ▶/🔁 transport when the song has a backing track, and a 🎹 MIDI connect/status control. Import
+  widened (`SongAttachments` `accept` + audio kind detection).
+
+Verification: `npm test` → 189/189 (+6); Babel compile clean; headless drive of the real app →
+10/10, 0 page errors (MIDI preset persists; transport renders; click toggles Start/Stop and shows
+BPM; the backing-track play control enables after the IDB blob loads; Web MIDI connect path runs
+without throwing; the click stops on song change). The §9aa (13/13), §9ab (6/6) and §9ac (9/9)
+drives re-run green. Real MIDI **output to a device** and multi-second audio playback are device/
+gesture concerns verified in a real browser (the sandbox has no MIDI hardware).
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing

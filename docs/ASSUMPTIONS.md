@@ -77,8 +77,12 @@ phase on the same foundation.
   personal-only (no CRDT band-sync without a backend).
 - **F5 — Live transposition** of chord/lyric charts — **delivered in PR 8** for ChordPro
   (semitone up/down in Stage Mode). MusicXML/notation transposition remains future.
-- **F6 — Audio backing tracks / click routing** (Web Audio/AudioWorklet, multichannel).
-- **F7 — MIDI** program-change/CC triggers + a dedicated foot-pedal mapping UI (Web MIDI).
+- **F6 — Audio backing tracks / click** — **delivered in PR 9** (pragmatic subset): per-song
+  backing track stored offline in IndexedDB + a BPM-derived Web Audio metronome, play/stop/loop
+  in Stage Mode. **Multichannel output routing is not achievable client-side** and remains out.
+- **F7 — MIDI** — **delivered in PR 9** (pragmatic subset): per-song Program Change sent on song
+  select via the Web MIDI API. MIDI clock/SysEx and a dedicated foot-pedal mapping UI remain out
+  (clock/SysEx aren't reliably achievable client-side). See CLAUDE.md §9ad.
 - **F8 — Band-wide CRDT sync** (Yjs). Impossible without a backend; the existing full-backup
   export/restore is the current interchange between devices.
 - **F1 — OCR / Fuse.js fuzzy auto-match / bulk 100-PDF auto-organize.**
