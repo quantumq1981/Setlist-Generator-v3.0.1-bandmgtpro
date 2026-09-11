@@ -68,8 +68,9 @@ phase on the same foundation.
 - **F2 — Notation renderers** (OSMD/VexFlow/alphaTab/ABCJS/ChordPro) and importing those
   formats. Each is a heavy new CDN dependency; ship when there are real notation files to
   render. `resolveChartKind` is the seam.
-- **F2 — Page-pinned arrangement sections → PDF pages** (`PageMap`): jump a roadmap section
-  to its exact page. Builds on the arrangement roadmap already present.
+- **F2 — Page-pinned arrangement sections → PDF pages** (`PageMap`): **delivered in PR 7** —
+  a PDF chart carries `marks: [{id,label,page}]`, edited per-attachment in the song form, and
+  Stage Mode shows a jump-chip strip (`[` / `]` to step markers). See CLAUDE.md §9ab.
 - **F4 — Apple Pencil ink annotation engine** (pressure/tilt layers, undo/redo). Sizable;
   personal-only (no CRDT band-sync without a backend).
 - **F5 — Live transposition** of chord/lyric charts (needs ChordPro/MusicXML data).

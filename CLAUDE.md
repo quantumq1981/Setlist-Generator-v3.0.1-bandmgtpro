@@ -1252,6 +1252,41 @@ cycles, fit persists to `localStorage`, Esc exits; 0 JS page errors.
 
 ---
 
+## 9ab. Change log — 2026-09 StageStand: page-pin markers (PR 7, first of the follow-on trio)
+
+First of three follow-on phases the owner green-lit after §9aa merged (page-pinning →
+notation renderers → audio/click+MIDI, as separate PRs). Realizes the spec's F2
+"page-pinned arrangement sections" on top of the merged chart viewer: a PDF chart
+attachment can carry named jump points ("Verse 1" → p2, "Solo" → p3) and Stage Mode jumps
+straight to them. No new dependency.
+
+- **Schema (additive):** a PDF attachment's metadata may carry
+  `marks: [{ id, label, page }]`, alongside the existing `{id,name,mime,size,kind}`. It
+  persists through the same `attachments` spread as everything else — no new localStorage
+  key, no migration (a song without marks is byte-identical).
+- **Pure helpers** (module scope, after `stageNavStep`; extracted + unit-tested, whitelisted
+  in `extract-algorithm.js`): `normalizeMarks(marks)` (coerce pages to positive ints, drop
+  invalid, default a blank label to "Mark", sort by page) and `nextMarkPage(marks,
+  currentPage, dir)` (page of the next/prev marker, or null). `test/chart-marks.test.js`
+  locks both (6 assertions).
+- **Editor** in `SongAttachments`: each **PDF** row gets a 🔖 toggle opening a markers panel —
+  add `{label, page}` rows (Enter submits, blank label defaults to `Page N`), remove, live
+  count on the toggle. Image/other attachments don't show it (single-page).
+- **Stage viewer**: a `.stage-marks` chip strip renders above the transport for the current
+  PDF chart; tapping a chip jumps to that page (chip highlights when it's the current page),
+  and `[` / `]` jump to the prev/next marker. `jumpToPage` deliberately does **not** clamp to
+  the possibly-stale `numPagesRef` (chips render instantly from metadata, before the PDF
+  reports its count) — `PdfPageCanvas` clamps at render and `handlePages` re-clamps `nav.page`
+  once the true count is known, so an early tap still lands correctly. Strip auto-hides with
+  the rest of the chrome.
+
+Verification: `npm test` → 173/173 (+6); Babel compile clean (index.html + 3 companion
+files); headless Playwright drive of the real app → 6/6, 0 page errors (a PDF seeded with
+Verse@p1 + Solo@p2: strip shows both, tapping Solo jumps p1→p2 and highlights the chip, `[`
+jumps back to Verse@p1); the §9aa stage drive re-run → 13/13, no regression.
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing
