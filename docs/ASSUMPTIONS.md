@@ -65,15 +65,18 @@ contrast, persistence, and exit.
 These are intentionally out of Phase 1 to bound regression risk; each is a natural later
 phase on the same foundation.
 
-- **F2 — Notation renderers** (OSMD/VexFlow/alphaTab/ABCJS/ChordPro) and importing those
-  formats. Each is a heavy new CDN dependency; ship when there are real notation files to
-  render. `resolveChartKind` is the seam.
+- **F2 — Notation renderers** — **delivered in PR 8**: ChordPro (custom, transposable),
+  ABC (ABCJS), MusicXML (OpenSheetMusicDisplay), Guitar Pro (alphaTab), each lazy-loaded on
+  first use via the `resolveChartFormat` registry seam; import widened to accept them.
+  **PowerTab (.ptb)** has no in-browser renderer (the spec routes it through offline
+  conversion) so it shows a convert-to-GP/MusicXML guidance card. See CLAUDE.md §9ac.
 - **F2 — Page-pinned arrangement sections → PDF pages** (`PageMap`): **delivered in PR 7** —
   a PDF chart carries `marks: [{id,label,page}]`, edited per-attachment in the song form, and
   Stage Mode shows a jump-chip strip (`[` / `]` to step markers). See CLAUDE.md §9ab.
 - **F4 — Apple Pencil ink annotation engine** (pressure/tilt layers, undo/redo). Sizable;
   personal-only (no CRDT band-sync without a backend).
-- **F5 — Live transposition** of chord/lyric charts (needs ChordPro/MusicXML data).
+- **F5 — Live transposition** of chord/lyric charts — **delivered in PR 8** for ChordPro
+  (semitone up/down in Stage Mode). MusicXML/notation transposition remains future.
 - **F6 — Audio backing tracks / click routing** (Web Audio/AudioWorklet, multichannel).
 - **F7 — MIDI** program-change/CC triggers + a dedicated foot-pedal mapping UI (Web MIDI).
 - **F8 — Band-wide CRDT sync** (Yjs). Impossible without a backend; the existing full-backup

@@ -23,6 +23,10 @@ three small companion files loaded as `text/babel`: `featureHelp.js`,
 React 18, ReactDOM 18, `@babel/standalone` 7.29.7, jsPDF 2.5.1, PapaParse 5.4.1,
 PDF.js 3.11.174, mobile-drag-drop 3.0.0-rc.0.
 
+**Lazy-loaded notation renderers** (§9ac): abcjs 6.7.0, OpenSheetMusicDisplay 2.1.2,
+`@coderline/alphatab` 1.8.4 — jsDelivr `npm` URLs in `NOTATION_LIBS`, injected on first
+use of that format only (never on initial app load). Not in the `<head>`.
+
 ---
 
 ## 2. Working in this repo
@@ -1284,6 +1288,47 @@ Verification: `npm test` → 173/173 (+6); Babel compile clean (index.html + 3 c
 files); headless Playwright drive of the real app → 6/6, 0 page errors (a PDF seeded with
 Verse@p1 + Solo@p2: strip shows both, tapping Solo jumps p1→p2 and highlights the chip, `[`
 jumps back to Verse@p1); the §9aa stage drive re-run → 13/13, no regression.
+
+---
+
+## 9ac. Change log — 2026-09 StageStand: notation renderers (PR 8, second of the trio)
+
+Second follow-on phase. Extends the chart renderer registry beyond PDF/image to the
+notation formats the owner named — realizing spec F2/§5. Charts of these formats now import
+as attachments and render inside Stage Mode; **ChordPro** additionally transposes live.
+
+- **Format registry** (pure, whitelisted + tested): `chartExt(name)` + `resolveChartFormat(att)`
+  key off the filename EXTENSION first, then MIME (notation files usually have no MIME) →
+  `pdf|image|chordpro|abc|musicxml|guitarpro|powertab|unsupported`. `buildChartQueue` now uses
+  it, so notation attachments become queue entries; `SongAttachments`'s marks panel and the
+  stage `showPages`/`marks` gate migrated from the old `resolveChartKind` to it (PDF-only).
+  `resolveChartKind` stays for its own tests.
+- **ChordPro engine** (pure, no dependency, tested hard — `test/notation-chordpro.test.js`,
+  +11): `transposeNote` / `transposeChord` (preserve quality + slash bass, sharp/flat spelling,
+  wrap-around, negatives, non-chord pass-through), `parseChordProLine` (chord/lyric segments),
+  `parseChordPro` (directives title/subtitle/key/tempo, comments, sections). Covers plain chord
+  sheets and slash-rhythm charts too.
+- **Renderers** (module scope, near the other chart components): `ChordProChart`
+  (custom chord-over-lyric layout, applies transpose), `AbcChart` (ABCJS), `MusicXmlChart`
+  (OpenSheetMusicDisplay; text for .xml/.musicxml, bytes for compressed .mxl), `GuitarProChart`
+  (alphaTab, worker off / main-thread, Bravura font auto-resolved from the script dir),
+  `PowerTabNote` (**.ptb has no in-browser renderer** — the spec routes it through offline
+  conversion, so we show a convert-to-GP/MusicXML guidance card rather than fail).
+- **Lazy library loading** (`NOTATION_LIBS` + `loadScriptOnce` + `ensureNotationLib`): the three
+  heavy libs are injected only when a chart of that format is first opened — the app is byte-for-
+  byte unchanged on initial load for everyone else (mirrors the Gmail GIS lazy-load). jsDelivr
+  `npm` URLs mirror the pinned packages exactly.
+- **Import widened**: `SongAttachments`' file `accept` + hint now include the notation
+  extensions; `ChartViewer` dispatches on `resolveChartFormat`, reading blob text for
+  ChordPro/ABC. **Stage transpose UI**: a ♭ / n / ♯ control (ChordPro only) plus `-` / `=` / `0`
+  keys; transpose is ephemeral and per-song (resets on song change). No schema/localStorage change.
+
+Verification: `npm test` → 184/184 (+11); Babel compile clean (index.html + 3 companion files);
+headless Playwright drive of the real app (jsDelivr routed to the vendored npm copies; service
+worker blocked so the route can serve them) → 9/9, 0 unexpected page errors — ChordPro renders
+C,G,Am and `+2` → D,A,Bm, ABC → SVG (ABCJS), MusicXML → SVG (OSMD), alphaTab loads + mounts (a
+real .gp render needs a real file the sandbox can't synthesize — verified in a real browser),
+PowerTab shows the guidance card; §9aa (13/13) and §9ab (6/6) drives re-run green.
 
 ---
 

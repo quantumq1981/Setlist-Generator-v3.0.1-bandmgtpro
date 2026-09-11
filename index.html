@@ -659,6 +659,28 @@
     .stage-mark-chip.sc-active { background: var(--accent); border-color: var(--accent); color: #fff; }
     .stage-mark-chip-pg { font-size: .66rem; opacity: .6; font-variant-numeric: tabular-nums; }
     .stage-mark-chip.sc-active .stage-mark-chip-pg { opacity: .85; }
+    /* Transpose control (ChordPro) */
+    .stage-transpose { display: inline-flex; gap: .2rem; align-items: center; }
+    .stage-transpose .stage-ctrl { min-width: 2rem; text-align: center; }
+    /* Notation renderers (ABC / MusicXML / Guitar Pro) — libraries draw SVG/canvas inside */
+    .stage-notation { width: 100%; max-width: 1100px; margin: 0 auto; background: var(--sc-paper); border-radius: 3px; padding: 12px; box-shadow: 0 2px 26px rgba(0,0,0,.5); filter: var(--sc-chart-filter); }
+    .stage-notation svg { max-width: 100%; height: auto; }
+    .stage-powertab-note { flex-direction: column; text-align: center; padding: 2rem 1.5rem; }
+    /* ChordPro chord-over-lyric layout */
+    .stage-cp { width: 100%; max-width: 900px; margin: 0 auto; padding: 1.2rem 1rem 3rem; color: var(--sc-fg); font-family: 'Space Mono', ui-monospace, monospace; }
+    .stage-cp[data-fit="page"] { font-size: clamp(.8rem, 1.6vw, 1rem); }
+    .stage-cp-title { font-size: clamp(1.4rem, 4vw, 2.2rem); font-weight: 900; margin-bottom: .2rem; }
+    .stage-cp-sub { display: flex; gap: 1rem; flex-wrap: wrap; opacity: .7; margin-bottom: 1rem; font-size: .95rem; }
+    .stage-cp-sub .stage-cp-key { color: #8ab4ff; font-weight: 700; opacity: 1; }
+    .stage-cp-section { font-weight: 800; text-transform: uppercase; letter-spacing: .08em; font-size: .72rem; opacity: .6; margin: .9rem 0 .3rem; }
+    .stage-cp-comment { font-style: italic; opacity: .7; margin: .3rem 0; }
+    .stage-cp-empty { height: .9rem; }
+    .stage-cp-line { display: flex; flex-wrap: wrap; align-items: flex-end; margin-bottom: .35rem; }
+    .stage-cp-seg { display: inline-flex; flex-direction: column; white-space: pre; }
+    .stage-cp-chord { color: var(--accent); font-weight: 700; font-size: 1.05em; line-height: 1.1; }
+    .stage-chart[data-contrast="amber"] .stage-cp-chord { color: #ffd27f; }
+    .stage-chart[data-contrast="light"] .stage-cp-chord { color: #1d4ed8; }
+    .stage-cp-lyric { font-size: 1.1em; line-height: 1.3; }
 
     .stage-cue-card { margin: auto; max-width: 760px; padding: 2rem 1.5rem; text-align: center; color: var(--sc-fg); }
     .stage-cue-title { font-size: clamp(2rem, 6vw, 3.4rem); font-weight: 900; line-height: 1.05; margin-bottom: .6rem; }
@@ -1373,6 +1395,112 @@
       return 'unsupported';
     }
 
+    // Notation formats extend the renderer registry (spec F2/§5). Stored notation files have
+    // no reliable MIME (browsers report '' for .cho/.abc/.gp/.musicxml), so the format is
+    // resolved from the filename EXTENSION first, then MIME. Pure + headless-tested.
+    const CHART_EXT_FORMATS = {
+      pdf: 'pdf',
+      png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', bmp: 'image', svg: 'image', heic: 'image',
+      cho: 'chordpro', chopro: 'chordpro', chord: 'chordpro', chordpro: 'chordpro', crd: 'chordpro', pro: 'chordpro', txt: 'chordpro',
+      abc: 'abc',
+      xml: 'musicxml', musicxml: 'musicxml', mxl: 'musicxml',
+      gp: 'guitarpro', gp3: 'guitarpro', gp4: 'guitarpro', gp5: 'guitarpro', gpx: 'guitarpro', gp7: 'guitarpro', gtp: 'guitarpro',
+      ptb: 'powertab', ptbw: 'powertab',
+    };
+    function chartExt(name) {
+      const s = String(name || ''); const dot = s.lastIndexOf('.');
+      return dot >= 0 ? s.slice(dot + 1).toLowerCase().trim() : '';
+    }
+    function resolveChartFormat(att) {
+      if (!att) return 'unsupported';
+      const byExt = CHART_EXT_FORMATS[chartExt(att.name)];
+      if (byExt) return byExt;
+      const m = (att.mime || '').toLowerCase();
+      if (m === 'application/pdf' || m === 'application/x-pdf') return 'pdf';
+      if (m.indexOf('image/') === 0) return 'image';
+      if (m.indexOf('xml') >= 0) return 'musicxml';
+      if (m.indexOf('text/') === 0) return 'chordpro';
+      return 'unsupported';
+    }
+
+    /******** ChordPro engine — parse + transpose (pure, headless-tested) ********/
+    // Chord-over-lyric text: the one notation format with live transposition, and the only
+    // one needing no external library. Also covers plain chord sheets and slash-rhythm charts.
+    const NOTE_TO_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+    const PC_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const PC_FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+    const CHORDPRO_SECTION = {
+      soc: 'Chorus', start_of_chorus: 'Chorus', sov: 'Verse', start_of_verse: 'Verse',
+      sob: 'Bridge', start_of_bridge: 'Bridge', sot: 'Tab', start_of_tab: 'Tab',
+    };
+
+    // Transpose a single note letter (+ accidentals) by `semitones`. Spelling follows
+    // preferFlats (Db vs C#). Non-notes pass through unchanged.
+    function transposeNote(note, semitones, preferFlats) {
+      const m = /^([A-G])([#b]*)$/.exec(String(note || ''));
+      if (!m) return note;
+      let pc = NOTE_TO_PC[m[1]];
+      for (const ch of m[2]) pc += (ch === '#' ? 1 : -1);
+      pc = (((pc + (semitones | 0)) % 12) + 12) % 12;
+      return (preferFlats ? PC_FLAT : PC_SHARP)[pc];
+    }
+
+    // Transpose a chord symbol, preserving quality/extension and any slash bass
+    // (e.g. C#m7/G# → +2 → D#m7/A#). Tokens with no leading note (N.C., %) pass through.
+    function transposeChord(chord, semitones, preferFlats) {
+      if (chord == null || chord === '') return chord;
+      return String(chord).split('/').map(part => {
+        const m = /^([A-G][#b]*)(.*)$/.exec(part);
+        if (!m) return part;
+        return transposeNote(m[1], semitones, preferFlats) + m[2];
+      }).join('/');
+    }
+
+    // Split one ChordPro line into [{chord, text}] segments for chord-over-lyric layout.
+    // Leading text before the first [chord] becomes a chord-less segment.
+    function parseChordProLine(line) {
+      const s = String(line == null ? '' : line);
+      const re = /\[([^\]]+)\]/g;
+      if (!re.test(s)) return [{ chord: '', text: s }];
+      re.lastIndex = 0;
+      const segs = [];
+      let m, prevChord = null, prevEnd = 0, first = true;
+      while ((m = re.exec(s)) !== null) {
+        if (first && m.index > 0) segs.push({ chord: '', text: s.slice(0, m.index) });
+        first = false;
+        if (prevChord !== null) segs.push({ chord: prevChord, text: s.slice(prevEnd, m.index) });
+        prevChord = m[1]; prevEnd = re.lastIndex;
+      }
+      if (prevChord !== null) segs.push({ chord: prevChord, text: s.slice(prevEnd) });
+      return segs;
+    }
+
+    // Parse a ChordPro document into { directives, lines }. Directives handled: title/t,
+    // subtitle/st/artist, key, tempo/bpm, comment/c, and section start markers. Everything
+    // else becomes a lyric/chord line (or an empty line).
+    function parseChordPro(text) {
+      const directives = {};
+      const lines = [];
+      String(text == null ? '' : text).split(/\r?\n/).forEach(raw => {
+        const d = /^\s*\{\s*([^:}]+?)\s*(?::\s*([\s\S]*?))?\s*\}\s*$/.exec(raw);
+        if (d) {
+          const name = d[1].toLowerCase().trim();
+          const val = (d[2] || '').trim();
+          if (name === 'title' || name === 't') directives.title = val;
+          else if (name === 'subtitle' || name === 'st' || name === 'artist') directives.subtitle = val;
+          else if (name === 'key') directives.key = val;
+          else if (name === 'tempo' || name === 'bpm') directives.tempo = val;
+          else if (name === 'comment' || name === 'c') lines.push({ type: 'comment', text: val });
+          else if (CHORDPRO_SECTION[name]) lines.push({ type: 'section', label: CHORDPRO_SECTION[name] });
+          else if (/^(eoc|end_of_chorus|eov|end_of_verse|eob|end_of_bridge|eot|end_of_tab)$/.test(name)) lines.push({ type: 'section-end' });
+          return;
+        }
+        if (!raw.trim()) { lines.push({ type: 'empty' }); return; }
+        lines.push({ type: 'line', segments: parseChordProLine(raw) });
+      });
+      return { directives, lines };
+    }
+
     // Flatten setlists into an ordered stage-navigation queue. One entry per
     // renderable chart attachment; a song with no renderable chart yields a single
     // { att: null } entry (drawn as a cue card) so page-turns walk the entire set and
@@ -1382,7 +1510,7 @@
       const queue = [];
       (setlists || []).forEach((set, si) => {
         (set.songs || []).forEach((song, songIdx) => {
-          const charts = (song.attachments || []).filter(a => resolveChartKind(a.mime) !== 'unsupported');
+          const charts = (song.attachments || []).filter(a => resolveChartFormat(a) !== 'unsupported');
           if (charts.length) {
             charts.forEach((att, ci) => queue.push({
               key: si + '-' + songIdx + '-' + ci, si, songIdx, chartIdx: ci, chartCount: charts.length, song, att,
@@ -1520,7 +1648,7 @@
         <div className="attach-section">
           <div className="media-clips-label">Charts &amp; Lead Sheets</div>
           {list.map(att => {
-            const isPdf = resolveChartKind(att.mime) === 'pdf';
+            const isPdf = resolveChartFormat(att) === 'pdf';
             const marks = normalizeMarks(att.marks);
             const open = openMarks === att.id;
             return (
@@ -1562,9 +1690,9 @@
             );
           })}
           <div className="attach-add">
-            <input ref={fileRef} type="file" accept="application/pdf,image/*" multiple style={{ display: 'none' }} onChange={onPick} />
+            <input ref={fileRef} type="file" accept="application/pdf,image/*,.cho,.chopro,.chordpro,.crd,.pro,.txt,.abc,.xml,.musicxml,.mxl,.gp,.gp3,.gp4,.gp5,.gpx,.gp7,.ptb" multiple style={{ display: 'none' }} onChange={onPick} />
             <button className="btn btn-small" onClick={() => fileRef.current && fileRef.current.click()} disabled={busy}>{busy ? 'Saving…' : '📎 Attach chart / lead sheet'}</button>
-            <span className="attach-hint">PDF or image · embedded offline{usage ? ` · ${usage} stored` : ''}</span>
+            <span className="attach-hint">PDF, image, ChordPro, ABC, MusicXML, Guitar Pro · embedded offline{usage ? ` · ${usage} stored` : ''}</span>
           </div>
           {err && <div className="media-clip-err" role="alert">{err}</div>}
         </div>
@@ -9526,33 +9654,183 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
+    // Lazily inject a notation library's script on first use, so the app stays light for
+    // anyone not viewing that format (mirrors the Gmail GIS lazy-load). Cached per URL. The
+    // jsDelivr URLs mirror the pinned npm packages exactly; verification rewrites them to the
+    // local vendored copies. alphaTab auto-resolves its Bravura font from the script's dir.
+    const NOTATION_LIBS = {
+      abc: { url: 'https://cdn.jsdelivr.net/npm/abcjs@6.7.0/dist/abcjs-basic-min.js', global: 'ABCJS' },
+      musicxml: { url: 'https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@2.1.2/build/opensheetmusicdisplay.min.js', global: 'opensheetmusicdisplay' },
+      guitarpro: { url: 'https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/alphaTab.min.js', global: 'alphaTab' },
+    };
+    const _scriptCache = {};
+    function loadScriptOnce(url) {
+      if (_scriptCache[url]) return _scriptCache[url];
+      _scriptCache[url] = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = url; s.async = true;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error('Failed to load ' + url));
+        document.head.appendChild(s);
+      });
+      return _scriptCache[url];
+    }
+    function ensureNotationLib(format) {
+      const lib = NOTATION_LIBS[format];
+      if (!lib) return Promise.reject(new Error('No library for ' + format));
+      if (window[lib.global]) return Promise.resolve(window[lib.global]);
+      return loadScriptOnce(lib.url).then(() => {
+        if (!window[lib.global]) throw new Error(lib.global + ' did not initialize');
+        return window[lib.global];
+      });
+    }
+
+    // ChordPro renderer — chord-over-lyric, transposable, no external library. Each segment
+    // stacks its (transposed) chord above its lyric chunk so chords sit over the right word.
+    function ChordProChart({ text, transpose, fit }) {
+      const doc = React.useMemo(() => parseChordPro(text || ''), [text]);
+      const semi = transpose | 0;
+      const tc = (c) => (c && semi ? transposeChord(c, semi, false) : c);
+      return (
+        <div className="stage-cp" data-fit={fit} data-testid="stage-chordpro">
+          {doc.directives.title && <div className="stage-cp-title">{doc.directives.title}</div>}
+          {(doc.directives.subtitle || doc.directives.key || doc.directives.tempo) && (
+            <div className="stage-cp-sub">
+              {doc.directives.subtitle && <span>{doc.directives.subtitle}</span>}
+              {doc.directives.key && <span className="stage-cp-key">Key {tc(doc.directives.key)}{semi ? ` (${semi > 0 ? '+' : ''}${semi})` : ''}</span>}
+              {doc.directives.tempo && <span>{doc.directives.tempo} BPM</span>}
+            </div>
+          )}
+          {doc.lines.map((ln, i) => {
+            if (ln.type === 'empty') return <div key={i} className="stage-cp-empty" />;
+            if (ln.type === 'comment') return <div key={i} className="stage-cp-comment">{ln.text}</div>;
+            if (ln.type === 'section') return <div key={i} className="stage-cp-section">{ln.label}</div>;
+            if (ln.type === 'section-end') return null;
+            return (
+              <div key={i} className="stage-cp-line">
+                {ln.segments.map((s, j) => (
+                  <span key={j} className="stage-cp-seg">
+                    <span className="stage-cp-chord">{s.chord ? tc(s.chord) : ' '}</span>
+                    <span className="stage-cp-lyric">{s.text || ' '}</span>
+                  </span>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // ABC notation via ABCJS (lazy).
+    function AbcChart({ text, onError }) {
+      const ref = React.useRef(null);
+      React.useEffect(() => {
+        let alive = true;
+        ensureNotationLib('abc').then(ABCJS => {
+          if (!alive || !ref.current) return;
+          ref.current.innerHTML = '';
+          ABCJS.renderAbc(ref.current, text || '', { responsive: 'resize' });
+        }).catch(() => onError && onError('Could not load the ABC renderer (needs a connection the first time).'));
+        return () => { alive = false; };
+      }, [text]);
+      return <div ref={ref} className="stage-notation stage-abc" data-testid="stage-abc" />;
+    }
+
+    // MusicXML via OpenSheetMusicDisplay (lazy). Uncompressed .xml/.musicxml load as text;
+    // compressed .mxl loads from its bytes.
+    function MusicXmlChart({ blob, compressed, onError }) {
+      const ref = React.useRef(null);
+      React.useEffect(() => {
+        let alive = true, osmd = null;
+        (async () => {
+          try {
+            const lib = await ensureNotationLib('musicxml');
+            if (!alive || !ref.current) return;
+            ref.current.innerHTML = '';
+            osmd = new lib.OpenSheetMusicDisplay(ref.current, { autoResize: true, backend: 'svg', drawingParameters: 'default' });
+            const data = compressed ? new Uint8Array(await blob.arrayBuffer()) : await blob.text();
+            await osmd.load(data);
+            if (!alive) return;
+            osmd.render();
+          } catch (e) { if (alive) onError && onError('Could not render this MusicXML file.'); }
+        })();
+        return () => { alive = false; };
+      }, [blob, compressed]);
+      return <div ref={ref} className="stage-notation stage-musicxml" data-testid="stage-musicxml" />;
+    }
+
+    // Guitar Pro via alphaTab (lazy). Worker off (main-thread render) to avoid worker-path
+    // wiring; the Bravura font auto-resolves from the script's sibling font/ directory.
+    function GuitarProChart({ blob, onError }) {
+      const ref = React.useRef(null);
+      React.useEffect(() => {
+        let alive = true, api = null;
+        (async () => {
+          try {
+            const at = await ensureNotationLib('guitarpro');
+            if (!alive || !ref.current) return;
+            ref.current.innerHTML = '';
+            api = new at.AlphaTabApi(ref.current, { core: { useWorkers: false }, player: { enablePlayer: false } });
+            api.error && api.error.on(() => onError && onError('Could not render this Guitar Pro file.'));
+            api.load(new Uint8Array(await blob.arrayBuffer()));
+          } catch (e) { if (alive) onError && onError('Could not render this Guitar Pro file.'); }
+        })();
+        return () => { alive = false; if (api && api.destroy) { try { api.destroy(); } catch (e) {} } };
+      }, [blob]);
+      return <div ref={ref} className="stage-notation stage-guitarpro" data-testid="stage-guitarpro" />;
+    }
+
+    // PowerTab (.ptb) has no in-browser renderer — the spec routes it through offline
+    // conversion. Show clear guidance instead of failing silently.
+    function PowerTabNote({ att }) {
+      return (
+        <div className="stage-chart-loading stage-powertab-note" data-testid="stage-powertab">
+          <div style={{ fontSize: '2rem', marginBottom: '.5rem' }}>🎸</div>
+          <div><strong>PowerTab (.ptb) can’t be rendered in the browser.</strong></div>
+          <div style={{ opacity: .75, marginTop: '.5rem', maxWidth: '34rem', lineHeight: 1.5 }}>
+            Open <em>{att && att.name}</em> in TuxGuitar (free) and export it as <strong>Guitar Pro (.gp)</strong>{' '}
+            or <strong>MusicXML</strong>, then attach that file — StageStand renders both.
+          </div>
+        </div>
+      );
+    }
+
     // Dispatches a queue entry to the right renderer, lazily pulling the blob from IDB.
-    function ChartViewer({ entry, page, fit, onPages, onError }) {
+    function ChartViewer({ entry, page, fit, transpose, onPages, onError }) {
       const att = entry && entry.att;
-      const kind = att ? resolveChartKind(att.mime) : 'cue';
+      const fmt = att ? resolveChartFormat(att) : 'cue';
       const [blob, setBlob] = React.useState(null);
+      const [text, setText] = React.useState(null);
       const [state, setState] = React.useState('idle'); // idle | loading | ready | missing
 
-      // Cue cards and images are single-page; report that up so nav math is correct.
-      React.useEffect(() => { if (kind !== 'pdf') onPages && onPages(1); }, [kind, att && att.id]);
+      // Only PDFs are multi-page; every other format reports a single page for nav math.
+      React.useEffect(() => { if (fmt !== 'pdf') onPages && onPages(1); }, [fmt, att && att.id]);
 
       React.useEffect(() => {
         let cancelled = false;
-        setBlob(null);
+        setBlob(null); setText(null);
         if (!att) { setState('idle'); return; }
+        if (fmt === 'powertab') { setState('ready'); return; } // no blob needed
         setState('loading');
-        attStore.get(att.id).then(b => {
+        attStore.get(att.id).then(async b => {
           if (cancelled) return;
-          if (b) { setBlob(b); setState('ready'); } else { setState('missing'); }
+          if (!b) { setState('missing'); return; }
+          if (fmt === 'chordpro' || fmt === 'abc') { try { setText(await b.text()); } catch (e) {} }
+          setBlob(b); setState('ready');
         }).catch(() => { if (!cancelled) setState('missing'); });
         return () => { cancelled = true; };
-      }, [att && att.id]);
+      }, [att && att.id, fmt]);
 
       if (!att) return <CueCard song={entry.song} />;
-      if (state === 'loading') return <div className="stage-chart-loading">Loading chart…</div>;
+      if (fmt === 'powertab') return <PowerTabNote att={att} />;
+      if (state === 'loading' || state === 'idle') return <div className="stage-chart-loading">Loading chart…</div>;
       if (state === 'missing' || !blob) return <div className="stage-chart-loading">Chart isn’t available offline on this device.</div>;
-      if (kind === 'pdf') return <PdfPageCanvas blob={blob} page={page} fit={fit} onPages={onPages} onError={onError} />;
-      if (kind === 'image') return <ImageChart blob={blob} fit={fit} onError={onError} />;
+      if (fmt === 'pdf') return <PdfPageCanvas blob={blob} page={page} fit={fit} onPages={onPages} onError={onError} />;
+      if (fmt === 'image') return <ImageChart blob={blob} fit={fit} onError={onError} />;
+      if (fmt === 'chordpro') return text != null ? <ChordProChart text={text} transpose={transpose} fit={fit} /> : <div className="stage-chart-loading">Loading…</div>;
+      if (fmt === 'abc') return text != null ? <AbcChart text={text} onError={onError} /> : <div className="stage-chart-loading">Loading…</div>;
+      if (fmt === 'musicxml') return <MusicXmlChart blob={blob} compressed={chartExt(att.name) === 'mxl'} onError={onError} />;
+      if (fmt === 'guitarpro') return <GuitarProChart blob={blob} onError={onError} />;
       return <div className="stage-chart-loading">Unsupported chart format.</div>;
     }
 
@@ -9568,11 +9846,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const prefs = React.useMemo(loadStagePrefs, []);
       const [fit, setFit] = React.useState(() => (prefs.fit === 'page' ? 'page' : 'width'));
       const [contrast, setContrast] = React.useState(() => (STAGE_CONTRASTS.indexOf(prefs.contrast) >= 0 ? prefs.contrast : 'dark'));
+      const [transpose, setTranspose] = React.useState(0); // ChordPro only; ephemeral, per-song
       const swipeGuardRef = React.useRef(0);
       const touchRef = React.useRef(null);
 
       React.useEffect(() => { navRef.current = nav; }, [nav]);
       React.useEffect(() => { saveStagePrefs({ fit, contrast }); }, [fit, contrast]);
+      // Transpose is per-song and ephemeral — reset it whenever the current song changes.
+      React.useEffect(() => { setTranspose(0); }, [nav.cursor]);
 
       // Reset when the overlay opens.
       React.useEffect(() => {
@@ -9580,7 +9861,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         navRef.current = { cursor: 0, page: 1 };
         numPagesRef.current = 1;
         setNav({ cursor: 0, page: 1 }); setNumPages(1);
-        setIndexOpen(false); setChromeHidden(false); setErr('');
+        setIndexOpen(false); setChromeHidden(false); setErr(''); setTranspose(0);
       }, [open]);
 
       const step = React.useCallback((dir) => {
@@ -9631,6 +9912,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             case 'Home': e.preventDefault(); step('first'); break;
             case 'End': e.preventDefault(); step('last'); break;
             case 'f': case 'F': setFit(f => f === 'width' ? 'page' : 'width'); break;
+            case '-': case '_': e.preventDefault(); setTranspose(t => t - 1); setChromeHidden(false); break;
+            case '=': case '+': e.preventDefault(); setTranspose(t => t + 1); setChromeHidden(false); break;
+            case '0': e.preventDefault(); setTranspose(0); break;
             case '[': case ']': {
               e.preventDefault();
               const cur = navRef.current;
@@ -9662,8 +9946,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const songKeyOf = (e) => e.si + '-' + e.songIdx;
       const songOrdinal = new Set(queue.slice(0, ci + 1).map(songKeyOf)).size;
       const totalSongs = new Set(queue.map(songKeyOf)).size;
-      const showPages = entry.att && resolveChartKind(entry.att.mime) === 'pdf' && numPages > 1;
-      const marks = entry.att ? normalizeMarks(entry.att.marks) : [];
+      const fmt = entry.att ? resolveChartFormat(entry.att) : 'cue';
+      const showPages = fmt === 'pdf' && numPages > 1;
+      const marks = fmt === 'pdf' ? normalizeMarks(entry.att.marks) : [];
 
       const onStageClick = (e) => {
         if (Date.now() - swipeGuardRef.current < 350) return; // a swipe, not a tap
@@ -9694,6 +9979,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               <span>{songOrdinal}/{totalSongs}</span>
             </div>
             <div className="stage-chart-spacer" />
+            {fmt === 'chordpro' && (
+              <span className="stage-transpose" data-testid="stage-transpose">
+                <button className="stage-ctrl" onClick={() => setTranspose(t => t - 1)} title="Transpose down a semitone (−)">♭</button>
+                <button className="stage-ctrl" onClick={() => setTranspose(0)} title="Reset transpose (0)">{transpose > 0 ? '+' + transpose : transpose}</button>
+                <button className="stage-ctrl" onClick={() => setTranspose(t => t + 1)} title="Transpose up a semitone (+)">♯</button>
+              </span>
+            )}
             <button className="stage-ctrl" onClick={() => setFit(f => f === 'width' ? 'page' : 'width')} title="Fit width / whole page (F)" data-testid="stage-fit">{fit === 'width' ? '↔ Width' : '⤢ Page'}</button>
             <button className="stage-ctrl" onClick={() => setContrast(c => STAGE_CONTRASTS[(STAGE_CONTRASTS.indexOf(c) + 1) % STAGE_CONTRASTS.length])} title="Contrast (dark / amber / light)" data-testid="stage-contrast">{STAGE_CONTRAST_ICON[contrast]}</button>
             <button className="stage-ctrl" onClick={onClose} title="Exit Stage Mode (Esc)">✕ Exit</button>
@@ -9702,7 +9994,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           {err && <div className="stage-err-toast" role="alert" onClick={() => setErr('')}>{err}</div>}
 
           <div className="stage-chart-stage" onClick={onStageClick} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} data-testid="stage-stage">
-            <ChartViewer entry={entry} page={nav.page} fit={fit} onPages={handlePages} onError={setErr} />
+            <ChartViewer entry={entry} page={nav.page} fit={fit} transpose={transpose} onPages={handlePages} onError={setErr} />
           </div>
 
           {marks.length > 0 && (
