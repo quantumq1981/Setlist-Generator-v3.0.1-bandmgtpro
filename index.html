@@ -642,6 +642,23 @@
     .stage-chart-chips { display: flex; gap: .25rem; }
     .stage-chip { font-size: .68rem; padding: .18rem .48rem; border-radius: 10px; border: 1px solid rgba(128,128,128,.3); background: transparent; color: var(--sc-fg); cursor: pointer; opacity: .6; font-family: inherit; }
     .stage-chip.sc-active { opacity: 1; background: var(--accent); border-color: var(--accent); color: #fff; }
+    /* Page-pin marker jump strip (roadmap) */
+    .stage-marks {
+      flex-shrink: 0; display: flex; gap: .35rem; overflow-x: auto; padding: .4rem .7rem;
+      background: var(--sc-panel); border-top: 1px solid rgba(128,128,128,.14);
+      -webkit-overflow-scrolling: touch; transition: opacity .2s ease, transform .2s ease;
+    }
+    .stage-chart.chrome-hidden .stage-marks { opacity: 0; transform: translateY(60%); pointer-events: none; }
+    .stage-mark-chip {
+      flex-shrink: 0; display: inline-flex; align-items: baseline; gap: .3rem;
+      font-family: inherit; font-size: .8rem; color: var(--sc-fg); cursor: pointer;
+      background: rgba(128,128,128,.14); border: 1px solid rgba(128,128,128,.24);
+      border-radius: 999px; padding: .28rem .6rem; white-space: nowrap;
+    }
+    .stage-mark-chip:hover { background: rgba(128,128,128,.26); }
+    .stage-mark-chip.sc-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .stage-mark-chip-pg { font-size: .66rem; opacity: .6; font-variant-numeric: tabular-nums; }
+    .stage-mark-chip.sc-active .stage-mark-chip-pg { opacity: .85; }
 
     .stage-cue-card { margin: auto; max-width: 760px; padding: 2rem 1.5rem; text-align: center; color: var(--sc-fg); }
     .stage-cue-title { font-size: clamp(2rem, 6vw, 3.4rem); font-weight: 900; line-height: 1.05; margin-bottom: .6rem; }
@@ -908,6 +925,17 @@
     .attach-size { font-family: 'Space Mono', monospace; font-size: .66rem; color: var(--text-muted); white-space: nowrap; }
     .attach-add { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; margin-top: .3rem; }
     .attach-hint { font-size: .66rem; color: var(--text-muted); }
+    /* Page-pin markers editor (under a PDF attachment row) */
+    .attach-marks { margin: 0 0 .3rem 1.4rem; padding: .4rem .5rem; border-left: 2px solid var(--accent); background: var(--primary); border-radius: 0 5px 5px 0; }
+    .attach-marks-hint { font-size: .64rem; color: var(--text-muted); margin-bottom: .35rem; }
+    .attach-mark-row { display: flex; align-items: center; gap: .4rem; padding: .12rem 0; font-size: .74rem; }
+    .attach-mark-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .attach-mark-page { font-size: .66rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+    .attach-mark-add { display: flex; gap: .35rem; align-items: center; margin-top: .3rem; }
+    .attach-mark-in { font-size: .74rem; padding: .22rem .4rem; background: var(--secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: inherit; }
+    .attach-mark-in { flex: 1; min-width: 0; }
+    .attach-mark-in.attach-mark-pg { flex: 0 0 3.2rem; width: 3.2rem; }
+    .attach-mark-in:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
     .attach-open { display: inline-flex; align-items: center; gap: .35rem; padding: .3rem .5rem; border-radius: 6px; background: var(--primary); border: 1px solid var(--border); color: var(--text); font-size: .76rem; cursor: pointer; }
     .attach-open:hover { border-color: var(--accent); }
     .attach-open-name { font-weight: 600; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1413,6 +1441,35 @@
       }
     }
 
+    // Page-pin markers (spec F2): a PDF chart attachment may carry
+    // `att.marks = [{ id, label, page }]` — named jump points into the chart
+    // ("Verse 1" → p2, "Solo" → p3). These two helpers are pure and headless-tested.
+
+    // Clean + sort a marks list: coerce pages to positive ints, drop marks with no
+    // valid page, default a blank label to "Mark", sort by page (stable on ties).
+    function normalizeMarks(marks) {
+      return (marks || [])
+        .map(m => ({ id: m && m.id, label: String((m && m.label) || '').trim(), page: parseInt(m && m.page, 10) }))
+        .filter(m => Number.isFinite(m.page) && m.page >= 1)
+        .map(m => ({ id: m.id, label: m.label || 'Mark', page: m.page }))
+        .sort((a, b) => a.page - b.page);
+    }
+
+    // The page of the next/previous marker relative to `currentPage`, or null when
+    // there is none in that direction. `dir` is 'next' | 'prev'.
+    function nextMarkPage(marks, currentPage, dir) {
+      const sorted = normalizeMarks(marks);
+      if (!sorted.length) return null;
+      const cur = Math.max(1, currentPage | 0);
+      if (dir === 'prev') {
+        let best = null;
+        for (const m of sorted) { if (m.page < cur) best = m.page; else break; }
+        return best;
+      }
+      for (const m of sorted) { if (m.page > cur) return m.page; }
+      return null;
+    }
+
     // Shared attach editor for both song forms — file picker + list + kind + remove, writing
     // blobs to IndexedDB and only metadata back to the form. Mirrors the Reference-Clips rows.
     function SongAttachments({ attachments, onChange }) {
@@ -1420,6 +1477,8 @@
       const [busy, setBusy] = React.useState(false);
       const [err, setErr] = React.useState('');
       const [usage, setUsage] = React.useState('');
+      const [openMarks, setOpenMarks] = React.useState(null); // attId whose markers panel is open
+      const [markDraft, setMarkDraft] = React.useState({});    // { [attId]: {label, page} }
       const fileRef = React.useRef(null);
       const refreshUsage = () => {
         if (navigator.storage && navigator.storage.estimate) {
@@ -1445,22 +1504,63 @@
       };
       const remove = (att) => { attStore.del(att.id).catch(() => {}); onChange((attachments || []).filter(a => a.id !== att.id)); };
       const setKind = (att, kind) => onChange((attachments || []).map(a => a.id === att.id ? { ...a, kind } : a));
+      // Page-pin markers (PDF charts only): named jump points into the chart.
+      const draftFor = (id) => markDraft[id] || { label: '', page: '' };
+      const setDraft = (id, patch) => setMarkDraft(d => ({ ...d, [id]: { ...draftFor(id), ...patch } }));
+      const addMark = (att) => {
+        const d = draftFor(att.id);
+        const page = parseInt(d.page, 10);
+        if (!(page >= 1)) return;
+        const mark = { id: genId(), label: (d.label || '').trim() || `Page ${page}`, page };
+        onChange((attachments || []).map(a => a.id === att.id ? { ...a, marks: [...(a.marks || []), mark] } : a));
+        setMarkDraft(dd => ({ ...dd, [att.id]: { label: '', page: '' } }));
+      };
+      const removeMark = (att, markId) => onChange((attachments || []).map(a => a.id === att.id ? { ...a, marks: (a.marks || []).filter(m => m.id !== markId) } : a));
       return (
         <div className="attach-section">
           <div className="media-clips-label">Charts &amp; Lead Sheets</div>
-          {list.map(att => (
-            <div key={att.id} className="attach-row">
-              <span className="attach-ic">{att.mime && att.mime.startsWith('image/') ? '🖼' : '📄'}</span>
-              <span className="attach-name" title={att.name}>{att.name}</span>
-              <select className="attach-kind" value={att.kind || 'other'} onChange={e => setKind(att, e.target.value)}>
-                <option value="leadsheet">Lead sheet</option>
-                <option value="chart">Drum / chart</option>
-                <option value="other">Document</option>
-              </select>
-              <span className="attach-size">{fmtBytes(att.size)}</span>
-              <button className="btn btn-small" style={{ color: 'var(--error)', borderColor: 'var(--error)', padding: '0 .3rem' }} onClick={() => remove(att)} title="Remove attachment">✕</button>
-            </div>
-          ))}
+          {list.map(att => {
+            const isPdf = resolveChartKind(att.mime) === 'pdf';
+            const marks = normalizeMarks(att.marks);
+            const open = openMarks === att.id;
+            return (
+            <React.Fragment key={att.id}>
+              <div className="attach-row">
+                <span className="attach-ic">{att.mime && att.mime.startsWith('image/') ? '🖼' : '📄'}</span>
+                <span className="attach-name" title={att.name}>{att.name}</span>
+                <select className="attach-kind" value={att.kind || 'other'} onChange={e => setKind(att, e.target.value)}>
+                  <option value="leadsheet">Lead sheet</option>
+                  <option value="chart">Drum / chart</option>
+                  <option value="other">Document</option>
+                </select>
+                {isPdf && (
+                  <button type="button" className={`btn btn-small${open ? ' active' : ''}`} onClick={() => setOpenMarks(open ? null : att.id)} title="Page markers — named jump points into this chart" data-testid="marks-toggle">
+                    🔖{marks.length ? ` ${marks.length}` : ''}
+                  </button>
+                )}
+                <span className="attach-size">{fmtBytes(att.size)}</span>
+                <button className="btn btn-small" style={{ color: 'var(--error)', borderColor: 'var(--error)', padding: '0 .3rem' }} onClick={() => remove(att)} title="Remove attachment">✕</button>
+              </div>
+              {isPdf && open && (
+                <div className="attach-marks" data-testid="attach-marks">
+                  <div className="attach-marks-hint">Named jump points into this chart — tap one in Stage Mode to jump straight to that page.</div>
+                  {marks.map(m => (
+                    <div key={m.id} className="attach-mark-row">
+                      <span className="attach-mark-label">{m.label}</span>
+                      <span className="attach-mark-page">p{m.page}</span>
+                      <button type="button" className="btn btn-small" style={{ color: 'var(--error)', borderColor: 'var(--error)', padding: '0 .3rem' }} onClick={() => removeMark(att, m.id)} title="Remove marker">✕</button>
+                    </div>
+                  ))}
+                  <div className="attach-mark-add">
+                    <input className="attach-mark-in" placeholder="Label (e.g. Solo)" value={draftFor(att.id).label} onChange={e => setDraft(att.id, { label: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addMark(att); } }} />
+                    <input className="attach-mark-in attach-mark-pg" type="number" min="1" placeholder="Pg" value={draftFor(att.id).page} onChange={e => setDraft(att.id, { page: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addMark(att); } }} />
+                    <button type="button" className="btn btn-small" onClick={() => addMark(att)} data-testid="mark-add">+ Add</button>
+                  </div>
+                </div>
+              )}
+            </React.Fragment>
+            );
+          })}
           <div className="attach-add">
             <input ref={fileRef} type="file" accept="application/pdf,image/*" multiple style={{ display: 'none' }} onChange={onPick} />
             <button className="btn btn-small" onClick={() => fileRef.current && fileRef.current.click()} disabled={busy}>{busy ? 'Saving…' : '📎 Attach chart / lead sheet'}</button>
@@ -9507,6 +9607,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         setNav(prev => { const p = clampChartPage(prev.page, total); return p === prev.page ? prev : { cursor: prev.cursor, page: p }; });
       }, []);
 
+      // Jump the current chart to a specific page (page-pin markers). We do NOT clamp to
+      // numPagesRef here — it may still be 1 before the PDF has reported its page count, and
+      // the chips render instantly from metadata. PdfPageCanvas clamps at render and
+      // handlePages re-clamps nav.page once the true count is known, so an early click is safe.
+      const jumpToPage = React.useCallback((page) => {
+        setNav(prev => ({ cursor: prev.cursor, page: Math.max(1, page | 0) }));
+        setChromeHidden(false);
+      }, []);
+
       // Keyboard + Bluetooth foot-pedal navigation (most pedals emit arrow/PageUp-Down keys).
       React.useEffect(() => {
         if (!open) return;
@@ -9522,12 +9631,20 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             case 'Home': e.preventDefault(); step('first'); break;
             case 'End': e.preventDefault(); step('last'); break;
             case 'f': case 'F': setFit(f => f === 'width' ? 'page' : 'width'); break;
+            case '[': case ']': {
+              e.preventDefault();
+              const cur = navRef.current;
+              const ent = queue[Math.min(cur.cursor, queue.length - 1)];
+              const target = ent && ent.att ? nextMarkPage(ent.att.marks, cur.page, e.key === ']' ? 'next' : 'prev') : null;
+              if (target) jumpToPage(target);
+              break;
+            }
             default: break;
           }
         };
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
-      }, [open, indexOpen, step, onClose]);
+      }, [open, indexOpen, step, onClose, jumpToPage, queue]);
 
       // Auto-hide chrome after a few idle seconds.
       React.useEffect(() => {
@@ -9546,6 +9663,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const songOrdinal = new Set(queue.slice(0, ci + 1).map(songKeyOf)).size;
       const totalSongs = new Set(queue.map(songKeyOf)).size;
       const showPages = entry.att && resolveChartKind(entry.att.mime) === 'pdf' && numPages > 1;
+      const marks = entry.att ? normalizeMarks(entry.att.marks) : [];
 
       const onStageClick = (e) => {
         if (Date.now() - swipeGuardRef.current < 350) return; // a swipe, not a tap
@@ -9586,6 +9704,18 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           <div className="stage-chart-stage" onClick={onStageClick} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} data-testid="stage-stage">
             <ChartViewer entry={entry} page={nav.page} fit={fit} onPages={handlePages} onError={setErr} />
           </div>
+
+          {marks.length > 0 && (
+            <div className="stage-marks" data-testid="stage-marks">
+              {marks.map(m => (
+                <button key={m.id} className={`stage-mark-chip${nav.page === m.page ? ' sc-active' : ''}`}
+                  onClick={() => jumpToPage(m.page)} title={`Jump to ${m.label} (p${m.page})`}>
+                  <span className="stage-mark-chip-label">{m.label}</span>
+                  <span className="stage-mark-chip-pg">p{m.page}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="stage-chart-foot">
             <button className="stage-ctrl stage-ctrl-lg" onClick={() => step('prevSong')} title="Previous song (↑)">⏮</button>
