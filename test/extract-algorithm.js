@@ -214,6 +214,8 @@ for (const f of [
   // Notation format registry + ChordPro engine (consts + pure fns; decls don't run at load).
   'CHART_EXT_FORMATS', 'NOTE_TO_PC', 'PC_SHARP', 'PC_FLAT', 'CHORDPRO_SECTION',
   'chartExt', 'resolveChartFormat', 'transposeNote', 'transposeChord', 'parseChordProLine', 'parseChordPro',
+  // Audio/MIDI pure helpers.
+  'isRenderableChart', 'beatIntervalMs', 'midiProgramChange', 'midiControlChange',
   // Tonal-gravity helpers + the transition scorer they compose into.
   'normalizeKey_TG', 'getCircleIndex_TG', 'circleDistance_TG', 'areRelativeKeys_TG',
   'areParallelKeys_TG', 'circleDirection_TG', 'anchorKeyBonus_TG', 'determineAnchorKey_TG',
@@ -231,6 +233,7 @@ const EXPORTS = [
   'resolveChartKind', 'buildChartQueue', 'clampChartPage', 'stageNavStep',
   'normalizeMarks', 'nextMarkPage',
   'chartExt', 'resolveChartFormat', 'transposeNote', 'transposeChord', 'parseChordProLine', 'parseChordPro',
+  'isRenderableChart', 'beatIntervalMs', 'midiProgramChange', 'midiControlChange',
   'normalizeKey_TG', 'circleDistance_TG', 'determineAnchorKey_TG', 'calculateTonalTransitionScore_TG',
   'calculateSetlistQualityScore', 'generateTonalDiagnostics_TG', 'simulatedAnnealingOptimize',
   'generateSetlistsCore', 'generateSetlistsCore_WithTonalGravity', 'validateGenerationConstraints',
