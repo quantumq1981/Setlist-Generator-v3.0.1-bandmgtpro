@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-09-07.
+Last updated: 2026-09-10.
 
 ---
 
@@ -1197,6 +1197,58 @@ band" seeds 11 songs and the demo press kit (tagline + bio verified via the live
 + persisted in `localStorage`), all surviving a reload; a pre-seeded custom EPK
 (`MY CUSTOM TAGLINE`) survives load with no Zemba injected — proving the owner's data is
 untouched; 0 JS page errors.
+
+---
+
+## 9aa. Change log — 2026-09 StageStand: full-screen chart viewer / live music stand (PR 6)
+
+Realizes the `LiveMusicStandAddon.md` ("StageStand") spec's non-negotiable outcome #1 —
+*instantly display the exact chart/page for the selected song from a setlist* — **inside the
+app**, not as the separate pnpm/Vite/Capacitor/Yjs monorepo the spec literally describes (that
+model is irreconcilable with §1's no-build single-file constraint; see `docs/ASSUMPTIONS.md`
+for the full reconciliation and the deferred-phase map). It builds on infrastructure that was
+already ~60% of the spec's core: the IndexedDB attachment store (§9x), setlists, the
+arrangement roadmap (§11), the `StageModeOverlay`, and the **already-loaded PDF.js** — so it
+adds **zero new dependencies**. The prior Stage Mode showed only text; `AttachmentRow` opened
+charts in a new browser tab (wrong on stage). Both gaps are closed.
+
+- **Pure navigation core** (module scope, after `fmtBytes`; extracted + unit-tested via
+  `test/extract-algorithm.js`, so add any new symbol to its whitelist): `resolveChartKind(mime)`
+  (`'pdf'|'image'|'unsupported'` — the renderer-registry key and the extension seam for future
+  MusicXML/Guitar Pro/ABC/ChordPro), `buildChartQueue(setlists)` (flattens sets to an ordered
+  nav queue — one entry per renderable chart attachment; a chart-less song yields one
+  `att:null` **cue-card** entry so paging walks the whole set and every song shows *something*),
+  `clampChartPage`, and `stageNavStep(queue, cursor, page, numPages, dir)` (page/song stepping
+  with spill-over across entries and set boundaries; `dir` ∈ nextPage/prevPage/nextSong/prevSong
+  /first/last). `test/stage-chart.test.js` locks all four (18 assertions).
+- **Renderer components** (near `StageModeOverlay`): `PdfPageCanvas` (renders one page to a
+  `<canvas>` via `window.pdfjsLib` — the first *render* use of PDF.js, which until now only
+  extracted text on import; cancels the in-flight `renderTask` on page/size change, re-renders
+  on resize/orientation, warms the next page, destroys the doc on unmount), `ImageChart`
+  (object-URL `<img>`, revoked on unmount), `CueCard` (big title + `deriveArrangementSections`,
+  run through `sanitizeNotation`), and `ChartViewer` (dispatches on `resolveChartKind`, lazily
+  pulling the blob from `attStore.get`).
+- **`StageModeOverlay` reworked into a chart-first music stand** (same
+  `{open,onClose,setlists}` props, same trigger button/mount): full-bleed `ChartViewer`; a
+  ☰ Setlist index overlay (reuses the old `.stage-overlay-*` list) to jump to any song; auto-
+  hiding top/bottom chrome; click-zones (left 28% ⟵, right 28% ⟶, center toggles chrome) and a
+  horizontal-swipe handler (vertical scroll preserved for tall charts); a page/song indicator
+  and per-song multi-chart chips. **Keyboard + Bluetooth foot-pedal nav** (most pedals emit
+  arrow/PageUp-Down keys): →/PageDown/Space next page, ←/PageUp prev, ↓/j next song, ↑/k prev
+  song, Home/End set ends, F fit, Esc closes the index then exits. Fit (`width`/`page`) and
+  contrast (dark/amber/light, for stage lighting) persist in the **new additive** localStorage
+  key `setlist_stage_prefs_v3` (never touches an existing key — §1 data-contract rule).
+- **Deferred** (see `docs/ASSUMPTIONS.md`, mapped to the spec's F-modules): notation renderers
+  (OSMD/VexFlow/alphaTab/ABCJS/ChordPro) + importing those formats; the Apple-Pencil ink
+  annotation engine; audio backing-tracks/click + MIDI triggers; band-wide CRDT sync (no
+  backend); and page-pinning arrangement sections to PDF pages.
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → 167/167 (+18);
+headless Playwright drive of the **real app** (vendored npm libs, PDF.js worker repointed local)
+→ 13/13 — seed a 3-song library (PDF / image / chart-less), generate, open Stage Mode: the PDF
+attachment renders to a sized canvas reporting 2 pages, → advances p1→p2, the image renders to
+an `<img>`, the chart-less song renders a cue card carrying its arrangement text, contrast
+cycles, fit persists to `localStorage`, Esc exits; 0 JS page errors.
 
 ---
 
