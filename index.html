@@ -672,6 +672,16 @@
     .stage-audio-label { font-size: .74rem; opacity: .7; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .stage-midi { font-size: .8rem; opacity: .8; padding: .3rem .5rem; border: 1px solid rgba(74,222,128,.4); border-radius: 7px; color: #86efac; }
     .stage-midi-err { font-size: .74rem; color: #fca5a5; opacity: .85; }
+    /* Annotation ink overlay */
+    .stage-anno-wrap { position: relative; width: 100%; display: flex; justify-content: center; }
+    .stage-anno-canvas { position: absolute; z-index: 3; cursor: crosshair; touch-action: none; }
+    .stage-anno-tools {
+      position: fixed; top: 3.4rem; left: 50%; transform: translateX(-50%); z-index: 10001;
+      display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; max-width: 94vw;
+      background: var(--sc-panel); padding: .35rem .5rem; border-radius: 10px; border: 1px solid rgba(128,128,128,.25);
+    }
+    .stage-anno-color { width: 1.4rem; height: 1.4rem; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+    .stage-anno-color.on { border-color: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.45); }
     .stage-transpose .stage-ctrl { min-width: 2rem; text-align: center; }
     /* Notation renderers (ABC / MusicXML / Guitar Pro) — libraries draw SVG/canvas inside */
     .stage-notation { width: 100%; max-width: 1100px; margin: 0 auto; background: var(--sc-paper); border-radius: 3px; padding: 12px; box-shadow: 0 2px 26px rgba(0,0,0,.5); filter: var(--sc-chart-filter); }
@@ -1346,40 +1356,56 @@
     // the whole library) is the wrong store for PDFs/scans. Song objects carry only metadata
     // ({id,name,mime,size,kind}); the bytes live here keyed by attachment id, so a player has the
     // charts offline. Backup/restore serialise this store to base64 (see exportBackup/importBackup).
-    const ATT_DB = 'bandleaderhq', ATT_STORE = 'attachments', ATT_MAX_BYTES = 15 * 1024 * 1024;
+    const ATT_DB = 'bandleaderhq', ATT_STORE = 'attachments', ANNO_STORE = 'annotations', ATT_MAX_BYTES = 15 * 1024 * 1024;
     const ATT_KIND_LABELS = { leadsheet: 'Lead sheet', chart: 'Drum / chart', audio: 'Backing track', other: 'Document' };
     let _attDbPromise = null;
+    // DB v2 adds the 'annotations' store (personal ink layers, §9ae). onupgradeneeded is
+    // additive and fires for existing v1 users — 'attachments' data is preserved.
     const attOpen = () => {
       if (_attDbPromise) return _attDbPromise;
       _attDbPromise = new Promise((resolve, reject) => {
         if (typeof indexedDB === 'undefined' || !indexedDB) { reject(new Error('IndexedDB unavailable')); return; }
-        const req = indexedDB.open(ATT_DB, 1);
-        req.onupgradeneeded = () => { const db = req.result; if (!db.objectStoreNames.contains(ATT_STORE)) db.createObjectStore(ATT_STORE); };
+        const req = indexedDB.open(ATT_DB, 2);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(ATT_STORE)) db.createObjectStore(ATT_STORE);
+          if (!db.objectStoreNames.contains(ANNO_STORE)) db.createObjectStore(ANNO_STORE);
+        };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
       });
       return _attDbPromise;
     };
-    const attTx = (mode, fn) => attOpen().then(db => new Promise((resolve, reject) => {
-      const tx = db.transaction(ATT_STORE, mode);
-      const req = fn(tx.objectStore(ATT_STORE));
+    const _idbTx = (store, mode, fn) => attOpen().then(db => new Promise((resolve, reject) => {
+      const tx = db.transaction(store, mode);
+      const req = fn(tx.objectStore(store));
       tx.oncomplete = () => resolve(req ? req.result : undefined);
       tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error || new Error('attachment transaction aborted'));
+      tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
     }));
+    const _idbAll = (store) => attOpen().then(db => new Promise((resolve, reject) => {
+      const tx = db.transaction(store, 'readonly');
+      const out = {};
+      const cur = tx.objectStore(store).openCursor();
+      cur.onsuccess = () => { const c = cur.result; if (c) { out[c.key] = c.value; c.continue(); } else resolve(out); };
+      cur.onerror = () => reject(cur.error);
+    })).catch(() => ({}));
+    const attTx = (mode, fn) => _idbTx(ATT_STORE, mode, fn);
     const attStore = {
       put: (id, blob) => attTx('readwrite', s => s.put(blob, id)),
       get: (id) => attTx('readonly', s => s.get(id)),
       del: (id) => attTx('readwrite', s => s.delete(id)),
       clear: () => attTx('readwrite', s => s.clear()),
       keys: () => attTx('readonly', s => s.getAllKeys()),
-      all: () => attOpen().then(db => new Promise((resolve, reject) => {
-        const tx = db.transaction(ATT_STORE, 'readonly');
-        const out = {};
-        const cur = tx.objectStore(ATT_STORE).openCursor();
-        cur.onsuccess = () => { const c = cur.result; if (c) { out[c.key] = c.value; c.continue(); } else resolve(out); };
-        cur.onerror = () => reject(cur.error);
-      })).catch(() => ({})),
+      all: () => _idbAll(ATT_STORE),
+    };
+    // Annotation strokes, keyed `${attId}:${page}` → { strokes: [...] }. Personal + offline.
+    const annoStore = {
+      get: (key) => _idbTx(ANNO_STORE, 'readonly', s => s.get(key)),
+      set: (key, rec) => _idbTx(ANNO_STORE, 'readwrite', s => s.put(rec, key)),
+      del: (key) => _idbTx(ANNO_STORE, 'readwrite', s => s.delete(key)),
+      clear: () => _idbTx(ANNO_STORE, 'readwrite', s => s.clear()),
+      all: () => _idbAll(ANNO_STORE),
     };
     // Pure base64 <-> blob helpers for the backup payload (unit-testable in Node).
     const bytesToB64 = (bytes) => {
@@ -1463,6 +1489,30 @@
     function midiControlChange(channel, controller, value) {
       const ch = Math.max(0, Math.min(15, ((channel | 0) || 1) - 1));
       return [0xB0 | ch, Math.max(0, Math.min(127, controller | 0)), Math.max(0, Math.min(127, value | 0))];
+    }
+
+    /******** Annotation geometry (spec F4, pure + headless-tested) ********/
+    // Per-(attachment,page) key for the annotation store. Stroke points are stored in
+    // NORMALISED chart coordinates (0–1) so ink stays pinned as the chart zooms/reflows.
+    function annoKey(attId, page) { return String(attId || '') + ':' + (page || 1); }
+    // Distance from point (px,py) to segment (ax,ay)-(bx,by). Backs the eraser hit-test.
+    function pointSegDist(px, py, ax, ay, bx, by) {
+      const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+      let t = len2 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const cx = ax + t * dx, cy = ay + t * dy;
+      return Math.hypot(px - cx, py - cy);
+    }
+    // True if the eraser at (x,y) with `radius` touches a stroke (any point or segment).
+    // Coordinates are normalised (same space as stored points); radius normalised too.
+    function strokeNearPoint(stroke, x, y, radius) {
+      const pts = stroke && stroke.points;
+      if (!pts || !pts.length) return false;
+      if (pts.length === 1) return Math.hypot(pts[0].x - x, pts[0].y - y) <= radius;
+      for (let i = 1; i < pts.length; i++) {
+        if (pointSegDist(x, y, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y) <= radius) return true;
+      }
+      return false;
     }
 
     /******** ChordPro engine — parse + transpose (pure, headless-tested) ********/
@@ -9613,7 +9663,105 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     // Renders one page of a PDF attachment to a canvas via the already-loaded PDF.js.
     // Loads the document once per blob; cancels any in-flight render on page/size change
     // (PDF.js throws on concurrent renders to one canvas) and re-renders on resize.
-    function PdfPageCanvas({ blob, page, fit, onPages, onError }) {
+    // Personal ink annotation overlay (spec F4). A transparent canvas positioned exactly over
+    // the chart element (`targetRef`); Pointer Events (pressure) draw pen/highlighter strokes,
+    // eraser removes whole strokes. Points are stored NORMALISED so ink stays pinned as the
+    // chart zooms/reflows. Strokes persist to IndexedDB per (attId, page); undo/redo/clear.
+    // Local-only — no band sync (that half needs a backend).
+    function AnnotationLayer({ attId, page, targetRef }) {
+      const canvasRef = React.useRef(null);
+      const strokesRef = React.useRef([]);
+      const redoRef = React.useRef([]);
+      const drawingRef = React.useRef(null);
+      const sizeRef = React.useRef({ w: 1, h: 1 });
+      const keyRef = React.useRef(annoKey(attId, page));
+      const [tool, setTool] = React.useState('pen');
+      const [color, setColor] = React.useState('#ff5252');
+      const [, force] = React.useReducer(x => x + 1, 0);
+
+      const drawStroke = (ctx, st, w, h) => {
+        const pts = st.points; if (!pts || !pts.length) return;
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = st.color; ctx.fillStyle = st.color;
+        ctx.globalAlpha = st.tool === 'highlighter' ? 0.35 : 1;
+        const base = st.tool === 'highlighter' ? st.width * 3.2 : st.width;
+        if (pts.length === 1) { ctx.beginPath(); ctx.arc(pts[0].x * w, pts[0].y * h, base / 2, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; return; }
+        for (let i = 1; i < pts.length; i++) {
+          const a = pts[i - 1], b = pts[i], pr = ((a.p || 0.5) + (b.p || 0.5)) / 2;
+          ctx.lineWidth = st.tool === 'highlighter' ? base : base * (0.5 + pr);
+          ctx.beginPath(); ctx.moveTo(a.x * w, a.y * h); ctx.lineTo(b.x * w, b.y * h); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      };
+      const redraw = () => {
+        const canvas = canvasRef.current; if (!canvas) return;
+        const ctx = canvas.getContext('2d'); const { w, h } = sizeRef.current;
+        ctx.clearRect(0, 0, w, h);
+        const all = drawingRef.current ? strokesRef.current.concat([drawingRef.current]) : strokesRef.current;
+        all.forEach(st => drawStroke(ctx, st, w, h));
+      };
+      const syncSize = React.useCallback(() => {
+        const canvas = canvasRef.current, t = targetRef && targetRef.current; if (!canvas || !t) return;
+        const w = t.clientWidth || 1, h = t.clientHeight || 1;
+        sizeRef.current = { w, h };
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.floor(w * dpr); canvas.height = Math.floor(h * dpr);
+        canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+        canvas.style.left = (t.offsetLeft || 0) + 'px'; canvas.style.top = (t.offsetTop || 0) + 'px';
+        canvas.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+        redraw();
+      }, [targetRef]);
+
+      React.useEffect(() => {
+        keyRef.current = annoKey(attId, page);
+        let cancelled = false; strokesRef.current = []; redoRef.current = [];
+        annoStore.get(keyRef.current).then(rec => { if (!cancelled) { strokesRef.current = (rec && rec.strokes) || []; redraw(); force(); } }).catch(() => {});
+        return () => { cancelled = true; };
+      }, [attId, page]);
+
+      React.useEffect(() => {
+        syncSize();
+        const t = targetRef && targetRef.current;
+        if (t && typeof ResizeObserver !== 'undefined') { const ro = new ResizeObserver(syncSize); ro.observe(t); return () => ro.disconnect(); }
+        window.addEventListener('resize', syncSize); return () => window.removeEventListener('resize', syncSize);
+      }, [syncSize]);
+
+      const save = () => { annoStore.set(keyRef.current, { strokes: strokesRef.current }).catch(() => {}); };
+      const evtToNorm = (e) => { const r = canvasRef.current.getBoundingClientRect(); return { x: (e.clientX - r.left) / (r.width || 1), y: (e.clientY - r.top) / (r.height || 1), p: e.pressure > 0 ? e.pressure : 0.5 }; };
+      const eraseAt = (x, y) => { const n = strokesRef.current.length; strokesRef.current = strokesRef.current.filter(st => !strokeNearPoint(st, x, y, 0.02)); if (strokesRef.current.length !== n) { redoRef.current = []; save(); redraw(); force(); } };
+      const onDown = (e) => {
+        e.preventDefault(); const c = canvasRef.current; if (c.setPointerCapture) try { c.setPointerCapture(e.pointerId); } catch (er) {}
+        const pt = evtToNorm(e);
+        if (tool === 'eraser') { eraseAt(pt.x, pt.y); return; }
+        drawingRef.current = { tool, color, width: 3, points: [pt] }; redraw();
+      };
+      const onMove = (e) => {
+        if (tool === 'eraser') { if (e.buttons) { const p = evtToNorm(e); eraseAt(p.x, p.y); } return; }
+        if (!drawingRef.current) return; drawingRef.current.points.push(evtToNorm(e)); redraw();
+      };
+      const onUp = () => { if (drawingRef.current) { strokesRef.current = strokesRef.current.concat([drawingRef.current]); drawingRef.current = null; redoRef.current = []; save(); redraw(); force(); } };
+      const undo = () => { if (!strokesRef.current.length) return; const s = strokesRef.current.slice(); redoRef.current.push(s.pop()); strokesRef.current = s; save(); redraw(); force(); };
+      const redo = () => { if (!redoRef.current.length) return; strokesRef.current = strokesRef.current.concat([redoRef.current.pop()]); save(); redraw(); force(); };
+      const clearAll = () => { strokesRef.current = []; redoRef.current = []; save(); redraw(); force(); };
+      const COLORS = ['#ff5252', '#ffd54a', '#4ade80', '#3d7bff', '#000000'];
+
+      return (
+        <>
+          <canvas ref={canvasRef} className="stage-anno-canvas" data-testid="stage-anno-canvas" style={{ touchAction: 'none' }}
+            onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onClick={e => e.stopPropagation()} />
+          <div className="stage-anno-tools" data-testid="stage-anno-tools" onClick={e => e.stopPropagation()}>
+            <button className={`stage-ctrl${tool === 'pen' ? ' sc-active' : ''}`} onClick={() => setTool('pen')} title="Pen">✒️</button>
+            <button className={`stage-ctrl${tool === 'highlighter' ? ' sc-active' : ''}`} onClick={() => setTool('highlighter')} title="Highlighter">🖊️</button>
+            <button className={`stage-ctrl${tool === 'eraser' ? ' sc-active' : ''}`} onClick={() => setTool('eraser')} title="Eraser">🧽</button>
+            {COLORS.map(c => <button key={c} className={`stage-anno-color${color === c ? ' on' : ''}`} style={{ background: c }} onClick={() => setColor(c)} title={c} />)}
+            <button className="stage-ctrl" onClick={undo} title="Undo" data-testid="anno-undo">↶</button>
+            <button className="stage-ctrl" onClick={redo} title="Redo">↷</button>
+            <button className="stage-ctrl" onClick={clearAll} title="Clear all ink">🗑</button>
+          </div>
+        </>
+      );
+    }
+
+    function PdfPageCanvas({ blob, page, fit, anno, onPages, onError }) {
       const canvasRef = React.useRef(null);
       const pdfRef = React.useRef(null);
       const taskRef = React.useRef(null);
@@ -9677,12 +9825,18 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         return () => { cancelled = true; if (taskRef.current) { try { taskRef.current.cancel(); } catch (e) {} taskRef.current = null; } };
       }, [ready, page, fit, resizeTick]);
 
-      return <canvas ref={canvasRef} className="stage-chart-canvas" />;
+      return (
+        <div className="stage-anno-wrap">
+          <canvas ref={canvasRef} className="stage-chart-canvas" />
+          {anno && anno.enabled && <AnnotationLayer attId={anno.attId} page={anno.page} targetRef={canvasRef} />}
+        </div>
+      );
     }
 
     // Renders an image attachment (scanned chart / photo of a lead sheet).
-    function ImageChart({ blob, fit, onError }) {
+    function ImageChart({ blob, fit, anno, onError }) {
       const [url, setUrl] = React.useState(null);
+      const imgRef = React.useRef(null);
       React.useEffect(() => {
         if (!blob) return;
         const u = URL.createObjectURL(blob);
@@ -9690,7 +9844,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         return () => URL.revokeObjectURL(u);
       }, [blob]);
       if (!url) return null;
-      return <img src={url} className="stage-chart-img" data-fit={fit} alt="" onError={() => onError && onError('Could not load this image chart.')} />;
+      return (
+        <div className="stage-anno-wrap">
+          <img ref={imgRef} src={url} className="stage-chart-img" data-fit={fit} alt="" onError={() => onError && onError('Could not load this image chart.')} />
+          {anno && anno.enabled && <AnnotationLayer attId={anno.attId} page={anno.page} targetRef={imgRef} />}
+        </div>
+      );
     }
 
     // The "chart" for a song with no attachment: title + arrangement roadmap, big.
@@ -9949,7 +10108,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     }
 
     // Dispatches a queue entry to the right renderer, lazily pulling the blob from IDB.
-    function ChartViewer({ entry, page, fit, transpose, onPages, onError }) {
+    function ChartViewer({ entry, page, fit, transpose, anno, onPages, onError }) {
       const att = entry && entry.att;
       const fmt = att ? resolveChartFormat(att) : 'cue';
       const [blob, setBlob] = React.useState(null);
@@ -9978,8 +10137,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       if (fmt === 'powertab') return <PowerTabNote att={att} />;
       if (state === 'loading' || state === 'idle') return <div className="stage-chart-loading">Loading chart…</div>;
       if (state === 'missing' || !blob) return <div className="stage-chart-loading">Chart isn’t available offline on this device.</div>;
-      if (fmt === 'pdf') return <PdfPageCanvas blob={blob} page={page} fit={fit} onPages={onPages} onError={onError} />;
-      if (fmt === 'image') return <ImageChart blob={blob} fit={fit} onError={onError} />;
+      if (fmt === 'pdf') return <PdfPageCanvas blob={blob} page={page} fit={fit} anno={anno} onPages={onPages} onError={onError} />;
+      if (fmt === 'image') return <ImageChart blob={blob} fit={fit} anno={anno} onError={onError} />;
       if (fmt === 'chordpro') return text != null ? <ChordProChart text={text} transpose={transpose} fit={fit} /> : <div className="stage-chart-loading">Loading…</div>;
       if (fmt === 'abc') return text != null ? <AbcChart text={text} onError={onError} /> : <div className="stage-chart-loading">Loading…</div>;
       if (fmt === 'musicxml') return <MusicXmlChart blob={blob} compressed={chartExt(att.name) === 'mxl'} onError={onError} />;
@@ -10000,6 +10159,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [fit, setFit] = React.useState(() => (prefs.fit === 'page' ? 'page' : 'width'));
       const [contrast, setContrast] = React.useState(() => (STAGE_CONTRASTS.indexOf(prefs.contrast) >= 0 ? prefs.contrast : 'dark'));
       const [transpose, setTranspose] = React.useState(0); // ChordPro only; ephemeral, per-song
+      const [annoOn, setAnnoOn] = React.useState(false);   // ink annotation mode (pdf/image)
       const [midi, setMidi] = React.useState({ connected: MidiManager.connected(), name: MidiManager.outputName(), error: '' });
       const metro = useMetronome();
       const swipeGuardRef = React.useRef(0);
@@ -10037,7 +10197,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         navRef.current = { cursor: 0, page: 1 };
         numPagesRef.current = 1;
         setNav({ cursor: 0, page: 1 }); setNumPages(1);
-        setIndexOpen(false); setChromeHidden(false); setErr(''); setTranspose(0);
+        setIndexOpen(false); setChromeHidden(false); setErr(''); setTranspose(0); setAnnoOn(false);
       }, [open]);
 
       const step = React.useCallback((dir) => {
@@ -10128,6 +10288,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const marks = fmt === 'pdf' ? normalizeMarks(entry.att.marks) : [];
 
       const onStageClick = (e) => {
+        if (annoOn) return; // taps draw while annotating, not flip pages
         if (Date.now() - swipeGuardRef.current < 350) return; // a swipe, not a tap
         const rect = e.currentTarget.getBoundingClientRect();
         const x = e.clientX - rect.left, w = rect.width;
@@ -10135,8 +10296,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         else if (x > w * 0.72) step('nextPage');
         else setChromeHidden(h => !h);
       };
-      const onTouchStart = (e) => { if (e.touches.length === 1) { const t = e.touches[0]; touchRef.current = { x: t.clientX, y: t.clientY }; } else touchRef.current = null; };
+      const onTouchStart = (e) => { if (annoOn) return; if (e.touches.length === 1) { const t = e.touches[0]; touchRef.current = { x: t.clientX, y: t.clientY }; } else touchRef.current = null; };
       const onTouchEnd = (e) => {
+        if (annoOn) return;
         const s = touchRef.current; touchRef.current = null; if (!s) return;
         const t = e.changedTouches[0]; const dx = t.clientX - s.x, dy = t.clientY - s.y;
         if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.5) {
@@ -10163,6 +10325,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <button className="stage-ctrl" onClick={() => setTranspose(t => t + 1)} title="Transpose up a semitone (+)">♯</button>
               </span>
             )}
+            {(fmt === 'pdf' || fmt === 'image') && (
+              <button className={`stage-ctrl${annoOn ? ' sc-active' : ''}`} onClick={() => setAnnoOn(o => !o)} title="Annotate (draw on the chart)" data-testid="stage-anno-toggle">✏️</button>
+            )}
             <button className="stage-ctrl" onClick={() => setFit(f => f === 'width' ? 'page' : 'width')} title="Fit width / whole page (F)" data-testid="stage-fit">{fit === 'width' ? '↔ Width' : '⤢ Page'}</button>
             <button className="stage-ctrl" onClick={() => setContrast(c => STAGE_CONTRASTS[(STAGE_CONTRASTS.indexOf(c) + 1) % STAGE_CONTRASTS.length])} title="Contrast (dark / amber / light)" data-testid="stage-contrast">{STAGE_CONTRAST_ICON[contrast]}</button>
             <button className="stage-ctrl" onClick={onClose} title="Exit Stage Mode (Esc)">✕ Exit</button>
@@ -10171,7 +10336,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           {err && <div className="stage-err-toast" role="alert" onClick={() => setErr('')}>{err}</div>}
 
           <div className="stage-chart-stage" onClick={onStageClick} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} data-testid="stage-stage">
-            <ChartViewer entry={entry} page={nav.page} fit={fit} transpose={transpose} onPages={handlePages} onError={setErr} />
+            <ChartViewer entry={entry} page={nav.page} fit={fit} transpose={transpose} anno={{ enabled: annoOn, attId: entry.att && entry.att.id, page: nav.page }} onPages={handlePages} onError={setErr} />
           </div>
 
           {marks.length > 0 && (
@@ -13452,7 +13617,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             attachments[id] = { mime: blob.type || 'application/octet-stream', b64: await blobToB64(blob) };
           }
         } catch (e) { /* no IDB / no attachments — back up localStorage only */ }
-        const payload = JSON.stringify({ app: 'bandleaderhq', kind: 'full-backup', exportedAt: new Date().toISOString(), stores, attachments }, null, 1);
+        // Annotation ink layers are plain JSON (vector strokes) — no base64 needed.
+        let annotations = {};
+        try { annotations = await annoStore.all(); } catch (e) { annotations = {}; }
+        const payload = JSON.stringify({ app: 'bandleaderhq', kind: 'full-backup', exportedAt: new Date().toISOString(), stores, attachments, annotations }, null, 1);
         const blob = new Blob([payload], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -13481,6 +13649,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               await attStore.clear();
               if (data.attachments) {
                 for (const [id, a] of Object.entries(data.attachments)) { await attStore.put(id, b64ToBlob(a.b64, a.mime)); }
+              }
+              await annoStore.clear();
+              if (data.annotations) {
+                for (const [k, rec] of Object.entries(data.annotations)) { await annoStore.set(k, rec); }
               }
             } catch (e) { /* IDB unavailable — localStorage was still restored */ }
             localStorage.setItem('setlist_last_backup_at', String(Date.now()));
