@@ -1368,6 +1368,42 @@ gesture concerns verified in a real browser (the sandbox has no MIDI hardware).
 
 ---
 
+## 9ae. Change log — 2026-09 StageStand: personal ink annotation (PR 10) + audio/MIDI re-land
+
+Two things in one PR. (1) **Re-lands the audio/MIDI work (§9ad)** that did not make it onto
+`main` — PR #150 merged only the notation half; the audio/MIDI commits were cherry-picked back
+on. (2) Adds **F4 personal ink annotation** on charts. The band-sync half of F4 (F8) needs a
+backend and stays out — this is a **local-only, per-device** ink layer.
+
+- **IndexedDB v2.** `attOpen` bumped 1→2, adding an `annotations` object store beside
+  `attachments` (additive `onupgradeneeded`; existing v1 users keep their blobs). New
+  `annoStore` (get/set/del/clear/all) keyed `${attId}:${page}`; the tx/cursor plumbing was
+  factored into `_idbTx`/`_idbAll` shared by both stores.
+- **Pure geometry** (whitelisted + tested — `test/annotation.test.js`, +4): `annoKey`,
+  `pointSegDist` (point→segment distance), `strokeNearPoint` (eraser hit-test over a stroke's
+  segments). Stroke points are stored **normalised (0–1)** so ink stays pinned as the chart
+  zooms/reflows.
+- **`AnnotationLayer`** — a transparent `<canvas>` positioned exactly over the chart element
+  (`targetRef` + `ResizeObserver`, sized/offset to the target). Pointer Events capture pressure
+  (→ pen line-width; highlighter is wide + translucent; eraser removes whole strokes). Pen/
+  highlighter/eraser, 5 colors, undo/redo/clear in a floating toolbar. Strokes load/save to
+  `annoStore` on each change. Tilt/azimuth are not used (pressure is the meaningful signal).
+- **Wired into the raster renderers only** (PDF + image): `PdfPageCanvas`/`ImageChart` now wrap
+  their element in `.stage-anno-wrap` and mount `AnnotationLayer` when annotation is on;
+  `ChartViewer` threads an `anno` prop. Notation/ChordPro/cue cards don't annotate. A ✏️ toggle
+  in the stage bar (shown for pdf/image) enables it; while on, tap-zone/swipe page-turns are
+  suppressed so drawing works (keyboard/pedal still turn pages).
+- **Backup/restore** carries annotations (plain JSON `{strokes}` per key — no base64); old
+  backups without the key restore unchanged. No `localStorage` key added (ink lives in IDB).
+
+Verification: `npm test` → 193/193 (+4); Babel compile clean; headless drive → 9/9, 0 page
+errors (✏️ shows for a PDF; drawing persists to IDB in normalised coords; a 2nd stroke → 2,
+undo → 1; toggling off removes the canvas; the stroke survives a reload). The §9aa (13/13),
+§9ab (6/6), §9ac (9/9) and §9ad (10/10) drives re-run green. Real Apple-Pencil pressure/tilt is
+a device concern verified on the iPad (the sandbox drives synthetic pointer events).
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing
