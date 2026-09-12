@@ -36,7 +36,8 @@ test('resolveChartFormat keys off extension first, then MIME', () => {
   assert.equal(resolveChartFormat({ name: 'blob', mime: 'image/jpeg' }), 'image');
   assert.equal(resolveChartFormat({ name: 'blob', mime: 'text/plain' }), 'chordpro');
   assert.equal(resolveChartFormat({ name: 'blob', mime: 'application/xml' }), 'musicxml');
-  assert.equal(resolveChartFormat({ name: 'song.mp3', mime: 'audio/mpeg' }), 'unsupported');
+  assert.equal(resolveChartFormat({ name: 'song.mp3', mime: 'audio/mpeg' }), 'audio');
+  assert.equal(resolveChartFormat({ name: 'notes.zzz', mime: '' }), 'unsupported');
   assert.equal(resolveChartFormat(null), 'unsupported');
 });
 

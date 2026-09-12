@@ -1332,6 +1332,78 @@ PowerTab shows the guidance card; §9aa (13/13) and §9ab (6/6) drives re-run gr
 
 ---
 
+## 9ad. Change log — 2026-09 StageStand: audio / click + MIDI (PR 9, third of the trio)
+
+Final follow-on phase — the **pragmatic subset** of spec F6/F7 the owner chose. Adds a Stage
+Mode transport: a per-song backing track (offline), a BPM-derived metronome click, and MIDI
+Program Change on song select. **No multichannel routing, no MIDI clock/SysEx** (not reliably
+achievable client-side — see `docs/ASSUMPTIONS.md`). Shipped **stacked onto PR #150's branch**
+at the owner's request (that PR then merged notation + audio/MIDI together).
+
+- **Pure helpers** (whitelisted + tested — `test/audio-midi.test.js`, +6): `beatIntervalMs(bpm)`
+  (clamped 20–400), `midiProgramChange(ch, prog)` / `midiControlChange(ch, cc, val)` (status-byte
+  build + clamping), `isRenderableChart(fmt)`. `resolveChartFormat` gains an **audio** branch
+  (mp3/m4a/wav/ogg/aac/flac/… + `audio/*`), and `buildChartQueue` filters via `isRenderableChart`
+  so a backing-track attachment is **not** drawn as a chart (it plays through the transport; a
+  song with only audio still gets a cue-card queue entry).
+- **Backing track**: reuses the existing IndexedDB `attStore` — audio files import as attachments
+  with `kind:'audio'` ("Backing track"), fully offline, and ride the existing backup path. No new
+  store. `AudioTransport` loads the blob → `<audio>` with play/pause + loop.
+- **Metronome**: `useMetronome` — Web Audio lookahead scheduler, accent on beat 1, click generated
+  from the song's BPM (no file needed). Auto-stops on song change and on overlay close.
+- **MIDI**: `MidiManager` (lazy — `navigator.requestMIDIAccess` only on connect; graceful when Web
+  MIDI is absent). A per-song preset `song.midi = { ch, program }` (edited via the shared
+  `MidiPresetFields` in both song forms; additive schema, persists through the `addSong`/`updateSong`
+  spread) is sent as a Program Change when the song becomes current in Stage Mode.
+- **Stage transport row** (auto-hides with the chrome): 🥁 click toggle (shows BPM), the audio
+  ▶/🔁 transport when the song has a backing track, and a 🎹 MIDI connect/status control. Import
+  widened (`SongAttachments` `accept` + audio kind detection).
+
+Verification: `npm test` → 189/189 (+6); Babel compile clean; headless drive of the real app →
+10/10, 0 page errors (MIDI preset persists; transport renders; click toggles Start/Stop and shows
+BPM; the backing-track play control enables after the IDB blob loads; Web MIDI connect path runs
+without throwing; the click stops on song change). The §9aa (13/13), §9ab (6/6) and §9ac (9/9)
+drives re-run green. Real MIDI **output to a device** and multi-second audio playback are device/
+gesture concerns verified in a real browser (the sandbox has no MIDI hardware).
+
+---
+
+## 9ae. Change log — 2026-09 StageStand: personal ink annotation (PR 10) + audio/MIDI re-land
+
+Two things in one PR. (1) **Re-lands the audio/MIDI work (§9ad)** that did not make it onto
+`main` — PR #150 merged only the notation half; the audio/MIDI commits were cherry-picked back
+on. (2) Adds **F4 personal ink annotation** on charts. The band-sync half of F4 (F8) needs a
+backend and stays out — this is a **local-only, per-device** ink layer.
+
+- **IndexedDB v2.** `attOpen` bumped 1→2, adding an `annotations` object store beside
+  `attachments` (additive `onupgradeneeded`; existing v1 users keep their blobs). New
+  `annoStore` (get/set/del/clear/all) keyed `${attId}:${page}`; the tx/cursor plumbing was
+  factored into `_idbTx`/`_idbAll` shared by both stores.
+- **Pure geometry** (whitelisted + tested — `test/annotation.test.js`, +4): `annoKey`,
+  `pointSegDist` (point→segment distance), `strokeNearPoint` (eraser hit-test over a stroke's
+  segments). Stroke points are stored **normalised (0–1)** so ink stays pinned as the chart
+  zooms/reflows.
+- **`AnnotationLayer`** — a transparent `<canvas>` positioned exactly over the chart element
+  (`targetRef` + `ResizeObserver`, sized/offset to the target). Pointer Events capture pressure
+  (→ pen line-width; highlighter is wide + translucent; eraser removes whole strokes). Pen/
+  highlighter/eraser, 5 colors, undo/redo/clear in a floating toolbar. Strokes load/save to
+  `annoStore` on each change. Tilt/azimuth are not used (pressure is the meaningful signal).
+- **Wired into the raster renderers only** (PDF + image): `PdfPageCanvas`/`ImageChart` now wrap
+  their element in `.stage-anno-wrap` and mount `AnnotationLayer` when annotation is on;
+  `ChartViewer` threads an `anno` prop. Notation/ChordPro/cue cards don't annotate. A ✏️ toggle
+  in the stage bar (shown for pdf/image) enables it; while on, tap-zone/swipe page-turns are
+  suppressed so drawing works (keyboard/pedal still turn pages).
+- **Backup/restore** carries annotations (plain JSON `{strokes}` per key — no base64); old
+  backups without the key restore unchanged. No `localStorage` key added (ink lives in IDB).
+
+Verification: `npm test` → 193/193 (+4); Babel compile clean; headless drive → 9/9, 0 page
+errors (✏️ shows for a PDF; drawing persists to IDB in normalised coords; a 2nd stroke → 2,
+undo → 1; toggling off removes the canvas; the stroke survives a reload). The §9aa (13/13),
+§9ab (6/6), §9ac (9/9) and §9ad (10/10) drives re-run green. Real Apple-Pencil pressure/tilt is
+a device concern verified on the iPad (the sandbox drives synthetic pointer events).
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing
