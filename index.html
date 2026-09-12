@@ -7280,6 +7280,191 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
+    // Shared, controlled song-editing form body. Renders every editable song
+    // field (identity, style/key/BPM/energy, sectioned arrangement + role notes,
+    // reference clips, chart attachments, MIDI preset) against a { value, onChange }
+    // pair, with its own local reference-clip draft state. Reused by the library
+    // inline editor AND the in-setlist SongEditModal so both edit surfaces stay in
+    // lockstep — do NOT re-hardcode these fields anywhere else.
+    function SongEditFields({ value, onChange }) {
+      const form = value;
+      const setForm = onChange;
+      const [clip, setClip] = useState({ url: '', ts: '', te: '', label: '' });
+      const [clipErr, setClipErr] = useState('');
+      const arrObj = parseArrangement(form.arrangement);
+      const upd = (role, val) => setForm({ ...form, arrangement: serializeArrangement({ ...arrObj, [role]: val }) });
+      const appendMacro = (role, text) => { const cur = arrObj[role] || ''; upd(role, cur ? cur + ' ' + text : text); };
+      return (
+        <div style={{ width: '100%' }}>
+          <div className="set-config" style={{ marginBottom: '.4rem' }}>
+            <div className="input-group" style={{ flex: 2 }}>
+              <label style={{ fontSize: '.65rem' }}>Title*</label>
+              <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} style={{ fontSize: '.82rem', padding: '.3rem .5rem' }} />
+            </div>
+            <div className="input-group" style={{ flex: 2 }}>
+              <label style={{ fontSize: '.65rem' }}>Artist*</label>
+              <input value={form.artist} onChange={e => setForm({ ...form, artist: e.target.value })} style={{ fontSize: '.82rem', padding: '.3rem .5rem' }} />
+            </div>
+          </div>
+          <div className="set-config" style={{ marginBottom: '.4rem' }}>
+            <div className="input-group">
+              <label style={{ fontSize: '.65rem' }}>Duration*</label>
+              <input value={form.duration} onChange={e => setForm({ ...form, duration: e.target.value })} style={{ fontSize: '.82rem', padding: '.3rem .5rem', width: '60px' }} />
+            </div>
+            <div className="input-group" style={{ flex: 1 }}>
+              <label style={{ fontSize: '.65rem' }}>Style</label>
+              <select value={form.style} onChange={e => setForm({ ...form, style: e.target.value })} style={{ fontSize: '.82rem', padding: '.3rem .3rem' }}>
+                <StyleOptions />
+              </select>
+            </div>
+          </div>
+          <div className="set-config" style={{ marginBottom: '.4rem' }}>
+            <div className="input-group">
+              <label style={{ fontSize: '.65rem' }}>Key</label>
+              <input value={form.key} onChange={e => setForm({ ...form, key: e.target.value })} placeholder="C" style={{ fontSize: '.82rem', padding: '.3rem .5rem', width: '55px' }} />
+            </div>
+            <div className="input-group">
+              <label style={{ fontSize: '.65rem' }}>BPM</label>
+              <input value={form.bpm} onChange={e => setForm({ ...form, bpm: e.target.value })} placeholder="120" style={{ fontSize: '.82rem', padding: '.3rem .5rem', width: '60px' }} />
+            </div>
+            <div className="input-group">
+              <label style={{ fontSize: '.65rem' }}>Energy</label>
+              <input type="number" min="1" max="10" step="0.1" value={form.energy ?? ''} onChange={e => setForm({ ...form, energy: e.target.value })} placeholder="auto" title="Manual energy 1–10 (blank = auto from style + BPM)" style={{ fontSize: '.82rem', padding: '.3rem .5rem', width: '60px' }} />
+            </div>
+            <div className="input-group" style={{ flex: 1 }}>
+              <label style={{ fontSize: '.65rem' }}>Vocalist</label>
+              <input value={form.vocalist} onChange={e => setForm({ ...form, vocalist: e.target.value })} style={{ fontSize: '.82rem', padding: '.3rem .5rem' }} />
+            </div>
+          </div>
+          <div className="arr-roles-section" style={{ marginBottom: '.4rem' }}>
+            <div className="arr-roles-header">
+              <span className="arr-roles-header-label" style={{ fontSize: '.6rem' }}>Arrangement <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Advance View)</span></span>
+              {hasArrangementData(form.arrangement) && <span className="arr-roles-header-badge">has notes</span>}
+            </div>
+            <div className="macro-strip">
+              {MACRO_CATS.map(cat => (
+                <React.Fragment key={cat}>
+                  <span className="macro-cat-label">{cat}:</span>
+                  {ARRANGEMENT_MACROS.filter(m => m.cat === cat).map(m => (
+                    <button key={m.label} type="button" className={`macro-btn cat-${cat}`}
+                      onClick={() => appendMacro(m.role, m.text)}
+                      title={`→ ${ARR_ROLE_LABELS[m.role]}`}>{m.label}</button>
+                  ))}
+                </React.Fragment>
+              ))}
+            </div>
+            <ArrSectionFields arr={arrObj} onChange={upd} />
+            <div className="arr-roles-grid">
+              <div className="arr-role-item arr-role-full">
+                <div className="arr-role-item-label">General Notes</div>
+                <textarea className="arr-role-input" rows="2" value={arrObj.global} onChange={e => upd('global', e.target.value)} placeholder="General cues, form notes, count-in…" />
+              </div>
+              <div className="arr-role-item">
+                <div className="arr-role-item-label">Drums</div>
+                <textarea className="arr-role-input" rows="1" value={arrObj.drums} onChange={e => upd('drums', e.target.value)} placeholder="Fill on bar 8…" />
+              </div>
+              <div className="arr-role-item">
+                <div className="arr-role-item-label">Keys</div>
+                <textarea className="arr-role-input" rows="1" value={arrObj.keys} onChange={e => upd('keys', e.target.value)} placeholder="Organ intro…" />
+              </div>
+              <div className="arr-role-item">
+                <div className="arr-role-item-label">Bass</div>
+                <textarea className="arr-role-input" rows="1" value={arrObj.bass} onChange={e => upd('bass', e.target.value)} placeholder="Root notes only…" />
+              </div>
+              <div className="arr-role-item">
+                <div className="arr-role-item-label">Guitar 2</div>
+                <textarea className="arr-role-input" rows="1" value={arrObj.guitar2} onChange={e => upd('guitar2', e.target.value)} placeholder="Rhythm only…" />
+              </div>
+              <div className="arr-role-item arr-role-full">
+                <div className="arr-role-item-label">Ending Cue</div>
+                <textarea className="arr-role-input" rows="1" value={arrObj.endingCue} onChange={e => upd('endingCue', e.target.value)} placeholder="End on visual cue from drummer…" />
+              </div>
+            </div>
+          </div>
+          <div className="media-clips-section">
+            <div className="media-clips-label">Reference Clips (YouTube)</div>
+            {(form.mediaLinks || []).map(c => (
+              <div key={c.id} className="media-clip-row">
+                <span className="media-clip-row-label">{c.label || c.url}</span>
+                {(c.ts || c.te) && <span className="media-clip-row-ts">▸ {c.ts || '0:00'}{c.te ? `–${c.te}` : ''}</span>}
+                <button className="btn btn-small" style={{ color: 'var(--error)', borderColor: 'var(--error)', padding: '0 .3rem' }}
+                  onClick={() => setForm({ ...form, mediaLinks: (form.mediaLinks || []).filter(x => x.id !== c.id) })}>✕</button>
+              </div>
+            ))}
+            <div className="media-clip-add">
+              <input value={clip.url}
+                onChange={e => { const url = e.target.value; setClip({ ...clip, url, ts: clip.ts || ytStartFromUrl(url) }); if (clipErr) setClipErr(''); }}
+                placeholder="YouTube video URL" className="input" />
+              <input value={clip.ts} onChange={e => setClip({ ...clip, ts: e.target.value })} placeholder="Start MM:SS" className="input" />
+              <input value={clip.te} onChange={e => setClip({ ...clip, te: e.target.value })} placeholder="End MM:SS" className="input" />
+              <input value={clip.label} onChange={e => setClip({ ...clip, label: e.target.value })} placeholder="Label (e.g. Extended ending)" className="input" />
+              <button className="btn btn-small btn-primary" onClick={() => {
+                const issue = ytUrlIssue(clip.url);
+                if (issue) { setClipErr(issue); return; }
+                setForm({ ...form, mediaLinks: [...(form.mediaLinks || []), { ...clip, id: genId() }] });
+                setClip({ url: '', ts: '', te: '', label: '' }); setClipErr('');
+              }}>+ Add</button>
+            </div>
+            {clipErr && <div className="media-clip-err" role="alert">{clipErr}</div>}
+          </div>
+          <SongAttachments attachments={form.attachments} onChange={a => setForm({ ...form, attachments: a })} />
+          <MidiPresetFields midi={form.midi} onChange={m => setForm({ ...form, midi: m })} />
+        </div>
+      );
+    }
+
+    // Blank editable song form seeded from a song object. Used to hydrate the
+    // in-setlist SongEditModal (mirrors SongLibrary.startEdit's field mapping).
+    function songToEditForm(song) {
+      return {
+        title: song.title || '',
+        artist: song.artist || '',
+        duration: song.duration || '',
+        style: song.style || 'midtempo',
+        key: song.key || '',
+        bpm: song.bpm || '',
+        energy: song.energy ?? '',
+        vocalist: song.vocalist || '',
+        arrangement: song.arrangement || '',
+        mediaLinks: song.mediaLinks || [],
+        attachments: song.attachments || [],
+        midi: song.midi || { ch: 1, program: '' }
+      };
+    }
+
+    // Full-screen modal for editing a song straight from a generated setlist.
+    // Saves through the App's updateSong, which propagates the change to BOTH the
+    // library and every setlist the song appears in (bidirectional sync), so there
+    // is no need to delete/re-add/reposition a song just to tweak its details.
+    function SongEditModal({ open, song, onSave, onClose }) {
+      const [form, setForm] = useState(null);
+      useEffect(() => {
+        if (open && song) setForm(songToEditForm(song));
+        else if (!open) setForm(null);
+      }, [open, song && song.id]);
+      if (!open || !song || !form) return null;
+      const canSave = form.title && form.artist && form.duration;
+      const save = () => { if (!canSave) return; onSave(song.id, form); onClose(); };
+      return (
+        <div className="modal-backdrop" onClick={onClose}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(760px, 95vw)', maxHeight: '92vh', overflowY: 'auto' }}>
+            <div className="panel-header">
+              <h3 className="panel-title">Edit Song — {song.title}</h3>
+              <button className="btn btn-small" onClick={onClose}>Close</button>
+            </div>
+            <div style={{ marginBottom: '.6rem', fontSize: '.78rem', color: 'var(--text-muted)' }}>
+              Changes save to your library and update this setlist (and any other set this song is in) in place.
+            </div>
+            <SongEditFields value={form} onChange={setForm} />
+            <div className="toolbar" style={{ justifyContent: 'flex-end', gap: '.4rem', marginTop: '.6rem' }}>
+              <button className="btn btn-small btn-primary" onClick={save} disabled={!canSave} title={canSave ? 'Save changes' : 'Title, Artist and Duration are required'}>Save changes</button>
+              <button className="btn btn-small" onClick={onClose}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     // PHASE 3A: Active / Cold tabs + Shelf / Restore
     function SongLibrary({
       songs,
@@ -7304,9 +7489,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [editingId, setEditingId] = useState(null);
       const [editForm, setEditForm] = useState({});
       const [newClip, setNewClip] = useState({ url: '', ts: '', te: '', label: '' });
-      const [editClip, setEditClip] = useState({ url: '', ts: '', te: '', label: '' });
       const [clipErr, setClipErr] = useState('');
-      const [editClipErr, setEditClipErr] = useState('');
 
       const handleAdd = () => {
         if (!form.title || !form.artist || !form.duration) return;
@@ -7331,7 +7514,6 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           attachments: song.attachments || [],
           midi: song.midi || { ch: 1, program: '' }
         });
-        setEditClip({ url: '', ts: '', label: '' });
       };
 
       const cancelEdit = () => {
@@ -7530,128 +7712,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <div key={song.id} className="song-item">
                   {editingId === song.id ? (
                     <div style={{ width: '100%' }}>
-                      <div className="set-config" style={{ marginBottom: '.4rem' }}>
-                        <div className="input-group" style={{ flex: 2 }}>
-                          <label style={{ fontSize: '.65rem' }}>Title*</label>
-                          <input value={editForm.title} onChange={e => setEditForm({ ...editForm, title: e.target.value })} style={{ fontSize: '.82rem', padding: '.3rem .5rem' }} />
-                        </div>
-                        <div className="input-group" style={{ flex: 2 }}>
-                          <label style={{ fontSize: '.65rem' }}>Artist*</label>
-                          <input value={editForm.artist} onChange={e => setEditForm({ ...editForm, artist: e.target.value })} style={{ fontSize: '.82rem', padding: '.3rem .5rem' }} />
-                        </div>
-                      </div>
-                      <div className="set-config" style={{ marginBottom: '.4rem' }}>
-                        <div className="input-group">
-                          <label style={{ fontSize: '.65rem' }}>Duration*</label>
-                          <input value={editForm.duration} onChange={e => setEditForm({ ...editForm, duration: e.target.value })} style={{ fontSize: '.82rem', padding: '.3rem .5rem', width: '60px' }} />
-                        </div>
-                        <div className="input-group" style={{ flex: 1 }}>
-                          <label style={{ fontSize: '.65rem' }}>Style</label>
-                          <select value={editForm.style} onChange={e => setEditForm({ ...editForm, style: e.target.value })} style={{ fontSize: '.82rem', padding: '.3rem .3rem' }}>
-                            <StyleOptions />
-                          </select>
-                        </div>
-                      </div>
-                      <div className="set-config" style={{ marginBottom: '.4rem' }}>
-                        <div className="input-group">
-                          <label style={{ fontSize: '.65rem' }}>Key</label>
-                          <input value={editForm.key} onChange={e => setEditForm({ ...editForm, key: e.target.value })} placeholder="C" style={{ fontSize: '.82rem', padding: '.3rem .5rem', width: '55px' }} />
-                        </div>
-                        <div className="input-group">
-                          <label style={{ fontSize: '.65rem' }}>BPM</label>
-                          <input value={editForm.bpm} onChange={e => setEditForm({ ...editForm, bpm: e.target.value })} placeholder="120" style={{ fontSize: '.82rem', padding: '.3rem .5rem', width: '60px' }} />
-                        </div>
-                        <div className="input-group">
-                          <label style={{ fontSize: '.65rem' }}>Energy</label>
-                          <input type="number" min="1" max="10" step="0.1" value={editForm.energy ?? ''} onChange={e => setEditForm({ ...editForm, energy: e.target.value })} placeholder="auto" title="Manual energy 1–10 (blank = auto from style + BPM)" style={{ fontSize: '.82rem', padding: '.3rem .5rem', width: '60px' }} />
-                        </div>
-                        <div className="input-group" style={{ flex: 1 }}>
-                          <label style={{ fontSize: '.65rem' }}>Vocalist</label>
-                          <input value={editForm.vocalist} onChange={e => setEditForm({ ...editForm, vocalist: e.target.value })} style={{ fontSize: '.82rem', padding: '.3rem .5rem' }} />
-                        </div>
-                      </div>
-                      <div className="arr-roles-section" style={{ marginBottom: '.4rem' }}>
-                        <div className="arr-roles-header">
-                          <span className="arr-roles-header-label" style={{ fontSize: '.6rem' }}>Arrangement <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Advance View)</span></span>
-                          {hasArrangementData(editForm.arrangement) && <span className="arr-roles-header-badge">has notes</span>}
-                        </div>
-                        {(() => {
-                          const arrObj = parseArrangement(editForm.arrangement);
-                          const upd = (role, val) => setEditForm({ ...editForm, arrangement: serializeArrangement({ ...arrObj, [role]: val }) });
-                          const appendMacro = (role, text) => { const cur = arrObj[role] || ''; upd(role, cur ? cur + ' ' + text : text); };
-                          return (
-                            <>
-                            <div className="macro-strip">
-                              {MACRO_CATS.map(cat => (
-                                <React.Fragment key={cat}>
-                                  <span className="macro-cat-label">{cat}:</span>
-                                  {ARRANGEMENT_MACROS.filter(m => m.cat === cat).map(m => (
-                                    <button key={m.label} type="button" className={`macro-btn cat-${cat}`}
-                                      onClick={() => appendMacro(m.role, m.text)}
-                                      title={`→ ${ARR_ROLE_LABELS[m.role]}`}>{m.label}</button>
-                                  ))}
-                                </React.Fragment>
-                              ))}
-                            </div>
-                            <ArrSectionFields arr={arrObj} onChange={upd} />
-                            <div className="arr-roles-grid">
-                              <div className="arr-role-item arr-role-full">
-                                <div className="arr-role-item-label">General Notes</div>
-                                <textarea className="arr-role-input" rows="2" value={arrObj.global} onChange={e => upd('global', e.target.value)} placeholder="General cues, form notes, count-in…" />
-                              </div>
-                              <div className="arr-role-item">
-                                <div className="arr-role-item-label">Drums</div>
-                                <textarea className="arr-role-input" rows="1" value={arrObj.drums} onChange={e => upd('drums', e.target.value)} placeholder="Fill on bar 8…" />
-                              </div>
-                              <div className="arr-role-item">
-                                <div className="arr-role-item-label">Keys</div>
-                                <textarea className="arr-role-input" rows="1" value={arrObj.keys} onChange={e => upd('keys', e.target.value)} placeholder="Organ intro…" />
-                              </div>
-                              <div className="arr-role-item">
-                                <div className="arr-role-item-label">Bass</div>
-                                <textarea className="arr-role-input" rows="1" value={arrObj.bass} onChange={e => upd('bass', e.target.value)} placeholder="Root notes only…" />
-                              </div>
-                              <div className="arr-role-item">
-                                <div className="arr-role-item-label">Guitar 2</div>
-                                <textarea className="arr-role-input" rows="1" value={arrObj.guitar2} onChange={e => upd('guitar2', e.target.value)} placeholder="Rhythm only…" />
-                              </div>
-                              <div className="arr-role-item arr-role-full">
-                                <div className="arr-role-item-label">Ending Cue</div>
-                                <textarea className="arr-role-input" rows="1" value={arrObj.endingCue} onChange={e => upd('endingCue', e.target.value)} placeholder="End on visual cue from drummer…" />
-                              </div>
-                            </div>
-                            </>
-                          );
-                        })()}
-                      </div>
-                      <div className="media-clips-section">
-                        <div className="media-clips-label">Reference Clips (YouTube)</div>
-                        {(editForm.mediaLinks || []).map(clip => (
-                          <div key={clip.id} className="media-clip-row">
-                            <span className="media-clip-row-label">{clip.label || clip.url}</span>
-                            {(clip.ts || clip.te) && <span className="media-clip-row-ts">▸ {clip.ts || '0:00'}{clip.te ? `–${clip.te}` : ''}</span>}
-                            <button className="btn btn-small" style={{ color: 'var(--error)', borderColor: 'var(--error)', padding: '0 .3rem' }}
-                              onClick={() => setEditForm({ ...editForm, mediaLinks: editForm.mediaLinks.filter(c => c.id !== clip.id) })}>✕</button>
-                          </div>
-                        ))}
-                        <div className="media-clip-add">
-                          <input value={editClip.url}
-                            onChange={e => { const url = e.target.value; setEditClip({ ...editClip, url, ts: editClip.ts || ytStartFromUrl(url) }); if (editClipErr) setEditClipErr(''); }}
-                            placeholder="YouTube video URL" className="input" />
-                          <input value={editClip.ts} onChange={e => setEditClip({ ...editClip, ts: e.target.value })} placeholder="Start MM:SS" className="input" />
-                          <input value={editClip.te} onChange={e => setEditClip({ ...editClip, te: e.target.value })} placeholder="End MM:SS" className="input" />
-                          <input value={editClip.label} onChange={e => setEditClip({ ...editClip, label: e.target.value })} placeholder="Label (e.g. Extended ending)" className="input" />
-                          <button className="btn btn-small btn-primary" onClick={() => {
-                            const issue = ytUrlIssue(editClip.url);
-                            if (issue) { setEditClipErr(issue); return; }
-                            setEditForm({ ...editForm, mediaLinks: [...(editForm.mediaLinks || []), { ...editClip, id: genId() }] });
-                            setEditClip({ url: '', ts: '', te: '', label: '' }); setEditClipErr('');
-                          }}>+ Add</button>
-                        </div>
-                        {editClipErr && <div className="media-clip-err" role="alert">{editClipErr}</div>}
-                      </div>
-                      <SongAttachments attachments={editForm.attachments} onChange={a => setEditForm({ ...editForm, attachments: a })} />
-                      <MidiPresetFields midi={editForm.midi} onChange={m => setEditForm({ ...editForm, midi: m })} />
+                      <SongEditFields value={editForm} onChange={setEditForm} />
                       <div className="toolbar" style={{ justifyContent: 'flex-end', gap: '.3rem' }}>
                         <button className="btn btn-small" onClick={saveEdit} style={{ borderColor: 'var(--success)', color: 'var(--success)' }}>Save</button>
                         <button className="btn btn-small" onClick={cancelEdit}>Cancel</button>
@@ -8509,7 +8570,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onMoveSong, onRemoveSong, onLockEntireSet, onDragStart, onDragEnd, onDragOverSong, onDragOverSet, onDropOnSong, onDropOnSet, onMoveToSet, onTouchDragStart, onTouchDragOver, onTouchDrop, dragState, totalSets, isReorderMode, touchFallbackEnabled, touchDrag, setTouchDrag, viewMode, advanceRoleFilter, settings }) {
+    function SetlistView({ setIdx, setlist, locked, setLocked: setLockedSet, onToggleLock, onSwap, onEditSong, onMoveSong, onRemoveSong, onLockEntireSet, onDragStart, onDragEnd, onDragOverSong, onDragOverSet, onDropOnSong, onDropOnSet, onMoveToSet, onTouchDragStart, onTouchDragOver, onTouchDrop, dragState, totalSets, isReorderMode, touchFallbackEnabled, touchDrag, setTouchDrag, viewMode, advanceRoleFilter, settings }) {
       let runningTime = 0;
       const allLocked = setlist.songs.length > 0 && setlist.songs.every(s => locked.has(`${setIdx}:${s.id}`));
       const isSetDragTarget = dragState && dragState.active && dragState.overSetIdx === setIdx && dragState.fromSetIdx !== setIdx;
@@ -8654,6 +8715,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       ))}
                     </select>
                   )}
+                  <button className="action-btn" onClick={() => onEditSong(song)} title="Edit song details, arrangement, notes & attachments (syncs with your library)">
+                    ✎
+                  </button>
                   <button className={`action-btn ${isLocked ? 'locked' : ''}`} onClick={() => onToggleLock(setIdx, song.id)} title={isLocked ? 'Unlock' : 'Lock'}>
                     {isLocked ? '🔒' : '🔓'}
                   </button>
@@ -13573,6 +13637,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [isReorderMode, setIsReorderMode] = useState(false);
 
       const [bandModal, setBandModal] = useState(false);
+      // Song currently being edited from inside a generated setlist (id). The full
+      // song object is looked up live so the modal always shows the freshest data.
+      const [editSetlistSongId, setEditSetlistSongId] = useState(null);
       const [importModal, setImportModal] = useState(false);
       const [chartMatchModal, setChartMatchModal] = useState(false);
       const [gigModal, setGigModal] = useState(false);
@@ -14409,6 +14476,31 @@ ${headerHtml}
 
       const updateSong = (id, updates) => {
         setSongs(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+        // Keep any generated setlist in lockstep with the library: a song edited in
+        // the library reflects into the setlist, and (since the in-setlist editor
+        // routes through here too) an edit made in the setlist reflects back into the
+        // library. Match by song id across every set; recompute the set's total time
+        // in case the duration changed, and preserve the array-level metadata
+        // (qualityScores / anchorKey / diagnostics / stats) attached to the setlists
+        // array so a mid-session edit never blanks the quality readouts or PDF summary.
+        setSetlists(prev => {
+          if (!prev || !prev.length) return prev;
+          let changed = false;
+          const next = prev.map(set => {
+            if (!set || !set.songs) return set;
+            let songChanged = false;
+            const songs = set.songs.map(s => {
+              if (s.id === id) { songChanged = true; return { ...s, ...updates }; }
+              return s;
+            });
+            if (!songChanged) return set;
+            changed = true;
+            return { ...set, songs, totalTime: songs.reduce((t, s) => t + (Number(s.duration) || 0), 0) };
+          });
+          if (!changed) return prev;
+          Object.keys(prev).forEach(k => { if (!/^\d+$/.test(k) && k !== 'length') next[k] = prev[k]; });
+          return next;
+        });
         showToast('Song updated', 'success');
       };
 
@@ -15023,6 +15115,14 @@ ${headerHtml}
         }
 
         try {
+          // Build every requested document synchronously, then dispatch the
+          // downloads. Browsers — iOS Safari especially — coalesce multiple
+          // save()/download triggers fired in the same tick down to the last
+          // one, so a "package" export was silently dropping the stage sheet
+          // and keeping only the guide. Stagger the saves onto separate ticks;
+          // the first stays on the user-gesture tick (iOS requires that), the
+          // rest follow on short timers so each download registers.
+          const jobs = [];
           if (docKind === 'stage' || docKind === 'package') {
             const stageModel = buildStageSetlistModel(setlists, { includeCues: ctx.includeCues });
             const stageDoc = generateStageSetlistPDF(stageModel, {
@@ -15034,16 +15134,20 @@ ${headerHtml}
                 guideCount: guideEntries.length,
               },
             });
-            stageDoc.save(pdfExportFilename('stage', ctx.bandName));
+            jobs.push({ doc: stageDoc, name: pdfExportFilename('stage', ctx.bandName) });
           }
           if (docKind === 'guide' || docKind === 'package') {
             if (guideEntries.length) {
               const guideDoc = generateArrangementGuidePDF(guideEntries, ctx);
-              guideDoc.save(pdfExportFilename('guide', ctx.bandName));
+              jobs.push({ doc: guideDoc, name: pdfExportFilename('guide', ctx.bandName) });
             } else if (docKind === 'package') {
               showToast('Stage setlist exported — no arrangement notes to put in a guide', 'info');
             }
           }
+          jobs.forEach((job, i) => {
+            if (i === 0) job.doc.save(job.name);
+            else setTimeout(() => { try { job.doc.save(job.name); } catch (e) { console.error('PDF save failed:', e); } }, i * 700);
+          });
         } catch (err) {
           console.error('PDF export failed:', err);
           return showToast('PDF export failed: ' + (err && err.message ? err.message : 'unknown error'), 'error');
@@ -16199,6 +16303,7 @@ ${headerHtml}
                       setLocked={setLocked}
                       onToggleLock={toggleLock}
                       onSwap={swapSong}
+                      onEditSong={(song) => setEditSetlistSongId(song.id)}
                       onMoveSong={moveSong}
                       onRemoveSong={removeSongFromSetlist}
                       onLockEntireSet={lockEntireSet}
@@ -16240,6 +16345,13 @@ ${headerHtml}
               onClose={() => setEmailModal({ open: false, text: '' })}
               text={emailModal.text}
               viewMode={viewMode}
+            />
+
+            <SongEditModal
+              open={!!editSetlistSongId}
+              song={editSetlistSongId ? (songs.find(s => s.id === editSetlistSongId) || setlists.reduce((f, set) => f || (set.songs || []).find(s => s.id === editSetlistSongId), null)) : null}
+              onSave={updateSong}
+              onClose={() => setEditSetlistSongId(null)}
             />
 
             <PdfSettingsModal

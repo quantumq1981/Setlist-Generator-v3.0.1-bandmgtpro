@@ -1504,6 +1504,56 @@ that the main-site path would miss too. 0 page errors.
 
 ---
 
+## 9ah. Change log — 2026-09 package-export fix + in-setlist song editing (live library sync)
+
+Two reported items. (1) "Package (both PDFs)" produced **only the arrangement guide**, never
+the stage sheet — though each exported fine on its own. (2) There was no way to tweak a song's
+details/arrangement/notes/attachments from inside a generated setlist without deleting,
+re-adding and repositioning it.
+
+- **Root cause A — download clobbering.** `exportPDF('package')` built both docs correctly and
+  called `stageDoc.save()` then `guideDoc.save()` back-to-back in the same tick. Browsers —
+  iOS Safari most aggressively (the reporter is on iPad) — coalesce multiple programmatic
+  downloads fired in one tick down to the **last** one, so the stage sheet (saved first) was
+  silently dropped and only the guide (saved second) landed. Fix: build every requested doc
+  synchronously into a `jobs[]` array, then dispatch the saves **staggered** — the first on the
+  current user-gesture tick (iOS requires the download stay on the gesture), each subsequent one
+  on a `setTimeout(i * 700)` so it registers as its own download. Single-doc exports are
+  unchanged (one job). No test/PDF-pipeline change — the generators are untouched; this is
+  purely the App-level save dispatcher.
+
+- **In-setlist song editing + bidirectional library↔setlist sync.** The generated `setlists`
+  is separate React state holding **copied** song objects (they carry the library `id` — locks,
+  swap and dedup all key on it — but a library `updateSong` never touched them). So:
+  - **Extracted `SongEditFields({ value, onChange })`** — a controlled form body carrying every
+    editable field (identity, style/key/BPM/energy, sectioned arrangement + role notes with the
+    macro strip, reference clips with their own draft state, `SongAttachments`, `MidiPresetFields`).
+    The library inline editor was refactored to render it (its old ~120-line inline JSX + the
+    now-dead `editClip`/`editClipErr` state removed) so there is exactly one song-edit form.
+  - **`SongEditModal`** (+ `songToEditForm`) opens that form over a generated setlist. A new
+    `✎` button in each `SetlistView` row's `.song-actions` opens it (via `onEditSong` →
+    App `editSetlistSongId`); the song object is looked up live from the library, falling back
+    to the setlist copy if it is no longer in the library.
+  - **`updateSong` is now the single sync point.** Besides mapping `songs`, it maps every set in
+    `setlists`, applying the same `updates` to any song with a matching id and recomputing that
+    set's `totalTime` (duration edits stay accurate). Array-level metadata attached to the
+    `setlists` array (`qualityScores` / `anchorKey` / `diagnostics` / `stats`) is copied onto the
+    new array so a mid-session edit never blanks the quality readouts or PDF summary. Because the
+    modal saves through `updateSong` and the library inline editor already called it, **both
+    directions sync**: edit in the setlist → library + every set update live; edit in the library
+    → the setlist updates. The snapshot autosave (`[songs,setlists,…]`) persists both.
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → 199/199 (no
+algorithm logic touched — the change is App-level state + a shared UI component); headless
+Playwright drive of the real app (vendored npm libs) → 12/12, 0 page errors — a generated
+setlist shows the `✎` control, editing a song's title in the setlist modal updates the setlist
+row live AND persists into `localStorage` (setlist→library), editing a song in the library
+inline editor updates the setlist row (library→setlist), and **"Package (both PDFs)" now
+downloads two files** (`setlist-*.pdf` + `arrangement-guide-*.pdf`) where before only the guide
+arrived.
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing
@@ -1524,6 +1574,13 @@ all three as buttons (`data-testid="export-stage" / "export-guide" / "export-pac
 `PdfSettingsModal` carries the same choice as a radio group (`data-testid="pdf-doc-kind"`)
 plus an optional **Venue / Event** line (`pdfSettings.eventLabel`) printed in both headers.
 `arrangementSongCount` (memo in `App`) drives the guide button's count + enablement.
+
+**`'package'` saves two files, staggered.** `exportPDF` builds each requested doc into a
+`jobs[]` array and dispatches the `.save()` calls on separate ticks — the first synchronously
+(so iOS keeps the download on the user gesture), the rest via `setTimeout(i * 700)`. Firing
+both saves in one tick makes browsers (iOS Safari especially) drop all but the last, which is
+why "Package" previously produced only the guide (§9ah). Keep this stagger if you touch the
+dispatcher.
 
 **Layout rules the guide must keep.** No full-bleed watermark — a background wash under
 dense chord prose is what made the combined export unreadable; the logo is a 30pt mark in
