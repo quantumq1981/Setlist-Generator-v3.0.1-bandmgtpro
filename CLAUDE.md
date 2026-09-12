@@ -1674,6 +1674,25 @@ Generate still produces a setlist after the reorg.
 
 ---
 
+## 9am. Change log — 2026-09 inline band quick-edit
+
+Last of the workflow-polish items. The active band's identity could only be changed by opening
+Manage Bands; the EPK/press-kit is already one click from the top nav (Press Kit deep-links into
+`VenueModal`'s settings tab, PR 3a §9v), so this pass closes the remaining gap — band identity.
+
+- **`BandQuickEdit`** component in the band bar (next to Manage Bands): a "✎ Edit band" button
+  expands an inline row of name / icon (emoji) / color inputs that write **live** through the new
+  App `updateActiveBand(patch)` (`setBands` map over the active id; persisted by the existing
+  `bands`→`LS_KEYS.bands` effect). Enter or Done collapses it. No new localStorage key; the band
+  switcher and pill reflect the change immediately.
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → 204/204
+(UI-only); headless Playwright drive of the real app → 6/6, 0 page errors — "✎ Edit band" opens
+the inline editor, renaming updates the pill live, persists to `localStorage` (`bands[0].name`),
+and the band switcher option reflects the new name.
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing

@@ -255,6 +255,10 @@
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
     .input-group { margin-bottom: .8rem; }
     .set-config { display:grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+    .band-quick-edit { display:inline-flex; align-items:center; gap:.35rem; flex-wrap:wrap; }
+    .band-quick-icon { width:2.4rem; text-align:center; padding:.25rem; }
+    .band-quick-name { width:10rem; max-width:40vw; padding:.25rem .45rem; }
+    .band-quick-color { width:2rem; height:2rem; padding:0; border:1px solid var(--border); border-radius:6px; background:none; cursor:pointer; }
     .config-group { border:1px solid var(--border); border-radius:8px; margin-bottom:.55rem; padding:0 .65rem; background: var(--secondary); }
     .config-group > summary { cursor:pointer; list-style:none; padding:.55rem .1rem; font-size:.8rem; font-weight:600; color: var(--accent); user-select:none; display:flex; align-items:center; }
     .config-group > summary::-webkit-details-marker { display:none; }
@@ -13751,6 +13755,30 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
+    // Inline quick-edit of the active band's identity from the band bar (name / icon /
+    // color), so a rename or recolor doesn't require opening Manage Bands. Saves live
+    // through onSave (App.updateActiveBand); Enter or Done closes.
+    function BandQuickEdit({ band, onSave }) {
+      const [open, setOpen] = useState(false);
+      if (!band) return null;
+      if (!open) {
+        return <button className="btn btn-small" onClick={() => setOpen(true)} title="Quick-edit this band's name, icon & color">✎ Edit band</button>;
+      }
+      return (
+        <div className="band-quick-edit" data-testid="band-quick-edit">
+          <input className="input band-quick-icon" value={band.icon || ''} maxLength={2}
+            onChange={e => onSave({ icon: e.target.value })} title="Icon (emoji)" aria-label="Band icon" />
+          <input className="input band-quick-name" value={band.name || ''} autoFocus
+            onChange={e => onSave({ name: e.target.value })}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setOpen(false); }}
+            placeholder="Band name" aria-label="Band name" />
+          <input type="color" className="band-quick-color" value={band.color || '#3d7bff'}
+            onChange={e => onSave({ color: e.target.value })} title="Band color" aria-label="Band color" />
+          <button className="btn btn-small btn-primary" onClick={() => setOpen(false)}>Done</button>
+        </div>
+      );
+    }
+
     /******************* MAIN APP *******************/
     function IDEBackground({ children }) {
       return (
@@ -15806,6 +15834,13 @@ ${headerHtml}
         showToast('Band created', 'success');
       };
 
+      // Quick inline edit of the active band's identity (name / icon / color) from the band
+      // bar — no need to open Manage Bands. Persists via the existing bands→LS effect.
+      const updateActiveBand = (patch) => {
+        if (!activeBandId) return;
+        setBands(prev => prev.map(b => b.id === activeBandId ? { ...b, ...patch } : b));
+      };
+
       // Band deletion cleanup
       const deleteBand = (band) => {
         if (bands.length === 1) return showToast('Cannot delete the last band', 'error');
@@ -16261,6 +16296,7 @@ ${headerHtml}
                   <strong>{activeBand?.name || 'No Band'}</strong>
                   <span className="swatch" style={{ background: activeBand?.color || '#ff6b35' }}></span>
                 </div>
+                <BandQuickEdit band={activeBand} onSave={updateActiveBand} />
                 <button className="btn btn-small" onClick={() => setBandModal(true)}>Manage Bands</button>
               </div>
               <div className="toolbar">
