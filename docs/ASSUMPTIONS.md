@@ -78,7 +78,9 @@ phase on the same foundation.
   offline in IndexedDB per (chart,page) in normalised coords, on the backup path. The
   **band-sync half is F8 (needs a backend) and stays out**. See CLAUDE.md §9ae.
 - **F5 — Live transposition** of chord/lyric charts — **delivered in PR 8** for ChordPro
-  (semitone up/down in Stage Mode). MusicXML/notation transposition remains future.
+  (semitone up/down in Stage Mode) and **extended to MusicXML in PR 11** (OSMD
+  `TransposeCalculator`, same ♭/n/♯ + −/=/0 stage control). Guitar Pro/ABC transposition
+  (their libraries don't expose a clean live-transpose seam) remains future.
 - **F6 — Audio backing tracks / click** — **delivered in PR 9** (pragmatic subset): per-song
   backing track stored offline in IndexedDB + a BPM-derived Web Audio metronome, play/stop/loop
   in Stage Mode. **Multichannel output routing is not achievable client-side** and remains out.
@@ -87,7 +89,13 @@ phase on the same foundation.
   (clock/SysEx aren't reliably achievable client-side). See CLAUDE.md §9ad.
 - **F8 — Band-wide CRDT sync** (Yjs). Impossible without a backend; the existing full-backup
   export/restore is the current interchange between devices.
-- **F1 — OCR / Fuse.js fuzzy auto-match / bulk 100-PDF auto-organize.**
+- **F1 — OCR / fuzzy auto-match / bulk chart auto-organize** — **delivered in PR 11**: a
+  "Match Charts to Songs" modal bulk-drops chart files, fuzzy-matches each to a library song
+  by filename (pure `fuzzyMatchSong`, token-Jaccard + substring), lets the user confirm/override
+  the target, and attaches every file to its song in one pass (into the existing `attStore`).
+  For a scan with a useless filename, a per-row **Read title** button lazily loads Tesseract.js
+  (OCR of page 1 via the already-loaded PDF.js → pure `ocrTitleGuess` → re-match), degrading
+  gracefully when the engine can't load. See CLAUDE.md §9af.
 - Native iPad (Capacitor), external-display presenter view, OSC.
 
 ## Assumptions

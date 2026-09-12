@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-09-10.
+Last updated: 2026-09-12.
 
 ---
 
@@ -1401,6 +1401,57 @@ errors (✏️ shows for a PDF; drawing persists to IDB in normalised coords; a 
 undo → 1; toggling off removes the canvas; the stroke survives a reload). The §9aa (13/13),
 §9ab (6/6), §9ac (9/9) and §9ad (10/10) drives re-run green. Real Apple-Pencil pressure/tilt is
 a device concern verified on the iPad (the sandbox drives synthetic pointer events).
+
+---
+
+## 9af. Change log — 2026-09 StageStand: MusicXML transpose (F5) + bulk chart→song match (F1)
+
+The remaining backend-free items from the `LiveMusicStandAddon.md` spec. F5 extends live
+transposition from ChordPro to MusicXML; F1 realizes the "OCR / fuzzy auto-match / bulk
+chart auto-organize" module. No new dependency loads on app start (Tesseract is lazy, like
+the notation libs and Gmail GIS). Backend-dependent items (F8 CRDT sync) and no-build-
+infeasible ones (Capacitor, OSC, external presenter view) stay out — see `docs/ASSUMPTIONS.md`.
+
+- **F5 — MusicXML transposition.** `MusicXmlChart` now takes a `transpose` prop: it assigns
+  OSMD's `TransposeCalculator` before load and sets `osmd.Sheet.Transpose = semitones` +
+  `updateGraphic()` before render (both guarded — older OSMD builds without the calculator
+  no-op safely). The Stage Mode transpose control (♭ / n / ♯ + `-`/`=`/`0` keys), previously
+  ChordPro-only, now also shows for MusicXML; `ChartViewer` threads `transpose` through. As
+  with ChordPro, transpose is ephemeral and per-song (resets on song change). Guitar Pro/ABC
+  have no clean live-transpose seam in their libraries, so they stay fixed-key for now.
+- **F1a — pure fuzzy matcher** (module scope, after the ChordPro/annotation helpers;
+  whitelisted + tested — `test/fuzzy-match.test.js`): `normalizeTitle` (strip extension,
+  leading track number, punctuation, and noise words — the/live/acoustic/remaster/lead
+  sheet/…), `titleTokens`, `titleSimilarity` (token-Jaccard 0–1 with an exact/substring
+  bonus), `fuzzyMatchSong(query, songs, threshold=0.5)` → `{song, score}` or null, and
+  `ocrTitleGuess(text)` (pick the most title-like line out of an OCR block — drop page
+  numbers / symbol rows, prefer the letter-rich line near the top).
+- **F1b — "Match Charts to Songs" modal** (`ChartMatchModal`, next to `ImportSongsModal`):
+  a "📎 Match Charts" button in the Song Library toolbar opens a bulk drop zone. Each
+  dropped chart file (PDF/image/notation/backing-track — same `accept` as `SongAttachments`)
+  becomes a row auto-matched to a library song by **filename** (`fuzzyMatchSong`), with a
+  song-override `<select>`, a strong/likely/weak/no-match confidence chip, and a per-file
+  size guard. **"Attach N charts"** puts every matched file's blob into `attStore` and folds
+  the metadata onto each song in one functional `setSongs` (`attachChartsToSongs`, grouped by
+  song id) — no `localStorage`/schema change (metadata rides the existing `attachments`
+  spread, §9x; blobs live in IndexedDB).
+- **On-demand OCR** (spec F1, lazy + graceful): a per-row **🔍 Read title** button (PDF/image
+  only) lazily injects Tesseract.js (`ensureTesseract`, jsDelivr, mirrors `ensureNotationLib`),
+  renders page 1 via the **already-loaded PDF.js** (or the image) to a canvas, OCRs it, distils
+  a title with the pure `ocrTitleGuess`, and re-runs the match. The engine fetches its own
+  worker/core/lang on first use (needs one live connection, then caches); when it can't load it
+  shows an inline notice and the filename match stands — the app is byte-identical on load for
+  everyone who never clicks it.
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → 198/198
+(+7 in `test/fuzzy-match.test.js`: normalize/similarity/match + `ocrTitleGuess`); headless Playwright
+drive of the real modal → 16/16, 0 page errors (drop 3 files → 2 auto-match to the right songs
+with strong chips, the no-library-song file defaults to skip, Read-title degrades gracefully
+when the CDN is blocked, Attach lands both blobs in IndexedDB on the correct songs and they
+survive a reload); the §9ac notation drive re-run → 9/9 (MusicXML still renders with the
+transpose prop). Real Tesseract OCR accuracy and MusicXML transpose output are device/network
+concerns verified in a real browser (the sandbox proxy blocks the Tesseract CDN, and transpose
+is a live interaction like the pedal/MIDI paths).
 
 ---
 
