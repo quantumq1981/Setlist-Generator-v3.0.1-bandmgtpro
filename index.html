@@ -968,6 +968,24 @@
     .attach-size { font-family: 'Space Mono', monospace; font-size: .66rem; color: var(--text-muted); white-space: nowrap; }
     .attach-add { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; margin-top: .3rem; }
     .attach-hint { font-size: .66rem; color: var(--text-muted); }
+    /* Bulk chart→song matcher modal (F1) */
+    .chartmatch-intro { font-size: .8rem; color: var(--text-muted); margin: .2rem 0 .7rem; line-height: 1.4; }
+    .chartmatch-drop { border: 2px dashed var(--border); border-radius: 10px; padding: 1.4rem; text-align: center; color: var(--text-muted); cursor: pointer; font-size: .85rem; background: var(--primary); transition: border-color .15s, background .15s; }
+    .chartmatch-drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+    .chartmatch-rows { margin-top: .8rem; display: flex; flex-direction: column; gap: .3rem; max-height: 44vh; overflow-y: auto; }
+    .chartmatch-row { display: flex; align-items: center; gap: .45rem; padding: .35rem .45rem; border-radius: 6px; background: var(--primary); border: 1px solid var(--border); font-size: .78rem; flex-wrap: wrap; }
+    .chartmatch-name { flex: 1 1 40%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .chartmatch-toobig { color: var(--error); font-weight: 400; }
+    .chartmatch-ocr { color: var(--accent); font-weight: 400; font-style: italic; }
+    .chartmatch-song { flex: 1 1 30%; min-width: 8rem; font-size: .74rem; padding: .18rem .3rem; }
+    .chartmatch-conf { flex: none; font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; padding: .12rem .4rem; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
+    .chartmatch-conf.cm-strong { color: #16a34a; border-color: #16a34a; }
+    .chartmatch-conf.cm-likely { color: var(--accent); border-color: var(--accent); }
+    .chartmatch-conf.cm-weak { color: #d97706; border-color: #d97706; }
+    .chartmatch-conf.cm-none { color: var(--text-muted); }
+    .chartmatch-err { flex: 1 1 100%; color: var(--error); font-size: .68rem; }
+    .chartmatch-actions { display: flex; justify-content: space-between; align-items: center; gap: .6rem; margin-top: .9rem; }
+    .chartmatch-count { font-size: .74rem; color: var(--text-muted); }
     /* Page-pin markers editor (under a PDF attachment row) */
     .midi-preset { margin-top: .5rem; }
     .midi-preset-row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
@@ -1513,6 +1531,65 @@
         if (pointSegDist(x, y, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y) <= radius) return true;
       }
       return false;
+    }
+
+    /******** Chart → song fuzzy matcher (spec F1, pure + headless-tested) ********/
+    // Maps a loose chart title (a filename, or a title OCR'd from a scan) to the best song in
+    // the library, so an imported chart can be auto-suggested onto the right song. Pure, no dep.
+    const TITLE_NOISE_RE = /\b(the|a|an|feat|ft|live|acoustic|studio|remaster(?:ed)?|version|chart|lead\s*sheet|score|tab)\b/g;
+    function normalizeTitle(s) {
+      return String(s || '')
+        .replace(/\.[a-z0-9]{1,5}$/i, '')            // strip a file extension
+        .toLowerCase()
+        .replace(/[_]+/g, ' ')
+        .replace(/^\s*\d{1,3}\s*[-.)]\s*/, ' ')        // leading track number "03 - "
+        .replace(/[^a-z0-9\s]/g, ' ')                 // punctuation → space
+        .replace(TITLE_NOISE_RE, ' ')
+        .replace(/\s+/g, ' ').trim();
+    }
+    function titleTokens(s) { return normalizeTitle(s).split(' ').filter(Boolean); }
+    // Token Jaccard similarity (0–1) with an exact/substring bonus on the normalised strings.
+    function titleSimilarity(a, b) {
+      const A = titleTokens(a), B = titleTokens(b);
+      if (!A.length || !B.length) return 0;
+      const setB = new Set(B), seen = new Set(); let inter = 0;
+      for (const t of A) { if (setB.has(t) && !seen.has(t)) { inter++; seen.add(t); } }
+      const union = new Set(A.concat(B)).size;
+      let score = union ? inter / union : 0;
+      const na = normalizeTitle(a), nb = normalizeTitle(b);
+      if (na && na === nb) return 1;
+      if (na && nb && (na.indexOf(nb) >= 0 || nb.indexOf(na) >= 0)) score = Math.max(score, 0.85);
+      return score;
+    }
+    // Best-matching song for a query title. Returns { song, score } (0–1) at or above
+    // `threshold` (default 0.5), else null. Ties keep the earliest song.
+    function fuzzyMatchSong(query, songs, threshold) {
+      const th = threshold == null ? 0.5 : threshold;
+      let best = null;
+      (songs || []).forEach(song => {
+        const s = titleSimilarity(query, song && song.title);
+        if (!best || s > best.score) best = { song, score: s };
+      });
+      return best && best.score >= th ? best : null;
+    }
+    // Pick the most title-like line out of a block of OCR'd text (top of a scanned chart).
+    // Pure so the heuristic is headless-tested even though the OCR engine itself (lazy
+    // Tesseract) can only be exercised in a real browser. Scans the first lines, drops
+    // pure page numbers / symbol runs, and prefers the line with the most letters.
+    function ocrTitleGuess(text) {
+      const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      let best = '', bestScore = -1;
+      for (let i = 0; i < lines.length && i < 12; i++) {
+        const line = lines[i];
+        const letters = (line.match(/[a-z]/gi) || []).length;
+        if (letters < 3) continue;                         // page numbers, bar counts, symbol rows
+        if (letters / line.length < 0.5) continue;         // mostly punctuation/noise
+        if (line.length > 70) continue;                    // a lyric/prose line, not a title
+        // Earlier lines are likelier titles; break near-ties toward the top of the page.
+        const score = letters - i * 0.5;
+        if (score > bestScore) { bestScore = score; best = line; }
+      }
+      return best.replace(/\s+/g, ' ').trim();
     }
 
     /******** ChordPro engine — parse + transpose (pure, headless-tested) ********/
@@ -7205,6 +7282,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       onExportCSV,
       onImportCSVRobust,
       onOpenImportModal,
+      onMatchCharts,
       onDownloadSampleCSV,
       onClearAll,
       latestImport
@@ -7415,6 +7493,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               <input type="file" accept=".csv,.pdf,.txt" multiple onChange={onImportCSVRobust} style={{ display: 'none' }} />
             </label>
             <button className="btn btn-small" onClick={onOpenImportModal} style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>Import + Normalize</button>
+            <button className="btn btn-small" onClick={onMatchCharts} disabled={songs.length === 0} title="Bulk-attach chart files to songs by matching filenames" data-testid="match-charts-btn">📎 Match Charts</button>
             <button className="btn btn-small" onClick={onExportCSV} disabled={songs.length === 0}>Export CSV</button>
             <button className="btn btn-small" onClick={onDownloadSampleCSV}>Sample CSV</button>
             <button className="btn btn-small" onClick={onClearAll} disabled={songs.length === 0}>Clear All</button>
@@ -9122,6 +9201,145 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
+    // Bulk "match charts to songs" (spec F1). Drop a folder of chart files; each is fuzzy-
+    // matched to a library song by filename (or, on demand, by a title OCR'd off page 1), the
+    // user confirms/overrides the target song, and every file is attached to its song in one
+    // pass — the "organize 100 PDFs" workflow, offline, no backend. Reuses attStore (§9x).
+    function ChartMatchModal({ open, onClose, songs, onAttach, showToast }) {
+      const [rows, setRows] = React.useState([]);
+      const [busy, setBusy] = React.useState(false);
+      const [dragover, setDragover] = React.useState(false);
+      const fileRef = React.useRef(null);
+      // Only songs are match targets; audio backing tracks aren't "charts" but can still attach.
+      const matchTargets = (songs || []).filter(s => (s.status || 'active') === 'active');
+
+      const reset = () => { setRows([]); setBusy(false); setDragover(false); };
+      const close = () => { reset(); onClose(); };
+
+      const addFiles = (fileList) => {
+        const files = Array.from(fileList || []);
+        if (!files.length) return;
+        const next = files.map(f => {
+          const fmt = resolveChartFormat({ name: f.name, mime: f.type });
+          const kind = fmt === 'audio' ? 'audio' : (/image\//i.test(f.type) || fmt === 'image' ? 'chart' : 'leadsheet');
+          const guess = fuzzyMatchSong(f.name, matchTargets);
+          return {
+            key: genId(), file: f, id: genId(), name: f.name,
+            size: f.size, mime: f.type || 'application/octet-stream', kind, fmt,
+            songId: guess ? guess.song.id : '', score: guess ? guess.score : 0,
+            source: 'filename', ocrBusy: false, ocrErr: '',
+            tooBig: f.size > ATT_MAX_BYTES,
+          };
+        });
+        setRows(prev => [...prev, ...next]);
+      };
+      const onPick = (e) => { addFiles(e.target.files); e.target.value = ''; };
+      const onDrop = (e) => { e.preventDefault(); setDragover(false); if (e.dataTransfer && e.dataTransfer.files) addFiles(e.dataTransfer.files); };
+
+      const setRow = (key, patch) => setRows(prev => prev.map(r => r.key === key ? { ...r, ...patch } : r));
+      const removeRow = (key) => setRows(prev => prev.filter(r => r.key !== key));
+
+      // On-demand OCR: read the title off page 1 of a scan, then re-match (lazy Tesseract).
+      const runOcr = async (row) => {
+        setRow(row.key, { ocrBusy: true, ocrErr: '' });
+        try {
+          const title = await ocrChartTitle(row.file, row.fmt);
+          if (!title) { setRow(row.key, { ocrBusy: false, ocrErr: 'No readable title found on page 1.' }); return; }
+          const guess = fuzzyMatchSong(title, matchTargets);
+          setRow(row.key, {
+            ocrBusy: false, source: 'ocr', ocrTitle: title,
+            songId: guess ? guess.song.id : '', score: guess ? guess.score : 0,
+          });
+        } catch (e) {
+          setRow(row.key, { ocrBusy: false, ocrErr: 'Text recognition unavailable (needs a live connection the first time).' });
+        }
+      };
+
+      const matchedRows = rows.filter(r => r.songId && !r.tooBig);
+      const doAttach = async () => {
+        if (!matchedRows.length) return;
+        setBusy(true);
+        let attached = 0;
+        const bySong = {};
+        for (const r of matchedRows) {
+          try {
+            await attStore.put(r.id, r.file);
+            (bySong[r.songId] = bySong[r.songId] || []).push({ id: r.id, name: r.name, mime: r.mime, size: r.size, kind: r.kind });
+            attached++;
+          } catch (e) { /* skip a file that won't store */ }
+        }
+        // One functional update per song folds all its new attachments on at once.
+        onAttach(bySong);
+        setBusy(false);
+        showToast && showToast(`Attached ${attached} chart${attached !== 1 ? 's' : ''} to ${Object.keys(bySong).length} song${Object.keys(bySong).length !== 1 ? 's' : ''}`, 'success');
+        close();
+      };
+
+      if (!open) return null;
+      const confidenceLabel = (r) => {
+        if (!r.songId) return { txt: 'no match', cls: 'cm-none' };
+        if (r.score >= 0.85) return { txt: 'strong', cls: 'cm-strong' };
+        if (r.score >= 0.5) return { txt: 'likely', cls: 'cm-likely' };
+        return { txt: 'weak', cls: 'cm-weak' };
+      };
+      return (
+        <div className="modal-backdrop" onClick={close}>
+          <div className="import-modal" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.75rem' }}>
+              <h3 className="panel-title">📎 Match Charts to Songs</h3>
+              <button className="btn btn-small" onClick={close}>Close</button>
+            </div>
+            <p className="chartmatch-intro">Drop chart files (PDF, image, ChordPro, ABC, MusicXML, Guitar Pro, or a backing track). Each is matched to a song by its filename — confirm or change the target, then attach them all at once. For a scan with a useless filename, tap <b>Read title</b> to OCR page 1.</p>
+
+            <div
+              className={`chartmatch-drop${dragover ? ' over' : ''}`}
+              onDragOver={(e) => { e.preventDefault(); setDragover(true); }}
+              onDragLeave={() => setDragover(false)}
+              onDrop={onDrop}
+              onClick={() => fileRef.current && fileRef.current.click()}
+              role="button" tabIndex={0}
+              data-testid="chartmatch-drop"
+            >
+              <input ref={fileRef} type="file" multiple style={{ display: 'none' }}
+                accept="application/pdf,image/*,audio/*,.cho,.chopro,.chordpro,.crd,.pro,.txt,.abc,.xml,.musicxml,.mxl,.gp,.gp3,.gp4,.gp5,.gpx,.gp7,.ptb,.mp3,.m4a,.wav,.ogg,.aac,.flac"
+                onChange={onPick} />
+              <span>{dragover ? 'Drop to add…' : '📂 Drop chart files here, or click to choose'}</span>
+            </div>
+
+            {rows.length > 0 && (
+              <div className="chartmatch-rows" data-testid="chartmatch-rows">
+                {rows.map(r => {
+                  const conf = confidenceLabel(r);
+                  const canOcr = r.fmt === 'pdf' || r.fmt === 'image';
+                  return (
+                    <div key={r.key} className="chartmatch-row">
+                      <span className="attach-ic">{/image\//.test(r.mime) || r.fmt === 'image' ? '🖼' : r.fmt === 'audio' ? '🎵' : '📄'}</span>
+                      <span className="chartmatch-name" title={r.name}>{r.name}{r.tooBig && <span className="chartmatch-toobig"> · over {fmtBytes(ATT_MAX_BYTES)}</span>}{r.source === 'ocr' && r.ocrTitle && <span className="chartmatch-ocr" title="Title read from the scan"> · read “{r.ocrTitle}”</span>}</span>
+                      <select className="chartmatch-song" value={r.songId} onChange={e => setRow(r.key, { songId: e.target.value, source: 'manual' })} disabled={r.tooBig}>
+                        <option value="">— skip —</option>
+                        {matchTargets.map(s => <option key={s.id} value={s.id}>{s.title}{s.artist ? ` — ${s.artist}` : ''}</option>)}
+                      </select>
+                      <span className={`chartmatch-conf ${conf.cls}`} title={r.songId ? `match score ${(r.score * 100) | 0}%` : 'no confident match — pick a song'}>{conf.txt}</span>
+                      {canOcr && <button className="btn btn-small" disabled={r.ocrBusy} onClick={() => runOcr(r)} title="Read the title off page 1 (OCR)" data-testid="chartmatch-ocr-btn">{r.ocrBusy ? '…' : '🔍 Read title'}</button>}
+                      <button className="btn btn-small" style={{ color: 'var(--error)', borderColor: 'var(--error)', padding: '0 .3rem' }} onClick={() => removeRow(r.key)} title="Remove">✕</button>
+                      {r.ocrErr && <span className="chartmatch-err" role="alert">{r.ocrErr}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="chartmatch-actions">
+              <span className="chartmatch-count">{matchedRows.length} of {rows.length} will attach</span>
+              <button className="btn btn-primary" disabled={!matchedRows.length || busy} onClick={doAttach} data-testid="chartmatch-attach">
+                {busy ? 'Attaching…' : `Attach ${matchedRows.length} chart${matchedRows.length !== 1 ? 's' : ''}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function BandModal({ open, onClose, bands, onCreate, onDelete, onDuplicate }) {
       const [form, setForm] = useState({ name: '', icon: '🎵', color: '#ff6b35' });
       if (!open) return null;
@@ -9912,6 +10130,46 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       });
     }
 
+    // Tesseract.js OCR is lazy-loaded on the first "Read title" click only (mirrors the
+    // notation-lib pattern) — the app is byte-identical on load for everyone else. The
+    // engine fetches its own worker/core/lang data from the CDN on first use, so this
+    // step needs a live connection once (it then caches); it degrades gracefully offline.
+    const TESSERACT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+    function ensureTesseract() {
+      if (window.Tesseract) return Promise.resolve(window.Tesseract);
+      return loadScriptOnce(TESSERACT_URL).then(() => {
+        if (!window.Tesseract) throw new Error('Tesseract did not initialize');
+        return window.Tesseract;
+      });
+    }
+    // Render page 1 of a chart (PDF via the already-loaded PDF.js, or an image) to something
+    // Tesseract can read, recognize it, and distil a probable title via the pure ocrTitleGuess.
+    async function ocrChartTitle(blob, fmt) {
+      let source;
+      if (fmt === 'image') {
+        const url = URL.createObjectURL(blob);
+        try {
+          source = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('image load failed')); im.src = url; });
+        } finally { /* revoke after recognize below */ source && (source.__url = url); }
+      } else {
+        const pdfjs = window.pdfjsLib;
+        if (!pdfjs) throw new Error('PDF.js unavailable');
+        const doc = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
+        const page = await doc.getPage(1);
+        const vp = page.getViewport({ scale: 2 });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.ceil(vp.width); canvas.height = Math.ceil(vp.height);
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+        try { doc.destroy(); } catch (e) {}
+        source = canvas;
+      }
+      const Tesseract = await ensureTesseract();
+      try {
+        const { data } = await Tesseract.recognize(source, 'eng');
+        return ocrTitleGuess(data && data.text);
+      } finally { if (source && source.__url) URL.revokeObjectURL(source.__url); }
+    }
+
     // ChordPro renderer — chord-over-lyric, transposable, no external library. Each segment
     // stacks its (transposed) chord above its lyric chunk so chords sit over the right word.
     function ChordProChart({ text, transpose, fit }) {
@@ -9965,7 +10223,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
     // MusicXML via OpenSheetMusicDisplay (lazy). Uncompressed .xml/.musicxml load as text;
     // compressed .mxl loads from its bytes.
-    function MusicXmlChart({ blob, compressed, onError }) {
+    function MusicXmlChart({ blob, compressed, transpose, onError }) {
       const ref = React.useRef(null);
       React.useEffect(() => {
         let alive = true, osmd = null;
@@ -9975,14 +10233,18 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             if (!alive || !ref.current) return;
             ref.current.innerHTML = '';
             osmd = new lib.OpenSheetMusicDisplay(ref.current, { autoResize: true, backend: 'svg', drawingParameters: 'default' });
+            // Enable transposition (F5) — needs the calculator plugin assigned before render.
+            if (lib.TransposeCalculator) { try { osmd.TransposeCalculator = new lib.TransposeCalculator(); } catch (e) {} }
             const data = compressed ? new Uint8Array(await blob.arrayBuffer()) : await blob.text();
             await osmd.load(data);
             if (!alive) return;
+            const semi = transpose | 0;
+            if (semi && osmd.Sheet && osmd.TransposeCalculator) { try { osmd.Sheet.Transpose = semi; osmd.updateGraphic(); } catch (e) {} }
             osmd.render();
           } catch (e) { if (alive) onError && onError('Could not render this MusicXML file.'); }
         })();
         return () => { alive = false; };
-      }, [blob, compressed]);
+      }, [blob, compressed, transpose]);
       return <div ref={ref} className="stage-notation stage-musicxml" data-testid="stage-musicxml" />;
     }
 
@@ -10141,7 +10403,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       if (fmt === 'image') return <ImageChart blob={blob} fit={fit} anno={anno} onError={onError} />;
       if (fmt === 'chordpro') return text != null ? <ChordProChart text={text} transpose={transpose} fit={fit} /> : <div className="stage-chart-loading">Loading…</div>;
       if (fmt === 'abc') return text != null ? <AbcChart text={text} onError={onError} /> : <div className="stage-chart-loading">Loading…</div>;
-      if (fmt === 'musicxml') return <MusicXmlChart blob={blob} compressed={chartExt(att.name) === 'mxl'} onError={onError} />;
+      if (fmt === 'musicxml') return <MusicXmlChart blob={blob} compressed={chartExt(att.name) === 'mxl'} transpose={transpose} onError={onError} />;
       if (fmt === 'guitarpro') return <GuitarProChart blob={blob} onError={onError} />;
       return <div className="stage-chart-loading">Unsupported chart format.</div>;
     }
@@ -10318,7 +10580,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               <span>{songOrdinal}/{totalSongs}</span>
             </div>
             <div className="stage-chart-spacer" />
-            {fmt === 'chordpro' && (
+            {(fmt === 'chordpro' || fmt === 'musicxml') && (
               <span className="stage-transpose" data-testid="stage-transpose">
                 <button className="stage-ctrl" onClick={() => setTranspose(t => t - 1)} title="Transpose down a semitone (−)">♭</button>
                 <button className="stage-ctrl" onClick={() => setTranspose(0)} title="Reset transpose (0)">{transpose > 0 ? '+' + transpose : transpose}</button>
@@ -13299,6 +13561,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       const [bandModal, setBandModal] = useState(false);
       const [importModal, setImportModal] = useState(false);
+      const [chartMatchModal, setChartMatchModal] = useState(false);
       const [gigModal, setGigModal] = useState(false);
       const [toast, setToast] = useState(null);
       const [storageStatus, setStorageStatus] = useState(storageHealth.level());
@@ -14134,6 +14397,14 @@ ${headerHtml}
       const updateSong = (id, updates) => {
         setSongs(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
         showToast('Song updated', 'success');
+      };
+
+      // Bulk-attach charts matched by ChartMatchModal. `bySong` is { songId: [attMeta,...] };
+      // the blobs are already in attStore. One functional update folds every song's new
+      // attachments on at once (metadata rides the existing `attachments` spread, §9x).
+      const attachChartsToSongs = (bySong) => {
+        if (!bySong || !Object.keys(bySong).length) return;
+        setSongs(prev => prev.map(s => bySong[s.id] ? { ...s, attachments: [...(s.attachments || []), ...bySong[s.id]] } : s));
       };
 
       const deleteSong = (id) => {
@@ -15719,6 +15990,7 @@ ${headerHtml}
                 onExportCSV={exportSongs}
                 onImportCSVRobust={importCSVRobust}
                 onOpenImportModal={() => setImportModal(true)}
+                onMatchCharts={() => setChartMatchModal(true)}
                 onDownloadSampleCSV={downloadSampleCSV}
                 onClearAll={clearAllSongs}
                 latestImport={imports[0] || null}
@@ -15953,6 +16225,14 @@ ${headerHtml}
               onImport={importCanonicalRows}
               existingSongs={songs}
               onRiskyAction={promptBackupBeforeRiskyAction}
+            />
+
+            <ChartMatchModal
+              open={chartMatchModal}
+              onClose={() => setChartMatchModal(false)}
+              songs={songs}
+              onAttach={attachChartsToSongs}
+              showToast={showToast}
             />
 
             <RosterModal

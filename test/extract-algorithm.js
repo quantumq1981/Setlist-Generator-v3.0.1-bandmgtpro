@@ -218,6 +218,8 @@ for (const f of [
   'isRenderableChart', 'beatIntervalMs', 'midiProgramChange', 'midiControlChange',
   // Annotation geometry (key + eraser hit-test).
   'annoKey', 'pointSegDist', 'strokeNearPoint',
+  // Chart→song fuzzy matcher + OCR title heuristic (F1).
+  'TITLE_NOISE_RE', 'normalizeTitle', 'titleTokens', 'titleSimilarity', 'fuzzyMatchSong', 'ocrTitleGuess',
   // Tonal-gravity helpers + the transition scorer they compose into.
   'normalizeKey_TG', 'getCircleIndex_TG', 'circleDistance_TG', 'areRelativeKeys_TG',
   'areParallelKeys_TG', 'circleDirection_TG', 'anchorKeyBonus_TG', 'determineAnchorKey_TG',
@@ -237,6 +239,7 @@ const EXPORTS = [
   'chartExt', 'resolveChartFormat', 'transposeNote', 'transposeChord', 'parseChordProLine', 'parseChordPro',
   'isRenderableChart', 'beatIntervalMs', 'midiProgramChange', 'midiControlChange',
   'annoKey', 'pointSegDist', 'strokeNearPoint',
+  'normalizeTitle', 'titleTokens', 'titleSimilarity', 'fuzzyMatchSong', 'ocrTitleGuess',
   'normalizeKey_TG', 'circleDistance_TG', 'determineAnchorKey_TG', 'calculateTonalTransitionScore_TG',
   'calculateSetlistQualityScore', 'generateTonalDiagnostics_TG', 'simulatedAnnealingOptimize',
   'generateSetlistsCore', 'generateSetlistsCore_WithTonalGravity', 'validateGenerationConstraints',
