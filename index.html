@@ -696,6 +696,8 @@
     }
     .stage-anno-color { width: 1.4rem; height: 1.4rem; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
     .stage-anno-color.on { border-color: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.45); }
+    .stage-anno-done { margin-left: .3rem; font-weight: 700; color: #052e16; background: #4ade80; border-color: #4ade80; }
+    .stage-anno-done:hover { background: #86efac; }
     .stage-transpose .stage-ctrl { min-width: 2rem; text-align: center; }
     /* Notation renderers (ABC / MusicXML / Guitar Pro) — libraries draw SVG/canvas inside */
     .stage-notation { width: 100%; max-width: 1100px; margin: 0 auto; background: var(--sc-paper); border-radius: 3px; padding: 12px; box-shadow: 0 2px 26px rgba(0,0,0,.5); filter: var(--sc-chart-filter); }
@@ -10073,7 +10075,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     // eraser removes whole strokes. Points are stored NORMALISED so ink stays pinned as the
     // chart zooms/reflows. Strokes persist to IndexedDB per (attId, page); undo/redo/clear.
     // Local-only — no band sync (that half needs a backend).
-    function AnnotationLayer({ attId, page, targetRef }) {
+    function AnnotationLayer({ attId, page, targetRef, onExit }) {
       const canvasRef = React.useRef(null);
       const strokesRef = React.useRef([]);
       const redoRef = React.useRef([]);
@@ -10161,6 +10163,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             <button className="stage-ctrl" onClick={undo} title="Undo" data-testid="anno-undo">↶</button>
             <button className="stage-ctrl" onClick={redo} title="Redo">↷</button>
             <button className="stage-ctrl" onClick={clearAll} title="Clear all ink">🗑</button>
+            <button className="stage-ctrl stage-anno-done" onClick={() => onExit && onExit()} title="Done annotating (Esc)" data-testid="anno-done">✓ Done</button>
           </div>
         </>
       );
@@ -10233,7 +10236,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       return (
         <div className="stage-anno-wrap">
           <canvas ref={canvasRef} className="stage-chart-canvas" />
-          {anno && anno.enabled && <AnnotationLayer attId={anno.attId} page={anno.page} targetRef={canvasRef} />}
+          {anno && anno.enabled && <AnnotationLayer attId={anno.attId} page={anno.page} targetRef={canvasRef} onExit={anno.onExit} />}
         </div>
       );
     }
@@ -10252,7 +10255,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       return (
         <div className="stage-anno-wrap">
           <img ref={imgRef} src={url} className="stage-chart-img" data-fit={fit} alt="" onError={() => onError && onError('Could not load this image chart.')} />
-          {anno && anno.enabled && <AnnotationLayer attId={anno.attId} page={anno.page} targetRef={imgRef} />}
+          {anno && anno.enabled && <AnnotationLayer attId={anno.attId} page={anno.page} targetRef={imgRef} onExit={anno.onExit} />}
         </div>
       );
     }
@@ -10686,7 +10689,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       React.useEffect(() => {
         if (!open) return;
         const onKey = (e) => {
-          if (e.key === 'Escape') { if (indexOpen) setIndexOpen(false); else onClose(); return; }
+          if (e.key === 'Escape') { if (indexOpen) setIndexOpen(false); else if (annoOn) setAnnoOn(false); else onClose(); return; }
           if (indexOpen) return;
           switch (e.key) {
             case 'ArrowRight': case 'PageDown': e.preventDefault(); step('nextPage'); break;
@@ -10713,14 +10716,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         };
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
-      }, [open, indexOpen, step, onClose, jumpToPage, queue]);
+      }, [open, indexOpen, annoOn, step, onClose, jumpToPage, queue]);
 
-      // Auto-hide chrome after a few idle seconds.
+      // Auto-hide chrome after a few idle seconds. Kept pinned while annotating so the
+      // top-bar ✏️ toggle / Exit stay reachable (taps draw instead of revealing chrome).
       React.useEffect(() => {
-        if (!open || indexOpen || chromeHidden) return;
+        if (!open || indexOpen || annoOn || chromeHidden) return;
         const id = setTimeout(() => setChromeHidden(true), 4500);
         return () => clearTimeout(id);
-      }, [open, indexOpen, chromeHidden, nav]);
+      }, [open, indexOpen, annoOn, chromeHidden, nav]);
 
       if (!open || queue.length === 0) return null;
 
@@ -10775,7 +10779,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               </span>
             )}
             {(fmt === 'pdf' || fmt === 'image') && (
-              <button className={`stage-ctrl${annoOn ? ' sc-active' : ''}`} onClick={() => setAnnoOn(o => !o)} title="Annotate (draw on the chart)" data-testid="stage-anno-toggle">✏️</button>
+              <button className={`stage-ctrl${annoOn ? ' sc-active' : ''}`} onClick={() => setAnnoOn(o => !o)} title={annoOn ? 'Stop annotating (Esc)' : 'Annotate (draw on the chart)'} data-testid="stage-anno-toggle">{annoOn ? '✏️ Drawing' : '✏️'}</button>
             )}
             <button className="stage-ctrl" onClick={() => setFit(f => f === 'width' ? 'page' : 'width')} title="Fit width / whole page (F)" data-testid="stage-fit">{fit === 'width' ? '↔ Width' : '⤢ Page'}</button>
             <button className="stage-ctrl" onClick={() => setContrast(c => STAGE_CONTRASTS[(STAGE_CONTRASTS.indexOf(c) + 1) % STAGE_CONTRASTS.length])} title="Contrast (dark / amber / light)" data-testid="stage-contrast">{STAGE_CONTRAST_ICON[contrast]}</button>
@@ -10785,7 +10789,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           {err && <div className="stage-err-toast" role="alert" onClick={() => setErr('')}>{err}</div>}
 
           <div className="stage-chart-stage" onClick={onStageClick} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} data-testid="stage-stage">
-            <ChartViewer entry={entry} page={nav.page} fit={fit} transpose={transpose} anno={{ enabled: annoOn, attId: entry.att && entry.att.id, page: nav.page }} onPages={handlePages} onError={setErr} />
+            <ChartViewer entry={entry} page={nav.page} fit={fit} transpose={transpose} anno={{ enabled: annoOn, attId: entry.att && entry.att.id, page: nav.page, onExit: () => setAnnoOn(false) }} onPages={handlePages} onError={setErr} />
           </div>
 
           {marks.length > 0 && (
