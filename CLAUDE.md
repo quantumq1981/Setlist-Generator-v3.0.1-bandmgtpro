@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-09-12.
+Last updated: 2026-09-12 (StageStand annotation-exit fix, §9an).
 
 ---
 
@@ -1690,6 +1690,40 @@ Verification: Babel compile clean (index.html + 3 companion files); `npm test` �
 (UI-only); headless Playwright drive of the real app → 6/6, 0 page errors — "✎ Edit band" opens
 the inline editor, renaming updates the pill live, persists to `localStorage` (`bands[0].name`),
 and the band switcher option reflects the new name.
+
+---
+
+## 9an. Change log — 2026-09 StageStand annotation exit (no-way-out fix)
+
+Fixes the reported bug: in Stage Mode the ink-annotation feature (§9ae) drew fine but
+**had no way out**. The only exit was the `✏️` toggle in the top `.stage-chart-bar`,
+which auto-hides after 4.5s idle — and while annotating the tap-to-reveal-chrome and
+click-zone page-turns early-return on `annoOn`, so once the chrome hid the user was
+trapped in draw mode with no reachable control. Three coordinated edits, all in
+`StageModeOverlay` / `AnnotationLayer`; no schema, localStorage, or algorithm change.
+
+- **Explicit "✓ Done" exit in the ink toolbar.** `AnnotationLayer` gains an `onExit`
+  prop and a prominent green **✓ Done** button at the end of the always-on-screen
+  `.stage-anno-tools` strip (`z-index:10001`, so it never hides with the chrome). The
+  callback is threaded `StageModeOverlay → ChartViewer(anno.onExit) →
+  PdfPageCanvas/ImageChart → AnnotationLayer`, resolving to `() => setAnnoOn(false)`.
+  This is the primary, unmissable exit on both web and mobile.
+- **Escape exits annotation first** on desktop/web (the requested escape-to-exit):
+  precedence in the keydown handler is now `indexOpen → annoOn → onClose`, so a first
+  Esc leaves drawing and a second closes Stage Mode. `annoOn` added to the effect deps
+  so the closure isn't stale.
+- **Chrome stays pinned while annotating.** The auto-hide effect now exempts `annoOn`,
+  keeping the top-bar `✏️` toggle (relabeled **✏️ Drawing** when active) and `✕ Exit`
+  reachable as a secondary path and preserving page/exit controls during a drawing pass.
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` →
+204/204 (UI-only, no logic touched); headless Playwright drive of the real app (seeded
+song + real 2-page PDF attachment in IndexedDB, generate, open Stage Mode) → 14/14, 0
+page errors — annotation toggles on, the **✓ Done** button is present, the chrome stays
+visible past the 4.5s auto-hide window while annotating, **✓ Done** exits ink mode
+without leaving Stage Mode, re-entering then pressing **Esc** exits ink first, and a
+second **Esc** closes Stage Mode. Real Apple-Pencil pressure remains a device concern
+verified on the iPad (the sandbox drives synthetic pointer events).
 
 ---
 
