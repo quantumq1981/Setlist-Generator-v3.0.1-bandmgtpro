@@ -4721,7 +4721,7 @@
         const content = await page.getTextContent();
         const items = content.items
           .filter(it => it.str && it.str.trim())
-          .map(it => ({ str: it.str.replace(/\s+$/, ''), x: it.transform[4], y: it.transform[5], w: it.width }))
+          .map(it => ({ str: it.str.replace(/\s+$/, ''), x: it.transform[4], y: it.transform[5], w: it.width, font: it.fontName }))
           .sort((a, b) => (Math.abs(b.y - a.y) > 3 ? b.y - a.y : a.x - b.x));
         const rows = [];
         let cur = null;
@@ -5382,7 +5382,7 @@
       const allRows = (pages || []).flatMap(pg => pg.rows || []);
       const rowText = arrRowText;
       const notes = [];
-      let started = false, colCx = null, colBx = null, colAx = null, cur = null, curKey = null, setName = '';
+      let started = false, colCx = null, colBx = null, colAx = null, cur = null, curKey = null, setName = '', curTitleFont = null;
 
       for (const row of allRows) {
         const items = [...(row.items || [])].sort((a, b) => a.x - b.x);
@@ -5418,15 +5418,28 @@
 
         const colCItems = items.filter(it => it.x >= colCx - 2);
         const colAItems = items.filter(it => it.x < colCx - 2);
+        const titleMax = (colBx === null ? colCx : colBx) - 2;
 
         // A new song starts on the row whose column A opens with the number badge.
         if (colAItems.length > 1 && /^\d+$/.test(colAItems[0].str.trim())) {
-          const titleMax = (colBx === null ? colCx : colBx) - 2;
-          const title = rowText(colAItems.slice(1).filter(it => it.x < titleMax))
-            .replace(/\s+\d+\s*BPM.*$/i, '').trim();
+          const titleItems = colAItems.slice(1).filter(it => it.x < titleMax);
+          const title = rowText(titleItems).replace(/\s+\d+\s*BPM.*$/i, '').trim();
           cur = { num: notes.length + 1, title, setName, arr: {} };
+          curTitleFont = (titleItems[0] && titleItems[0].font) || null;
           notes.push(cur);
           curKey = null;
+        } else if (cur && curTitleFont) {
+          // Multi-line (wrapped) title. The guide renders a long title across two or
+          // more column-A rows in the SAME bold title font; the artist line just below
+          // it is italic (a different font). A single-line title's artist even shares
+          // the BPM row, so column geometry alone can't separate them -- the font can.
+          // Append a run of title-zone items that ALL carry the title font (so an italic
+          // artist line is never folded into the title) so the note matches its song.
+          const titleZone = colAItems.filter(it => it.x < titleMax);
+          if (titleZone.length && titleZone.every(it => it.font && it.font === curTitleFont)) {
+            const add = rowText(titleZone).replace(/\s+\d+\s*BPM.*$/i, '').trim();
+            if (add) cur.title += ' ' + add;
+          }
         }
         if (!cur || !colCItems.length) continue;
 
@@ -9549,9 +9562,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             <div style={{ marginBottom: '1rem', padding: '.6rem .7rem', border: '1px dashed var(--accent)', borderRadius: '8px', background: 'rgba(96,165,250,.06)' }}>
               <input ref={anRef} type="file" accept=".pdf" style={{ display: 'none' }}
                 onChange={e => { const f = e.target.files[0]; if (f && onApplyArrangementNotes) onApplyArrangementNotes(f); e.target.value = ''; }} />
-              <button className="btn btn-small" onClick={() => anRef.current?.click()} style={{ borderColor: '#60a5fa', color: '#60a5fa' }}>📋 Import Arrangement Notes → Library</button>
+              <button className="btn btn-small" onClick={() => anRef.current?.click()} style={{ borderColor: '#60a5fa', color: '#60a5fa' }}>📋 Import Arrangement Notes</button>
               <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', marginTop: '.4rem' }}>
-                Upload an Advance-view PDF (or its arrangement-notes page) that this app generated — every footnote is matched to a song in your library by title and its rehearsal marks are restored, so you never re-type them after an export.
+                Upload an Advance-view or Master Arrangement Guide PDF (or its arrangement-notes page) that this app generated — every footnote is matched by title and its rehearsal marks restored, both in your song library <strong>and</strong> in the setlists of your saved gigs, so you never re-type them after an export.
               </div>
             </div>
 
@@ -15682,10 +15695,13 @@ ${headerHtml}
       };
 
       // Upload an app-generated arrangement-notes / rehearsal-marks PDF (the Advance
-      // export, or its standalone notes page) and re-apply every footnote to the matching
-      // library song by title — so a song's rehearsal marks never have to be re-typed
-      // after a PDF round-trip. Matched-role notes are merged onto each song's existing
-      // arrangement (untouched roles preserved).
+      // export, the Master Arrangement Guide, or its standalone notes page) and re-apply
+      // every footnote to the matching song by title — so rehearsal marks never have to be
+      // re-typed after a PDF round-trip. Matched-role notes are merged onto each song's
+      // existing arrangement (untouched roles preserved). Notes attach wherever the songs
+      // actually live: the song library AND every saved gig's setlist, because a setlist
+      // imported straight into Gig Profiles is never added to the library, and matching
+      // against the library alone would silently attach nothing for that workflow.
       const applyArrangementNotesFromPDF = async (file) => {
         if (!file) return;
         try {
@@ -15693,29 +15709,57 @@ ${headerHtml}
           const pages = await pdfExtractRows(arrayBuffer);
           const notes = pdfParseArrangementNotes(pages);
           if (!notes.length) {
-            showToast('No arrangement notes found in that PDF — is it an Advance-view export?', 'error');
+            showToast('No arrangement notes found in that PDF — is it an Advance-view or Arrangement Guide export?', 'error');
             return;
           }
-          // Resolve which note applies to each song up front (pure), so the toast counts
-          // are correct and the setSongs updater stays side-effect-free.
-          const noteForSong = (s) => {
-            const note = notes.find(n => arrNoteMatchesTitle(s.title, n));
-            if (!note) return null;
-            const merged = arrApplyNoteToArrangement(s.arrangement, note);
-            return merged ? { note, merged } : null;
-          };
           const usedNotes = new Set();
-          let applied = 0;
-          songs.forEach(s => { const hit = noteForSong(s); if (hit) { usedNotes.add(hit.note); applied++; } });
-          setSongs(prev => prev.map(s => {
-            const hit = noteForSong(s);
-            return hit ? { ...s, arrangement: hit.merged } : s;
-          }));
+          // Pure resolver: the footnote for a song merged onto its existing arrangement,
+          // or null when nothing matches / nothing changes. Marks the note used so the
+          // unmatched tally stays accurate across both the library and every gig.
+          const mergeFor = (song) => {
+            const note = notes.find(n => arrNoteMatchesTitle(song.title, n));
+            if (!note) return null;
+            const merged = arrApplyNoteToArrangement(song.arrangement, note);
+            if (!merged || merged === song.arrangement) return null;
+            usedNotes.add(note);
+            return merged;
+          };
+
+          // 1) Library songs — keyed by id so the state update stays a pure functional map.
+          const songMerges = new Map();
+          songs.forEach(s => { const merged = mergeFor(s); if (merged) songMerges.set(s.id, merged); });
+          if (songMerges.size) {
+            setSongs(prev => prev.map(s => songMerges.has(s.id) ? { ...s, arrangement: songMerges.get(s.id) } : s));
+          }
+
+          // 2) Every saved gig's setlist songs (persisted like importBandHelperSetlist).
+          let gigApplied = 0;
+          const nextGigs = gigs.map(g => {
+            let changed = false;
+            const setlistsOut = (g.setlists || []).map(set => ({
+              ...set,
+              songs: (set.songs || []).map(s => {
+                const merged = mergeFor(s);
+                if (merged) { changed = true; gigApplied++; return { ...s, arrangement: merged }; }
+                return s;
+              }),
+            }));
+            return changed ? { ...g, setlists: setlistsOut } : g;
+          });
+          if (gigApplied) {
+            setGigs(nextGigs);
+            LS.set(LS_KEYS.bandGigs(activeBandId), nextGigs);
+          }
+
+          const libApplied = songMerges.size;
           const unmatched = notes.filter(n => !usedNotes.has(n)).length;
-          if (!applied) {
-            showToast(`Found ${notes.length} note${notes.length !== 1 ? 's' : ''}, but no titles matched songs in your library`, 'warning');
+          if (!libApplied && !gigApplied) {
+            showToast(`Found ${notes.length} note${notes.length !== 1 ? 's' : ''}, but none matched a song in your library or saved gigs — the song titles must match the PDF`, 'warning');
           } else {
-            let msg = `Applied arrangement notes to ${applied} song${applied !== 1 ? 's' : ''}`;
+            const parts = [];
+            if (libApplied) parts.push(`${libApplied} library song${libApplied !== 1 ? 's' : ''}`);
+            if (gigApplied) parts.push(`${gigApplied} gig song${gigApplied !== 1 ? 's' : ''}`);
+            let msg = `Applied arrangement notes to ${parts.join(' and ')}`;
             if (unmatched) msg += ` — ${unmatched} note${unmatched !== 1 ? 's' : ''} had no matching song`;
             showToast(msg, 'success');
           }
