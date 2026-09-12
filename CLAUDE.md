@@ -1623,6 +1623,35 @@ keeps the readout and updates it to 67/100 (before this fix it vanished).
 
 ---
 
+## 9ak. Change log — 2026-09 faster song→setlist loop + wider one-tap editing
+
+Workflow polish (no algorithm change).
+
+- **Quick-duplicate a song.** `duplicateSong(id)` clones a library song into an editable copy
+  (new id, `status:'active'`, title + " (copy)"), deep-copying `mediaLinks`/`midi` and starting
+  with **no attachments** — attachment metadata points at IndexedDB blobs keyed by attachment
+  id, so sharing ids would let deleting one song free the other's charts. A "Duplicate" button
+  sits in each library row's toolbar.
+- **Inline add-to-set from the library.** Each active library row shows a compact "+ Set…"
+  `<select>` once at least one set exists, routing straight through the existing `addSongToSet`
+  (with its dedup guard). No trip through the Unused-Songs panel for a song already in the list.
+- **✎ edit reaches the Unused-Songs panel.** `UnusedSongsPanel` rows gain a "✎ Edit" button
+  wired to the same `SongEditModal` (via `onEditSong` → `editSetlistSongId`). The setlist rows
+  already carry ✎ in every view (Stage/Advance), so editing is now reachable wherever a song
+  appears — library (inline), setlist, and unused pool.
+- **Keyboard shortcuts in `SongEditModal`.** A document-level listener (active only while open)
+  handles **Esc** (close) and **⌘/Ctrl+Enter** (save) regardless of focus; the hint line names
+  them. (The prominent one-tap "↻ Regenerate" that reuses the current settings already exists in
+  the setlist toolbar.)
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → 204/204 (UI-only,
+no logic touched); headless Playwright drive of the real app → 9/9, 0 page errors — Duplicate adds
+an "Alpha (copy)" and grows the library by one; the library "+ Set…" select appears after Generate;
+the Unused-Songs ✎ opens the editor; **Esc** closes it and **Ctrl+Enter** saves + persists the edit
+to the setlist.
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing

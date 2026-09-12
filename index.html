@@ -7467,6 +7467,20 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         if (open && song) setForm(songToEditForm(song));
         else if (!open) setForm(null);
       }, [open, song && song.id]);
+      // Keyboard: Esc closes, Cmd/Ctrl+Enter saves — fast edits without the mouse.
+      // A document-level listener catches the keys regardless of where focus sits.
+      useEffect(() => {
+        if (!open) return undefined;
+        const handler = (e) => {
+          if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+          else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            if (form && form.title && form.artist && form.duration) { onSave(song.id, form); onClose(); }
+          }
+        };
+        document.addEventListener('keydown', handler);
+        return () => document.removeEventListener('keydown', handler);
+      }, [open, form, song, onSave, onClose]);
       if (!open || !song || !form) return null;
       const canSave = form.title && form.artist && form.duration;
       const save = () => { if (!canSave) return; onSave(song.id, form); onClose(); };
@@ -7479,6 +7493,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             </div>
             <div style={{ marginBottom: '.6rem', fontSize: '.78rem', color: 'var(--text-muted)' }}>
               Changes save to your library and update this setlist (and any other set this song is in) in place.
+              <span style={{ opacity: .8 }}> ⌘/Ctrl+Enter to save · Esc to cancel.</span>
             </div>
             <SongEditFields value={form} onChange={setForm} />
             <div className="toolbar" style={{ justifyContent: 'flex-end', gap: '.4rem', marginTop: '.6rem' }}>
@@ -7502,6 +7517,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       onDeleteSong,
       onShelfSong,
       onRestoreSong,
+      onDuplicateSong,
+      setlists,
+      onAddToSet,
       onExportCSV,
       onImportCSVRobust,
       onOpenImportModal,
@@ -7759,7 +7777,17 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                         </div>
                       </div>
                       <div className="toolbar" style={{ justifyContent: 'flex-end' }}>
+                        {(song.status || 'active') === 'active' && onAddToSet && (setlists || []).length > 0 && (
+                          <select className="move-to-set-select" value="" title={`Add "${song.title}" to a set`}
+                            onChange={e => { if (e.target.value !== '') { onAddToSet(song, Number(e.target.value)); e.target.value = ''; } }}>
+                            <option value="" disabled>+ Set…</option>
+                            {(setlists || []).map((s, si) => <option key={si} value={si}>Set {si + 1}</option>)}
+                          </select>
+                        )}
                         <button className="btn btn-small" onClick={() => startEdit(song)} title="Edit song details" style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>Edit</button>
+                        {onDuplicateSong && (
+                          <button className="btn btn-small" onClick={() => onDuplicateSong(song.id)} title="Duplicate this song (creates an editable copy)">Duplicate</button>
+                        )}
                         {(song.status || 'active') === 'active' ? (
                           <button className="btn btn-small" onClick={() => onShelfSong(song.id)} title="Move to Cold List">Shelf</button>
                         ) : (
@@ -8438,7 +8466,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
     // FEATURE: Shows active songs that are not currently in any generated set.
     // Allows users to add them to a specific set (append) or swap them into a slot.
-    function UnusedSongsPanel({ activeSongs, setlists, onAddToSet, onReplaceInSet }) {
+    function UnusedSongsPanel({ activeSongs, setlists, onAddToSet, onReplaceInSet, onEditSong }) {
       const [open, setOpen] = useState(true);
       const [replaceMode, setReplaceMode] = useState(false); // if true, next click on a set-song replaces it
       const [pendingReplace, setPendingReplace] = useState(null); // { song } awaiting slot selection
@@ -8479,6 +8507,16 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '.3rem', flexWrap: 'wrap' }}>
+                      {onEditSong && (
+                        <button
+                          className="btn btn-small"
+                          style={{ fontSize: '.65rem', padding: '.15rem .4rem' }}
+                          title={`Edit "${song.title}" details, arrangement, notes & attachments`}
+                          onClick={() => onEditSong(song)}
+                        >
+                          ✎ Edit
+                        </button>
+                      )}
                       {setlists.map((set, si) => (
                         <button
                           key={si}
@@ -14614,6 +14652,26 @@ ${headerHtml}
         showToast('Song added (Active)', 'success');
       };
 
+      // Quick-duplicate a song into an editable copy. Attachments are metadata pointing
+      // at IndexedDB blobs keyed by attachment id, so the copy starts with none (sharing
+      // ids would let deleting one song free the other's charts); mediaLinks are deep-copied.
+      const duplicateSong = (id) => {
+        const orig = songs.find(s => s.id === id);
+        if (!orig) return;
+        const { id: _omit, ...rest } = orig;
+        const copy = {
+          ...rest,
+          id: genId(),
+          status: 'active',
+          title: `${orig.title || 'Song'} (copy)`,
+          mediaLinks: (orig.mediaLinks || []).map(c => ({ ...c })),
+          midi: orig.midi ? { ...orig.midi } : { ch: 1, program: '' },
+          attachments: [],
+        };
+        setSongs(prev => [...prev, copy]);
+        showToast(`Duplicated "${orig.title}" — edit the copy`, 'success');
+      };
+
       const updateSong = (id, updates) => {
         setSongs(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
         // Keep any generated setlist in lockstep with the library: a song edited in
@@ -16298,6 +16356,9 @@ ${headerHtml}
                 onDeleteSong={deleteSong}
                 onShelfSong={shelfSong}
                 onRestoreSong={restoreSong}
+                onDuplicateSong={duplicateSong}
+                setlists={setlists}
+                onAddToSet={addSongToSet}
                 onExportCSV={exportSongs}
                 onImportCSVRobust={importCSVRobust}
                 onOpenImportModal={() => setImportModal(true)}
@@ -16503,6 +16564,7 @@ ${headerHtml}
                   setlists={setlists}
                   onAddToSet={addSongToSet}
                   onReplaceInSet={replaceSongInSet}
+                  onEditSong={(song) => setEditSetlistSongId(song.id)}
                 />
               </>
             )}
