@@ -1554,6 +1554,145 @@ arrived.
 
 ---
 
+## 9ai. Change log — 2026-09 combined single-PDF package (iOS-safe export)
+
+Follow-up to §9ah. The staggered two-file "package" export is reliable on desktop but iOS/iPadOS
+Safari can still drop one of two programmatic downloads even across ticks. Added a combine option
+that produces the whole package as **one** PDF, so the export is a single download.
+
+- **`pdfBaseLayout` append seam.** It now accepts `ctx.doc`: when present the renderer draws into
+  that existing jsPDF instance (`doc.addPage(...)` to start fresh) instead of `new jsPDF()`.
+  Both renderers are untouched otherwise — they still call `pdfBaseLayout` and destructure `doc`.
+- **`exportPDF` combined branch.** For `docKind==='package'` with `pdfSettings.combinePackage`,
+  it builds the stage sheet, then calls `generateArrangementGuidePDF(guideEntries, {...ctx, doc})`
+  to append the guide onto the same doc, and does a single `combined.save(...)`. Falls back to
+  just the stage sheet (still one doc) when there are no guide entries. The non-combined path is
+  the §9ah staggered `jobs[]`. Shared `stageSummary()` feeds both.
+- **`combinePackage` setting** (`DEFAULT_PDF_SETTINGS`, additive): defaults **on** for iOS/iPadOS
+  (UA + touch-Mac detection, `typeof navigator` guarded so the Node test sandbox sees `false`),
+  off elsewhere; user-toggleable via a "Combine into one PDF" checkbox in `PdfSettingsModal` that
+  shows when the Package radio is selected. The package radio description and the export button
+  label reflect the choice ("Export combined PDF" vs "both PDFs").
+- **`pdfExportFilename('package', …)`** → `setlist-package-<band>-<date>.pdf`.
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → 199/199 (no
+algorithm logic touched; the generators are unchanged); headless Playwright drive of the real app
+→ 9/9, 0 page errors — stage-only exports 1 file (2pp), guide-only 1 file (1pp), the **combined
+package is ONE download** named `setlist-package-*` whose page count equals stage+guide (3 == 2+1),
+and the non-combined package still produces **two** downloads.
+
+---
+
+## 9aj. Change log — 2026-09 live re-score on manual reorder + saveable energy/tonal profiles
+
+Two workflow-polish items from the owner's list.
+
+- **Manual reorder now re-scores (and no longer wipes scores).** Every manual setlist edit
+  rebuilt the array with `[...setlists]`, which dropped the array-level `qualityScores` /
+  `anchorKey` — so a drag/move/remove/swap made the quality readout **vanish**, and any
+  surviving number went stale. New App helpers `recomputeSetlistScores(sets)` (re-derives the
+  anchor key like `generate()` and recomputes `calculateSetlistQualityScore` per set, mutating
+  + returning the array) and `commitSetlists(sets)` (recompute → `setSetlists`). Every manual
+  handler now commits through it — `swapSong`, `moveSong`, `reorderSongWithinSet`,
+  `moveSongBetweenSets`, `removeSongFromSetlist`, `addSongToSet`, `replaceSongInSet`,
+  `moveToSetDropdown` (via the move helper), and `resetToOriginal`; `updateSong` (§9ah) also
+  recomputes (an energy/duration edit changes the score). The `EnergyCurvePreview` was already
+  live (it renders from `set.songs`); this makes the energy/tonal/diversity/duration **scores**
+  track the current order too. Manual order is never re-optimized away — we re-score, not
+  re-sort.
+- **Saveable energy/tonal profiles.** Pure `extractEnergyProfile(settings)` /
+  `applyEnergyProfile(settings, profile)` over `ENERGY_PROFILE_FIELDS` (the optimizer knobs:
+  `useEnergyCurve`, `energyCurveType`, `energyWeight`, `useTonalGravity`, `tonalSmoothness`,
+  `anchorKey`, `tonalWeight`, `setTemplate`, `optimizationLevel`, `randomness`,
+  `diversityWeight`) capture/reapply just those fields, leaving everything else untouched.
+  Profiles are a reusable, cross-band list in the additive global key
+  `setlist_energy_profiles_v3` (never touches a per-band key); App `energyProfiles` state +
+  `saveEnergyProfile` (overwrites a same-name profile) / `applyEnergyProfileById` /
+  `deleteEnergyProfile`. A **Profile bar** at the top of `SetConfiguration` (`.profile-bar`,
+  `data-testid="energy-profile-bar"`) loads a saved profile, names + saves the current knobs,
+  and deletes the selected one. Loading applies the config to `settings`; the next Generate
+  uses it.
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → 204/204 (+5 in
+`test/energy-profiles.test.js`: field-only extract, absent-field omit, overlay-preserves-rest +
+no-mutate, extract→apply round-trip, empty-config tolerance); headless Playwright drive of the
+real app → 8/8, 0 page errors — save profile "P1" (persists to `localStorage` with
+`config.energyCurveType==='standard'`), change the curve to "party", load P1 → reverts to
+"standard"; after Generate the quality reads Set 1: 68/100, and a manual reorder (mobile ↓)
+keeps the readout and updates it to 67/100 (before this fix it vanished).
+
+---
+
+## 9ak. Change log — 2026-09 faster song→setlist loop + wider one-tap editing
+
+Workflow polish (no algorithm change).
+
+- **Quick-duplicate a song.** `duplicateSong(id)` clones a library song into an editable copy
+  (new id, `status:'active'`, title + " (copy)"), deep-copying `mediaLinks`/`midi` and starting
+  with **no attachments** — attachment metadata points at IndexedDB blobs keyed by attachment
+  id, so sharing ids would let deleting one song free the other's charts. A "Duplicate" button
+  sits in each library row's toolbar.
+- **Inline add-to-set from the library.** Each active library row shows a compact "+ Set…"
+  `<select>` once at least one set exists, routing straight through the existing `addSongToSet`
+  (with its dedup guard). No trip through the Unused-Songs panel for a song already in the list.
+- **✎ edit reaches the Unused-Songs panel.** `UnusedSongsPanel` rows gain a "✎ Edit" button
+  wired to the same `SongEditModal` (via `onEditSong` → `editSetlistSongId`). The setlist rows
+  already carry ✎ in every view (Stage/Advance), so editing is now reachable wherever a song
+  appears — library (inline), setlist, and unused pool.
+- **Keyboard shortcuts in `SongEditModal`.** A document-level listener (active only while open)
+  handles **Esc** (close) and **⌘/Ctrl+Enter** (save) regardless of focus; the hint line names
+  them. (The prominent one-tap "↻ Regenerate" that reuses the current settings already exists in
+  the setlist toolbar.)
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → 204/204 (UI-only,
+no logic touched); headless Playwright drive of the real app → 9/9, 0 page errors — Duplicate adds
+an "Alpha (copy)" and grows the library by one; the library "+ Set…" select appears after Generate;
+the Unused-Songs ✎ opens the editor; **Esc** closes it and **Ctrl+Enter** saves + persists the edit
+to the setlist.
+
+---
+
+## 9al. Change log — 2026-09 Set Configuration grouped into collapsible sections (PR 3b follow-on)
+
+The `SetConfiguration` panel was one long flat wall of controls. It is now organized so the
+**basics stay up top** (Number of Sets, Duration per set, Allow Reuse, the Profile bar) and the
+heavier control blocks live in native `<details className="config-group">` collapsibles:
+**⚡ Energy Curve** (open), **🎬 Openers & Closers** (open — holds the Force toggles + locked
+pools + per-set assignment), **🎵 Tonal Gravity** (collapsed), **⚙ Advanced Settings**
+(collapsed — Set Template, Optimization, Randomness, Diversity/Tonal weight, Song Pairings,
+Pin-to-Set). Native `<details>` (same low-risk pattern as §9y's Find-rooms menu) means **no new
+React state** and the children always render, so every input keeps its value when a section is
+collapsed — only visibility toggles via CSS. The inner "Advanced Settings" text header was
+dropped in favor of the summary. `.config-group` styling is built on the PR-2 tokens; each
+summary has a `data-testid` (`group-energy`/`group-openers`/`group-tonal`/`group-advanced`).
+
+Verification: Babel compile clean (index.html + 3 companion files; the `<details>` nesting
+balances); `npm test` → 204/204 (UI-only); headless Playwright drive of the real app → 9/9, 0
+page errors — 4 groups render; Energy + Openers open by default, Tonal + Advanced collapsed; the
+Randomness control is hidden while Advanced is collapsed and appears when its summary is clicked;
+Generate still produces a setlist after the reorg.
+
+---
+
+## 9am. Change log — 2026-09 inline band quick-edit
+
+Last of the workflow-polish items. The active band's identity could only be changed by opening
+Manage Bands; the EPK/press-kit is already one click from the top nav (Press Kit deep-links into
+`VenueModal`'s settings tab, PR 3a §9v), so this pass closes the remaining gap — band identity.
+
+- **`BandQuickEdit`** component in the band bar (next to Manage Bands): a "✎ Edit band" button
+  expands an inline row of name / icon (emoji) / color inputs that write **live** through the new
+  App `updateActiveBand(patch)` (`setBands` map over the active id; persisted by the existing
+  `bands`→`LS_KEYS.bands` effect). Enter or Done collapses it. No new localStorage key; the band
+  switcher and pill reflect the change immediately.
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → 204/204
+(UI-only); headless Playwright drive of the real app → 6/6, 0 page errors — "✎ Edit band" opens
+the inline editor, renaming updates the pill live, persists to `localStorage` (`bands[0].name`),
+and the band switcher option reflects the new name.
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing
@@ -1575,12 +1714,17 @@ all three as buttons (`data-testid="export-stage" / "export-guide" / "export-pac
 plus an optional **Venue / Event** line (`pdfSettings.eventLabel`) printed in both headers.
 `arrangementSongCount` (memo in `App`) drives the guide button's count + enablement.
 
-**`'package'` saves two files, staggered.** `exportPDF` builds each requested doc into a
-`jobs[]` array and dispatches the `.save()` calls on separate ticks — the first synchronously
-(so iOS keeps the download on the user gesture), the rest via `setTimeout(i * 700)`. Firing
-both saves in one tick makes browsers (iOS Safari especially) drop all but the last, which is
-why "Package" previously produced only the guide (§9ah). Keep this stagger if you touch the
-dispatcher.
+**`'package'` — two paths (§9ah, §9ai).** When `pdfSettings.combinePackage` is **off**,
+`exportPDF` builds each doc into a `jobs[]` array and dispatches the `.save()` calls on separate
+ticks — the first synchronously (so iOS keeps the download on the user gesture), the rest via
+`setTimeout(i * 700)`. Firing both saves in one tick makes browsers (iOS Safari especially) drop
+all but the last, which is why "Package" once produced only the guide. When `combinePackage` is
+**on** (default on iOS/iPadOS, user-toggleable in `PdfSettingsModal`), the two documents are
+concatenated into **one** PDF (`setlist-package-<band>-<date>.pdf`) so the export is a single
+download — the fully reliable path where multi-download suppression bites. The concatenation
+seam is `pdfBaseLayout`: pass `ctx.doc` and the renderer `addPage`s onto that existing doc
+instead of `new jsPDF()`, so `generateStageSetlistPDF` then `generateArrangementGuidePDF({...ctx,
+doc})` draw into one instance. Keep both paths if you touch the dispatcher.
 
 **Layout rules the guide must keep.** No full-bleed watermark — a background wash under
 dense chord prose is what made the combined export unreadable; the logo is a 30pt mark in

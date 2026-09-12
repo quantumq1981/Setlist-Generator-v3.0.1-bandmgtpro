@@ -177,6 +177,9 @@ for (const g of ['PDF_PAGE_SIZES', 'PDF_MARGIN_PRESETS', 'PDF_FONT_FAMILIES', 'P
   'pdfBaseLayout', 'generateStageSetlistPDF', 'drawStageSummaryPage',
   'generateArrangementGuidePDF', 'pdfExportFilename']) pieces.push(extractDecl(g));
 
+// Energy/tonal optimizer profiles — field list before the extract/apply helpers.
+for (const g of ['ENERGY_PROFILE_FIELDS', 'extractEnergyProfile', 'applyEnergyProfile']) pieces.push(extractDecl(g));
+
 // Contact enrichment + phone-first outreach helpers (CALL_OUTCOMES before its users).
 for (const g of [
   'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
@@ -256,6 +259,7 @@ const EXPORTS = [
   'buildStageSetlistModel', 'buildArrangementGuideModel', 'pdfSafeText',
   'PDF_DOC_KINDS', 'PDF_DOC_LABELS', 'DEFAULT_PDF_SETTINGS',
   'generateStageSetlistPDF', 'generateArrangementGuidePDF', 'pdfExportFilename',
+  'ENERGY_PROFILE_FIELDS', 'extractEnergyProfile', 'applyEnergyProfile',
   'pdfEncodeArrangementData', 'arrB64Decode', 'pdfDecodeArrangementData',
   'arrRowText', 'pdfParseArrangementNotesVisible', 'pdfParseArrangementGuideVisible', 'pdfParseArrangementNotes',
   'arrTitleKey', 'arrNoteMatchesTitle', 'arrApplyNoteToArrangement', 'mergeArrangementFillEmpty',
