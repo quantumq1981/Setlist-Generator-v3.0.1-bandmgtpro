@@ -255,6 +255,12 @@
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
     .input-group { margin-bottom: .8rem; }
     .set-config { display:grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+    .config-group { border:1px solid var(--border); border-radius:8px; margin-bottom:.55rem; padding:0 .65rem; background: var(--secondary); }
+    .config-group > summary { cursor:pointer; list-style:none; padding:.55rem .1rem; font-size:.8rem; font-weight:600; color: var(--accent); user-select:none; display:flex; align-items:center; }
+    .config-group > summary::-webkit-details-marker { display:none; }
+    .config-group > summary::before { content:'▸'; color: var(--text-muted); margin-right:.4rem; font-size:.7rem; }
+    .config-group[open] > summary::before { content:'▾'; }
+    .config-group[open] { padding-bottom:.65rem; }
     .profile-bar { display:flex; flex-wrap:wrap; align-items:center; gap:.4rem; margin-bottom:.85rem; padding:.5rem .6rem; background: var(--secondary); border:1px solid var(--border); border-radius:8px; }
     .profile-bar-label { font-size:.72rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color: var(--accent); }
     .profile-bar-select { flex:0 1 auto; font-size:.8rem; padding:.25rem .3rem; }
@@ -7930,6 +7936,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             </label>
           </div>
 
+          <details className="config-group" open data-testid="group-energy">
+          <summary>⚡ Energy Curve</summary>
           <div className="input-group">
             <label style={{ display: 'flex', alignItems: 'center', gap: '.5rem', cursor: 'pointer', textTransform: 'none' }}>
               <input type="checkbox" checked={settings.useEnergyCurve}
@@ -7964,7 +7972,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               </div>
             </div>
           )}
+          </details>
 
+          <details className="config-group" open data-testid="group-openers">
+          <summary>🎬 Openers &amp; Closers</summary>
           <div className="set-config">
             <div className="input-group">
               <label style={{ display: 'flex', alignItems: 'center', gap: '.5rem', cursor: 'pointer', textTransform: 'none' }}>
@@ -8105,13 +8116,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               </div>
             </div>
           )}
+          </details>
 
-
+          <details className="config-group" data-testid="group-tonal">
+          <summary>🎵 Tonal Gravity</summary>
 {/* PHASE 3B: Tonal Gravity */}
-<div style={{ 
-  marginTop: '1rem', 
-  paddingTop: '1rem', 
-  borderTop: '1px solid var(--border)' 
+<div style={{
+  marginTop: '1rem',
+  paddingTop: '1rem',
+  borderTop: '1px solid var(--border)'
 }}>
   <div className="input-group">
     <label style={{ 
@@ -8181,12 +8194,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     </div>
   )}
 </div>
+          </details>
 
+          <details className="config-group" data-testid="group-advanced">
+          <summary>⚙ Advanced Settings</summary>
 {/* Advanced Algorithm Settings */}
 <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
-  <div style={{ fontSize: '.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-muted)', marginBottom: '.6rem' }}>
-    Advanced Settings
-  </div>
 
   <div className="set-config">
     <div className="input-group">
@@ -8364,6 +8377,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     )}
   </div>
 </div>
+          </details>
 
           {!settings.allowSongReuse && poolAvailable > 0 && poolRequired > 0 && (
             <div style={{

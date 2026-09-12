@@ -1652,6 +1652,28 @@ to the setlist.
 
 ---
 
+## 9al. Change log — 2026-09 Set Configuration grouped into collapsible sections (PR 3b follow-on)
+
+The `SetConfiguration` panel was one long flat wall of controls. It is now organized so the
+**basics stay up top** (Number of Sets, Duration per set, Allow Reuse, the Profile bar) and the
+heavier control blocks live in native `<details className="config-group">` collapsibles:
+**⚡ Energy Curve** (open), **🎬 Openers & Closers** (open — holds the Force toggles + locked
+pools + per-set assignment), **🎵 Tonal Gravity** (collapsed), **⚙ Advanced Settings**
+(collapsed — Set Template, Optimization, Randomness, Diversity/Tonal weight, Song Pairings,
+Pin-to-Set). Native `<details>` (same low-risk pattern as §9y's Find-rooms menu) means **no new
+React state** and the children always render, so every input keeps its value when a section is
+collapsed — only visibility toggles via CSS. The inner "Advanced Settings" text header was
+dropped in favor of the summary. `.config-group` styling is built on the PR-2 tokens; each
+summary has a `data-testid` (`group-energy`/`group-openers`/`group-tonal`/`group-advanced`).
+
+Verification: Babel compile clean (index.html + 3 companion files; the `<details>` nesting
+balances); `npm test` → 204/204 (UI-only); headless Playwright drive of the real app → 9/9, 0
+page errors — 4 groups render; Energy + Openers open by default, Tonal + Advanced collapsed; the
+Randomness control is hidden while Advanced is collapsed and appears when its summary is clicked;
+Generate still produces a setlist after the reorg.
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing
