@@ -1455,6 +1455,55 @@ is a live interaction like the pedal/MIDI paths).
 
 ---
 
+## 9ag. Change log — 2026-09 Gig Profiles "Import Arrangement Notes" fixes
+
+Fixes the reported bug: uploading a **Master Arrangement Guide** PDF to the Gig Profiles
+"Import Arrangement Notes" button attached nothing, while the same PDF worked through the
+main-site library importer. Two independent defects, one on the parse side and one on the
+apply side.
+
+- **Root cause A — wrapped titles truncated.** The guide renders a long song title across
+  two or more column-A rows (e.g. "PRIDE & JOY - LITTLE" / "WING", "LOVE ME TWO TIMES /" /
+  "ROADHOUSE BLUES", "WHAT YOU WON'T DO" / "FOR LOVE"). `pdfParseArrangementGuideVisible`
+  only captured the number row's title text, so those notes carried a truncated title and
+  `arrNoteMatchesTitle` never matched them to a song. Column geometry alone can't fix it —
+  a *single-line* title's italic artist even shares the BPM row's baseline — but the **font
+  does**: the title runs render in the bold title font, the artist in italic. So
+  `pdfExtractRows` now carries each item's `fontName` (additive; every other parser ignores
+  it), and the guide parser records the title font on the number row and appends any later
+  column-A run that is entirely in that same font, stopping at the italic artist line. Real
+  Zemba guide → all 28 titles now recover in full. Guarded: when items carry no font (the
+  synthetic `pdf-export-split.test.js` fixtures), the continuation append is skipped and the
+  parser behaves exactly as before.
+
+- **Root cause B — apply targeted the library only.** `applyArrangementNotesFromPDF` matched
+  the parsed notes against `songs` (the library) exclusively. A user who imports setlists
+  straight into Gig Profiles (the workflow in the report) never adds those songs to the
+  library, so matching found nothing and the notes silently attached to no one — while the
+  main-site importer "worked" only because it *creates* the songs from the same doc. The
+  handler now also merges each note onto every **saved gig's setlist songs** (persisted via
+  `setGigs` + `LS.set(LS_KEYS.bandGigs(...))`, mirroring `importBandHelperSetlist`), using the
+  same tested `arrApplyNoteToArrangement` role-merge. Library updates stay a pure functional
+  `setSongs` (id-keyed map). The toast now reports library and gig counts separately and, when
+  nothing matches, says the titles must match the PDF. Button relabeled "Import Arrangement
+  Notes" (no longer "→ Library") with matching help text.
+
+- **Not changed:** the embedded `[[SLARR:…]]` lossless block in this user's guide is clipped
+  (only 84 of 106 chunks survive extraction — an older export drew it past the page with no
+  overflow paging), so `pdfDecodeArrangementData` returns null and the visible parser is the
+  live path. The current export code already pages the block, so new large guides embed
+  cleanly; the visible-title fix covers the existing PDFs regardless.
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → 199/199
+(+1: wrapped-title recovery via font, single-line artist not folded in); real-browser drive
+with the reported PDFs (vendored pdfjs 3.11.174, exact repo functions) — the guide parses to
+28 full-title notes, and the exact match+merge the handler runs attaches **24/28** onto a gig
+built from the companion setlist PDF (including every previously-truncated wrapped title); the
+4 misses are genuine cross-document title differences (medley naming, a set-parser title clip)
+that the main-site path would miss too. 0 page errors.
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing

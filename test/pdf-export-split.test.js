@@ -423,6 +423,33 @@ test('the guide grid parses back into notes when the data block is absent', () =
   assert.match(p.form_harmony, /I-IV-V/);
 });
 
+test('wrapped multi-line guide titles are recovered via the bold title font', () => {
+  // A long title wraps across two column-A rows in the SAME bold title font, while the
+  // artist line just below it is italic. A single-line title's artist even shares the
+  // BPM row, so column geometry alone can't separate title-continuation from artist --
+  // the font does. Both must resolve to their full titles so a note matches its song.
+  _y = 760;
+  const T = 'g_d0_f1', A = 'g_d0_f3', N = 'g_d0_f4';   // bold title / italic artist / meta
+  const it = (str, x, font) => ({ str, x, font });
+  const frow = (arr) => ({ y: (_y -= 12), items: arr });
+  const pages = [{ page: 1, rows: [
+    frow([it('MASTER ARRANGEMENT GUIDE', 44, T)]),
+    frow([it('SONG # & TITLE', 44, T), it('KEY / BPM / STYLE', 195, T), it('ARRANGEMENT & HARMONIC DIRECTIVES', 280, T)]),
+    frow([it('SET 1', 44, T)]),
+    // wrapped title over two bold rows; italic artist below carries the section body
+    frow([it('14', 55, T), it('PRIDE & JOY - LITTLE', 72, T), it('Em', 195, T), it('INTRO / CUE', 280, T)]),
+    frow([it('WING', 72, T), it('128 BPM', 195, N)]),
+    frow([it('Stevie Ray Vaughan', 72, A), it('blues-rock', 195, N), it('[Cold Open]', 280, T)]),
+    // single-line title whose italic artist shares the BPM row -- must NOT fold into title
+    frow([it('2', 55, T), it('COLD SHOT', 72, T), it('A', 195, T), it('TRANSITION / OUTRO', 280, T)]),
+    frow([it('Stevie Ray Vaughan', 72, A), it('94 BPM', 195, N), it('[Segue] into Red House', 280, T)]),
+  ] }];
+  const notes = pdfParseArrangementGuideVisible(pages);
+  assert.deepEqual(notes.map(n => n.title), ['PRIDE & JOY - LITTLE WING', 'COLD SHOT']);
+  assert.equal(notes[0].arr.intro_cue, '[Cold Open]');
+  assert.equal(notes[1].arr.transition_outro, '[Segue] into Red House');
+});
+
 test('the legacy footnote layout still wins over the guide parser', () => {
   _y = 760;
   const pages = [{ page: 1, rows: [
