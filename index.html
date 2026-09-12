@@ -255,6 +255,10 @@
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
     .input-group { margin-bottom: .8rem; }
     .set-config { display:grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+    .profile-bar { display:flex; flex-wrap:wrap; align-items:center; gap:.4rem; margin-bottom:.85rem; padding:.5rem .6rem; background: var(--secondary); border:1px solid var(--border); border-radius:8px; }
+    .profile-bar-label { font-size:.72rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color: var(--accent); }
+    .profile-bar-select { flex:0 1 auto; font-size:.8rem; padding:.25rem .3rem; }
+    .profile-bar-name { flex:1 1 8rem; min-width:6rem; font-size:.8rem; padding:.25rem .45rem; }
     .toolbar { display:flex; gap:.6rem; flex-wrap: wrap; align-items:center; }
 
     .song-list { max-height: 420px; overflow:auto; }
@@ -2891,6 +2895,27 @@
       set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (err) { console.error('LS.set error:', err); if (err && (err.name === 'QuotaExceededError' || err.code === 22 || err.code === 1014)) { window.dispatchEvent(new CustomEvent('setlist:storage-quota-warning')); } } },
       remove: (k) => { try { localStorage.removeItem(k); } catch (err) { console.error('LS.remove error:', err); } }
     };
+
+    // Saveable energy / tonal optimizer profiles. A profile captures just the knobs
+    // that shape the optimizer (energy curve + weighting, tonal gravity, arc template,
+    // optimization depth, diversity, randomness) so a band leader can dial in a set
+    // arrangement they like — "party arc", "jazz brunch", "slow-burn wedding" — save
+    // it, and reapply it to future generations. Reusable across bands, so stored under
+    // one global key (additive; never touches an existing per-band key). The two pure
+    // helpers are whitelisted for the test suite.
+    const ENERGY_PROFILES_KEY = 'setlist_energy_profiles_v3';
+    const ENERGY_PROFILE_FIELDS = ['useEnergyCurve', 'energyCurveType', 'energyWeight', 'useTonalGravity', 'tonalSmoothness', 'anchorKey', 'tonalWeight', 'setTemplate', 'optimizationLevel', 'randomness', 'diversityWeight'];
+    function extractEnergyProfile(settings) {
+      const cfg = {};
+      ENERGY_PROFILE_FIELDS.forEach(f => { if (settings && settings[f] !== undefined) cfg[f] = settings[f]; });
+      return cfg;
+    }
+    function applyEnergyProfile(settings, profile) {
+      const cfg = (profile && profile.config) || {};
+      const next = { ...settings };
+      ENERGY_PROFILE_FIELDS.forEach(f => { if (cfg[f] !== undefined) next[f] = cfg[f]; });
+      return next;
+    }
 
     const LS_KEYS = {
       bands: 'setlist_bands_v3',
@@ -7752,8 +7777,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       );
     }
 
-    function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, onOpenPdfSettings, onEmailShare, songCount, libraryTime, watermarkImg, onWatermarkUpload, onClearWatermark, activeSongs, onRecoverSnapshot, arrangementCount }) {
+    function SetConfiguration({ settings, onChange, onGenerate, onCopy, onExportPDF, onOpenPdfSettings, onEmailShare, songCount, libraryTime, watermarkImg, onWatermarkUpload, onClearWatermark, activeSongs, onRecoverSnapshot, arrangementCount, energyProfiles, onSaveProfile, onApplyProfile, onDeleteProfile }) {
       const [activeHelpKey, setActiveHelpKey] = useState(null);
+      const [profName, setProfName] = useState('');
+      const [selProfId, setSelProfId] = useState('');
       const activeHelp = activeHelpKey ? window.featureDefinitions?.[activeHelpKey] : null;
       const openHelp = (featureKey) => setActiveHelpKey(featureKey);
       const closeHelp = () => setActiveHelpKey(null);
@@ -7785,6 +7812,33 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         <div className="panel">
           <div className="panel-header">
             <h3 className="panel-title">Setlist Configuration</h3>
+          </div>
+
+          {/* Energy / tonal profile bar — save the current optimizer knobs as a reusable
+              profile, or load a saved one back in. */}
+          <div className="profile-bar" data-testid="energy-profile-bar">
+            <span className="profile-bar-label">⚙ Energy/Tonal Profile</span>
+            {(energyProfiles || []).length > 0 && (
+              <>
+                <select className="profile-bar-select" value={selProfId}
+                  onChange={e => { const id = e.target.value; setSelProfId(id); if (id && onApplyProfile) onApplyProfile(id); }}
+                  title="Load a saved energy/tonal profile">
+                  <option value="">Load profile…</option>
+                  {energyProfiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                {selProfId && (
+                  <button type="button" className="btn btn-small" title="Delete the selected profile"
+                    style={{ color: 'var(--error)', borderColor: 'var(--error)' }}
+                    onClick={() => { if (onDeleteProfile) onDeleteProfile(selProfId); setSelProfId(''); }}>🗑</button>
+                )}
+              </>
+            )}
+            <input className="profile-bar-name input" value={profName}
+              onChange={e => setProfName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && profName.trim()) { onSaveProfile && onSaveProfile(profName); setProfName(''); } }}
+              placeholder="Name this profile…" />
+            <button type="button" className="btn btn-small btn-primary" disabled={!profName.trim()}
+              onClick={() => { onSaveProfile && onSaveProfile(profName); setProfName(''); }}>💾 Save</button>
           </div>
 
           <div className="set-config">
@@ -7865,7 +7919,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   Curve Preset
                   <InfoTrigger featureKey="presets" onClick={openHelp} label="Learn about curve presets" />
                 </label>
-                <select value={settings.energyCurveType || 'standard'}
+                <select value={settings.energyCurveType || 'standard'} data-testid="curve-preset"
                   onChange={e => onChange({ ...settings, energyCurveType: e.target.value })}
                   style={{ fontSize: '.8rem' }}>
                   {Object.entries(ENERGY_CURVE_PRESETS).map(([key, preset]) => (
@@ -13661,6 +13715,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [songs, setSongs] = useState([]);
       const [settings, setSettings] = useState({ numSets: 2, setDuration: 45, setDurations: [], allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, lockedOpeners: [], lockedClosers: [], useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false, energyCurveType: 'standard', energyWeight: 0.35, tonalWeight: 0.25, diversityWeight: 1.0, randomness: 50, optimizationLevel: 'standard', setTemplate: 'freeform', songAffinities: [], songAntiAffinities: [] });
       const [setlists, setSetlists] = useState([]);
+      // Saved energy/tonal optimizer profiles (global, reusable across bands).
+      const [energyProfiles, setEnergyProfiles] = useState(() => { try { return LS.get(ENERGY_PROFILES_KEY) || []; } catch (e) { return []; } });
       const [locked, setLocked] = useState(new Set());
       // Cross-set drag-and-drop state
       const defaultDragState = { active: false, song: null, fromSetIdx: null, fromSongIdx: null, overSetIdx: null, overSongIdx: null };
@@ -14501,6 +14557,57 @@ ${headerHtml}
         }
       };
 
+      // Recompute the per-set optimizer quality scores (energy / tonal / diversity /
+      // duration) for a setlists array and re-attach them, so the readout reflects the
+      // CURRENT order after a manual reorder/move/add/remove/swap/edit. Mutates + returns
+      // the same array (its array-level props are otherwise lost when a handler rebuilds
+      // the array with [...setlists]). Anchor key is re-derived the same way generate()
+      // does. Never throws — a scoring failure just leaves the array without scores.
+      const recomputeSetlistScores = (sets) => {
+        if (!sets || !sets.length) return sets;
+        try {
+          let _anchorKey = sets.anchorKey || null;
+          if (settings.useTonalGravity) {
+            const enriched = activeSongs.map(s => ({ ...s, normalizedKey: normalizeKey_TG(s.key, s.tags || []) }));
+            _anchorKey = determineAnchorKey_TG(enriched, settings.anchorKey || '');
+          }
+          sets.qualityScores = sets.map((set, si) => {
+            const dur = (settings.setDurations && settings.setDurations[si] > 0)
+              ? settings.setDurations[si]
+              : (settings.setDuration || 45);
+            return calculateSetlistQualityScore(set, { ...settings, setDuration: dur, _anchorKey });
+          });
+          if (_anchorKey) sets.anchorKey = _anchorKey;
+        } catch (e) { console.warn('Quality score recompute failed:', e); }
+        return sets;
+      };
+      // Single commit point for a manual setlist edit: recompute scores, then set state.
+      const commitSetlists = (sets) => setSetlists(recomputeSetlistScores(sets));
+
+      // --- Energy / tonal optimizer profiles (save the knobs, reapply later) ---
+      const persistEnergyProfiles = (list) => { setEnergyProfiles(list); try { LS.set(ENERGY_PROFILES_KEY, list); } catch (e) { console.warn('profile save failed', e); } };
+      const saveEnergyProfile = (name) => {
+        const nm = (name || '').trim();
+        if (!nm) return showToast('Name the profile first', 'warning');
+        const prof = { id: genId(), name: nm, ts: Date.now(), config: extractEnergyProfile(settings) };
+        // Overwrite a same-named profile so re-saving updates in place; keep sorted.
+        const list = [...energyProfiles.filter(p => (p.name || '').toLowerCase() !== nm.toLowerCase()), prof]
+          .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        persistEnergyProfiles(list);
+        showToast(`Saved energy/tonal profile "${nm}"`, 'success');
+      };
+      const applyEnergyProfileById = (id) => {
+        const p = energyProfiles.find(x => x.id === id);
+        if (!p) return;
+        setSettings(prev => applyEnergyProfile(prev, p));
+        showToast(`Loaded profile "${p.name}" — Generate to apply`, 'success');
+      };
+      const deleteEnergyProfile = (id) => {
+        const p = energyProfiles.find(x => x.id === id);
+        persistEnergyProfiles(energyProfiles.filter(x => x.id !== id));
+        if (p) showToast(`Deleted profile "${p.name}"`, 'info');
+      };
+
       const addSong = (songData) => {
         const newSong = { id: genId(), status: 'active', ...songData };
         setSongs(prev => [...prev, newSong]);
@@ -14532,7 +14639,9 @@ ${headerHtml}
           });
           if (!changed) return prev;
           Object.keys(prev).forEach(k => { if (!/^\d+$/.test(k) && k !== 'length') next[k] = prev[k]; });
-          return next;
+          // A song edit can change energy / duration, so refresh the optimizer scores
+          // for the new content (falls back to the carried-over scores if it throws).
+          return recomputeSetlistScores(next);
         });
         showToast('Song updated', 'success');
       };
@@ -15280,7 +15389,7 @@ ${headerHtml}
           songs: newSongsArr,
           totalTime: newSongsArr.reduce((sum, s) => sum + (Number(parseDuration(s.duration)) || 0), 0)
         };
-        setSetlists(newSetlists);
+        commitSetlists(newSetlists);
         showToast('Song swapped', 'success');
       };
 
@@ -15294,7 +15403,7 @@ ${headerHtml}
 
         const newSetlists = [...setlists];
         newSetlists[setIdx] = { ...set, songs: newSongs };
-        setSetlists(newSetlists);
+        commitSetlists(newSetlists);
       };
 
       // Remove song from setlist and send to Cold List
@@ -15318,7 +15427,7 @@ ${headerHtml}
               songs: newSongs,
               totalTime: newSongs.reduce((sum, s) => sum + (Number(parseDuration(s.duration)) || 0), 0)
             };
-            setSetlists(newSetlists);
+            commitSetlists(newSetlists);
 
             const lockKey = `${setIdx}:${song.id}`;
             if (locked.has(lockKey)) {
@@ -15403,7 +15512,7 @@ ${headerHtml}
         newSongs.splice(toIdx, 0, moved);
         const newSetlists = [...setlists];
         newSetlists[setIdx] = { ...set, songs: newSongs, totalTime: newSongs.reduce((sum, s) => sum + (Number(parseDuration(s.duration)) || 0), 0) };
-        setSetlists(newSetlists);
+        commitSetlists(newSetlists);
       };
 
       const moveSongBetweenSets = (fromSetIdx, toSetIdx, fromSongIdx, toSongIdx) => {
@@ -15428,7 +15537,7 @@ ${headerHtml}
           setLocked(newLocked);
         }
 
-        setSetlists(newSetlists);
+        commitSetlists(newSetlists);
         showToast(`Moved "${movedSong.title}" to ${toSet.name}`, 'success');
       };
 
@@ -15493,7 +15602,7 @@ ${headerHtml}
 
       const resetToOriginal = () => {
         if (!originalSetlists) return;
-        setSetlists(originalSetlists);
+        commitSetlists(originalSetlists);
         setLocked(new Set());
         setOriginalSetlists(null);
         showToast('Order reset to original', 'success');
@@ -15517,7 +15626,7 @@ ${headerHtml}
           songs: newSongs,
           totalTime: newSongs.reduce((sum, s) => sum + (Number(parseDuration(s.duration)) || 0), 0)
         };
-        setSetlists(newSetlists);
+        commitSetlists(newSetlists);
         showToast(`Added "${song.title}" to Set ${toSetIdx + 1}`, 'success');
       };
 
@@ -15543,7 +15652,7 @@ ${headerHtml}
           newLocked.delete(lockKey);
           setLocked(newLocked);
         }
-        setSetlists(newSetlists);
+        commitSetlists(newSetlists);
         showToast(`Replaced "${oldSong.title}" with "${newSong.title}"`, 'success');
       };
 
@@ -15604,7 +15713,7 @@ ${headerHtml}
           songs: buckets[i],
           totalTime: totals[i]
         }));
-        setSetlists(newSetlists);
+        commitSetlists(newSetlists);
         setLocked(new Set());
 
         const times = totals.map(t => Math.round(t));
@@ -16214,6 +16323,10 @@ ${headerHtml}
                 onClearWatermark={clearWatermark}
                 activeSongs={activeSongs}
                 onRecoverSnapshot={recoverPreviousSnapshot}
+                energyProfiles={energyProfiles}
+                onSaveProfile={saveEnergyProfile}
+                onApplyProfile={applyEnergyProfileById}
+                onDeleteProfile={deleteEnergyProfile}
               />
             </div>
 

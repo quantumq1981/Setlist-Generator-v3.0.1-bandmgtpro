@@ -1583,6 +1583,46 @@ and the non-combined package still produces **two** downloads.
 
 ---
 
+## 9aj. Change log — 2026-09 live re-score on manual reorder + saveable energy/tonal profiles
+
+Two workflow-polish items from the owner's list.
+
+- **Manual reorder now re-scores (and no longer wipes scores).** Every manual setlist edit
+  rebuilt the array with `[...setlists]`, which dropped the array-level `qualityScores` /
+  `anchorKey` — so a drag/move/remove/swap made the quality readout **vanish**, and any
+  surviving number went stale. New App helpers `recomputeSetlistScores(sets)` (re-derives the
+  anchor key like `generate()` and recomputes `calculateSetlistQualityScore` per set, mutating
+  + returning the array) and `commitSetlists(sets)` (recompute → `setSetlists`). Every manual
+  handler now commits through it — `swapSong`, `moveSong`, `reorderSongWithinSet`,
+  `moveSongBetweenSets`, `removeSongFromSetlist`, `addSongToSet`, `replaceSongInSet`,
+  `moveToSetDropdown` (via the move helper), and `resetToOriginal`; `updateSong` (§9ah) also
+  recomputes (an energy/duration edit changes the score). The `EnergyCurvePreview` was already
+  live (it renders from `set.songs`); this makes the energy/tonal/diversity/duration **scores**
+  track the current order too. Manual order is never re-optimized away — we re-score, not
+  re-sort.
+- **Saveable energy/tonal profiles.** Pure `extractEnergyProfile(settings)` /
+  `applyEnergyProfile(settings, profile)` over `ENERGY_PROFILE_FIELDS` (the optimizer knobs:
+  `useEnergyCurve`, `energyCurveType`, `energyWeight`, `useTonalGravity`, `tonalSmoothness`,
+  `anchorKey`, `tonalWeight`, `setTemplate`, `optimizationLevel`, `randomness`,
+  `diversityWeight`) capture/reapply just those fields, leaving everything else untouched.
+  Profiles are a reusable, cross-band list in the additive global key
+  `setlist_energy_profiles_v3` (never touches a per-band key); App `energyProfiles` state +
+  `saveEnergyProfile` (overwrites a same-name profile) / `applyEnergyProfileById` /
+  `deleteEnergyProfile`. A **Profile bar** at the top of `SetConfiguration` (`.profile-bar`,
+  `data-testid="energy-profile-bar"`) loads a saved profile, names + saves the current knobs,
+  and deletes the selected one. Loading applies the config to `settings`; the next Generate
+  uses it.
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → 204/204 (+5 in
+`test/energy-profiles.test.js`: field-only extract, absent-field omit, overlay-preserves-rest +
+no-mutate, extract→apply round-trip, empty-config tolerance); headless Playwright drive of the
+real app → 8/8, 0 page errors — save profile "P1" (persists to `localStorage` with
+`config.energyCurveType==='standard'`), change the curve to "party", load P1 → reverts to
+"standard"; after Generate the quality reads Set 1: 68/100, and a manual reorder (mobile ↓)
+keeps the readout and updates it to 67/100 (before this fix it vanished).
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing
