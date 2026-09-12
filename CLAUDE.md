@@ -1554,6 +1554,35 @@ arrived.
 
 ---
 
+## 9ai. Change log — 2026-09 combined single-PDF package (iOS-safe export)
+
+Follow-up to §9ah. The staggered two-file "package" export is reliable on desktop but iOS/iPadOS
+Safari can still drop one of two programmatic downloads even across ticks. Added a combine option
+that produces the whole package as **one** PDF, so the export is a single download.
+
+- **`pdfBaseLayout` append seam.** It now accepts `ctx.doc`: when present the renderer draws into
+  that existing jsPDF instance (`doc.addPage(...)` to start fresh) instead of `new jsPDF()`.
+  Both renderers are untouched otherwise — they still call `pdfBaseLayout` and destructure `doc`.
+- **`exportPDF` combined branch.** For `docKind==='package'` with `pdfSettings.combinePackage`,
+  it builds the stage sheet, then calls `generateArrangementGuidePDF(guideEntries, {...ctx, doc})`
+  to append the guide onto the same doc, and does a single `combined.save(...)`. Falls back to
+  just the stage sheet (still one doc) when there are no guide entries. The non-combined path is
+  the §9ah staggered `jobs[]`. Shared `stageSummary()` feeds both.
+- **`combinePackage` setting** (`DEFAULT_PDF_SETTINGS`, additive): defaults **on** for iOS/iPadOS
+  (UA + touch-Mac detection, `typeof navigator` guarded so the Node test sandbox sees `false`),
+  off elsewhere; user-toggleable via a "Combine into one PDF" checkbox in `PdfSettingsModal` that
+  shows when the Package radio is selected. The package radio description and the export button
+  label reflect the choice ("Export combined PDF" vs "both PDFs").
+- **`pdfExportFilename('package', …)`** → `setlist-package-<band>-<date>.pdf`.
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → 199/199 (no
+algorithm logic touched; the generators are unchanged); headless Playwright drive of the real app
+→ 9/9, 0 page errors — stage-only exports 1 file (2pp), guide-only 1 file (1pp), the **combined
+package is ONE download** named `setlist-package-*` whose page count equals stage+guide (3 == 2+1),
+and the non-combined package still produces **two** downloads.
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing
@@ -1575,12 +1604,17 @@ all three as buttons (`data-testid="export-stage" / "export-guide" / "export-pac
 plus an optional **Venue / Event** line (`pdfSettings.eventLabel`) printed in both headers.
 `arrangementSongCount` (memo in `App`) drives the guide button's count + enablement.
 
-**`'package'` saves two files, staggered.** `exportPDF` builds each requested doc into a
-`jobs[]` array and dispatches the `.save()` calls on separate ticks — the first synchronously
-(so iOS keeps the download on the user gesture), the rest via `setTimeout(i * 700)`. Firing
-both saves in one tick makes browsers (iOS Safari especially) drop all but the last, which is
-why "Package" previously produced only the guide (§9ah). Keep this stagger if you touch the
-dispatcher.
+**`'package'` — two paths (§9ah, §9ai).** When `pdfSettings.combinePackage` is **off**,
+`exportPDF` builds each doc into a `jobs[]` array and dispatches the `.save()` calls on separate
+ticks — the first synchronously (so iOS keeps the download on the user gesture), the rest via
+`setTimeout(i * 700)`. Firing both saves in one tick makes browsers (iOS Safari especially) drop
+all but the last, which is why "Package" once produced only the guide. When `combinePackage` is
+**on** (default on iOS/iPadOS, user-toggleable in `PdfSettingsModal`), the two documents are
+concatenated into **one** PDF (`setlist-package-<band>-<date>.pdf`) so the export is a single
+download — the fully reliable path where multi-download suppression bites. The concatenation
+seam is `pdfBaseLayout`: pass `ctx.doc` and the renderer `addPage`s onto that existing doc
+instead of `new jsPDF()`, so `generateStageSetlistPDF` then `generateArrangementGuidePDF({...ctx,
+doc})` draw into one instance. Keep both paths if you touch the dispatcher.
 
 **Layout rules the guide must keep.** No full-bleed watermark — a background wash under
 dense chord prose is what made the combined export unreadable; the logo is a 30pt mark in

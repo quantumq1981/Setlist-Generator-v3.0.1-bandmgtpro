@@ -12843,6 +12843,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       docKind: 'stage',
       // Optional venue / event line, printed in both documents' headers.
       eventLabel: '',
+      // Package export only: when true, the stage sheet + arrangement guide are
+      // concatenated into ONE PDF (single download) instead of two separate files.
+      // Defaults on for iOS/iPadOS, where two rapid downloads get suppressed to one.
+      combinePackage: (typeof navigator !== 'undefined' && navigator) ? (
+        /iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
+        // iPadOS 13+ reports as desktop Safari; detect the touch-capable Mac.
+        ((navigator.platform === 'MacIntel' || /Macintosh/.test(navigator.userAgent || '')) && (navigator.maxTouchPoints || 0) > 1)
+      ) : false,
     };
     const PDF_SETTINGS_STORAGE_KEY = 'setlist_pdf_settings_v3';
 
@@ -12862,12 +12870,23 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     };
 
     // Shared page furniture derived from the settings panel.
+    // Append mode: when ctx.doc is supplied, this renderer draws into that existing
+    // jsPDF instance (starting on a fresh page) instead of creating its own. That lets
+    // the "package" export concatenate the stage sheet and the arrangement guide into a
+    // single PDF — one download, which sidesteps the multi-download suppression that
+    // iOS Safari applies to two separate save() calls (see exportPDF / §9ah).
     function pdfBaseLayout(ctx) {
       const { jsPDF } = ctx;
       const ps = { ...DEFAULT_PDF_SETTINGS, ...(ctx.ps || {}) };
       const sizeDef = PDF_PAGE_SIZES[ps.pageSize] || PDF_PAGE_SIZES.Letter;
       const famDef = PDF_FONT_FAMILIES[ps.fontFamily] || PDF_FONT_FAMILIES.Helvetica;
-      const doc = new jsPDF({ orientation: ps.orientation, unit: 'pt', format: [sizeDef.w, sizeDef.h] });
+      let doc;
+      if (ctx.doc) {
+        doc = ctx.doc;
+        doc.addPage([sizeDef.w, sizeDef.h], ps.orientation);
+      } else {
+        doc = new jsPDF({ orientation: ps.orientation, unit: 'pt', format: [sizeDef.w, sizeDef.h] });
+      }
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
       const margin = PDF_MARGIN_PRESETS[ps.margin] ?? 36;
@@ -13354,7 +13373,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     function pdfExportFilename(kind, bandName) {
       const safe = String(bandName || 'band').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
       const stamp = new Date().toISOString().slice(0, 10);
-      return `${kind === 'guide' ? 'arrangement-guide' : 'setlist'}-${safe}-${stamp}.pdf`;
+      const base = kind === 'guide' ? 'arrangement-guide' : kind === 'package' ? 'setlist-package' : 'setlist';
+      return `${base}-${safe}-${stamp}.pdf`;
     }
 
     // React-based PDF export settings panel. State is held by the parent App and
@@ -13582,13 +13602,26 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                           {kind === 'guide' && (arrangementCount
                             ? `Structured directives for ${arrangementCount} song${arrangementCount === 1 ? '' : 's'}.`
                             : 'No arrangement notes on this setlist yet.')}
-                          {kind === 'package' && 'Two separate PDFs, downloaded back to back.'}
+                          {kind === 'package' && (s.combinePackage
+                            ? 'Stage sheet + guide combined into one PDF (single download).'
+                            : 'Two separate PDFs, downloaded back to back.')}
                         </span>
                       </span>
                     </label>
                   );
                 })}
               </div>
+              {s.docKind === 'package' && (
+                <label data-testid="pdf-combine-package" style={{ display: 'flex', alignItems: 'flex-start', gap: '.5rem', margin: '.55rem 0 0 1.6rem', fontSize: '.78rem', textTransform: 'none', letterSpacing: 0, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!s.combinePackage} onChange={e => set('combinePackage', e.target.checked)} style={{ width: 'auto', marginTop: '.15rem' }} />
+                  <span>
+                    Combine into one PDF
+                    <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '.72rem' }}>
+                      Recommended on iPad / iPhone — Safari drops one of two back-to-back downloads.
+                    </span>
+                  </span>
+                </label>
+              )}
               <div className="input-group" style={{ marginTop: '.6rem' }}>
                 <label>Venue / Event <span style={{ color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none' }}>(optional, printed in both headers)</span></label>
                 <input type="text" data-testid="pdf-event-label" value={s.eventLabel || ''}
@@ -13603,7 +13636,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               <div style={{ display: 'flex', gap: '.5rem' }}>
                 <button className="btn btn-small" onClick={onClose}>Cancel</button>
                 <button className="btn btn-primary btn-small export-btn" onClick={() => onExport(s.docKind)}>
-                  Export {s.docKind === 'package' ? 'both PDFs' : 'to PDF'}
+                  Export {s.docKind === 'package' ? (s.combinePackage ? 'combined PDF' : 'both PDFs') : 'to PDF'}
                 </button>
               </div>
             </div>
@@ -15114,6 +15147,35 @@ ${headerHtml}
           return showToast('No arrangement notes to export yet — add rehearsal marks in Advance view', 'warning');
         }
 
+        const stageSummary = () => ({
+          qualityScores: setlists.qualityScores,
+          anchorKey: setlists.anchorKey,
+          diagnostics: setlists.diagnostics,
+          guideCount: guideEntries.length,
+        });
+
+        // Combined package: concatenate the stage sheet + guide into ONE PDF so the
+        // export is a single download. Preferred on iOS/iPadOS (see combinePackage),
+        // where two separate save() calls get suppressed to one. When there are no
+        // guide entries this degrades to just the stage sheet in one document.
+        if (docKind === 'package' && ctx.ps.combinePackage) {
+          try {
+            const stageModel = buildStageSetlistModel(setlists, { includeCues: ctx.includeCues });
+            const combined = generateStageSetlistPDF(stageModel, { ...ctx, summary: stageSummary() });
+            if (guideEntries.length) {
+              generateArrangementGuidePDF(guideEntries, { ...ctx, doc: combined });
+            }
+            combined.save(pdfExportFilename('package', ctx.bandName));
+          } catch (err) {
+            console.error('PDF export failed:', err);
+            return showToast('PDF export failed: ' + (err && err.message ? err.message : 'unknown error'), 'error');
+          }
+          showToast(guideEntries.length
+            ? 'Setlist + arrangement guide exported (one PDF)'
+            : 'Stage setlist exported — no arrangement notes to put in a guide', guideEntries.length ? 'success' : 'info');
+          return;
+        }
+
         try {
           // Build every requested document synchronously, then dispatch the
           // downloads. Browsers — iOS Safari especially — coalesce multiple
@@ -15125,15 +15187,7 @@ ${headerHtml}
           const jobs = [];
           if (docKind === 'stage' || docKind === 'package') {
             const stageModel = buildStageSetlistModel(setlists, { includeCues: ctx.includeCues });
-            const stageDoc = generateStageSetlistPDF(stageModel, {
-              ...ctx,
-              summary: {
-                qualityScores: setlists.qualityScores,
-                anchorKey: setlists.anchorKey,
-                diagnostics: setlists.diagnostics,
-                guideCount: guideEntries.length,
-              },
-            });
+            const stageDoc = generateStageSetlistPDF(stageModel, { ...ctx, summary: stageSummary() });
             jobs.push({ doc: stageDoc, name: pdfExportFilename('stage', ctx.bandName) });
           }
           if (docKind === 'guide' || docKind === 'package') {
