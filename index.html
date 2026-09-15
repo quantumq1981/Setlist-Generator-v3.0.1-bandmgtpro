@@ -142,18 +142,30 @@
       min-height: 100vh; overflow-x: hidden;
     }
 
-    /* BandLeaderHQ ambient backdrop — zero-byte CSS, no image payload.
-       Warm (orange) + cool (blue) brand glows over a near-black base. */
+    /* BandLeaderHQ ambient backdrop — the brand hero as blurred, dimmed *atmosphere*
+       (cosmic constellation + brand glow + metallic shimmer) rather than a sharp photo,
+       so dense data screens stay readable (the calm-chrome rule) and the hero's own
+       wordmark never competes with the crisp header logo. The blurred hero lives on a
+       fixed ::before; the base carries the dark ground + warm/cool brand glows. To make
+       the backdrop bolder, lower the blur or raise ::before opacity/brightness; to calm
+       it, do the reverse. */
     .ide-background {
+      position: relative;
       min-height: 100vh;
-      background-color: #0b0b0f;
+      background-color: #0a0d14;
       background-image:
-        radial-gradient(1100px 620px at 12% -8%, rgba(255, 107, 53, 0.10), transparent 60%),
-        radial-gradient(1000px 700px at 102% -4%, rgba(56, 120, 220, 0.12), transparent 55%),
-        linear-gradient(180deg, #0c1120 0%, #0a0d14 46%, #080a10 100%);
+        radial-gradient(1100px 620px at 12% -8%, rgba(255, 107, 53, 0.12), transparent 60%),
+        radial-gradient(1000px 700px at 102% -4%, rgba(56, 120, 220, 0.14), transparent 55%);
       background-attachment: fixed;
     }
+    .ide-background::before {
+      content: ''; position: fixed; inset: -8%; z-index: 0; pointer-events: none;
+      background: url('assets/bandleaderhq-hero.jpg') center center / cover no-repeat;
+      filter: blur(26px) brightness(0.5) saturate(1.12);
+      opacity: 0.55;
+    }
     .ide-background__content {
+      position: relative; z-index: 1;
       min-height: 100vh;
       background: radial-gradient(1400px 900px at 50% -20%, rgba(255, 255, 255, 0.02), transparent 70%);
       padding: 1px 0;
@@ -168,6 +180,14 @@
       font-family: 'Space Mono', monospace; font-size: 2.2rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: .25rem;
       background: linear-gradient(135deg, #dbe6ff 0%, #8fb2f2 100%);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    /* Header brand logo (the cropped 3D wordmark). A soft radial mask feathers the
+       rectangular photo crop into the dark header so there is no hard image edge. */
+    .brand-logo {
+      display: block; margin: 0 auto .4rem; width: min(440px, 78vw); height: auto;
+      -webkit-mask-image: radial-gradient(130% 118% at 50% 42%, #000 60%, transparent 90%);
+      mask-image: radial-gradient(130% 118% at 50% 42%, #000 60%, transparent 90%);
+      filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.55));
     }
     .subtitle { color: var(--text-muted); font-size: .95rem; letter-spacing: .08em; text-transform: uppercase; }
     .band-bar {
@@ -16488,7 +16508,7 @@ ${headerHtml}
             )}
 
             <header className="header">
-              <h1>BandLeaderHQ</h1>
+              <img className="brand-logo" src="assets/bandleaderhq-logo.jpg" alt="BandLeaderHQ" width="440" height="220" />
               <div className="subtitle">Setlists · Venues · Press Kit — your band's command center</div>
             </header>
 
