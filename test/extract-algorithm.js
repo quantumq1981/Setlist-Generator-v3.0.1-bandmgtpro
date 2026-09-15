@@ -145,7 +145,8 @@ for (const g of [
 // Arrangement-notes round-trip (footnote export/import). Consts before the functions
 // that read them; parse/serializeArrangement + ARR_ROLES back the merge/normalize.
 for (const c of ['ARR_ROLES', 'ARR_ROLE_LABELS', 'ARR_SECTIONS', 'ARR_SECTION_LABELS', 'ARR_FIELDS',
-  'ARR_ROLE_IMPORT_HEADERS', 'ARR_LABEL_TO_ROLE', 'ARR_LABEL_TO_SECTION', 'PDF_TEXT_MAP', 'ARR_DATA_MARKER', 'ARR_DATA_RE',
+  'ARR_ROLE_IMPORT_HEADERS', 'ARR_SECTION_IMPORT_HEADERS', 'ARR_FIELD_IMPORT_HEADERS', 'ARR_FIELD_EXPORT_HEADERS',
+  'ARR_LABEL_TO_ROLE', 'ARR_LABEL_TO_SECTION', 'PDF_TEXT_MAP', 'ARR_DATA_MARKER', 'ARR_DATA_RE',
   'ARR_TAG_INTRO_RE', 'ARR_TAG_OUTRO_RE', 'ARR_HARMONY_RE',
   'NOTATION_ROMAN_UPPER', 'NOTATION_ROMAN_LOWER', 'NOTATION_GLYPH_MAP', 'NOTATION_SUPERSCRIPTS',
   'NOTATION_CHAIN_RE']) {
@@ -159,7 +160,9 @@ for (const f of [
   'pdfSafeText', 'pdfEncodeArrangementData', 'arrB64Decode', 'normalizeArrObj',
   'pdfDecodeArrangementData', 'matchArrRoleLabel', 'arrRowText', 'pdfParseArrangementNotesVisible',
   'pdfParseArrangementGuideVisible',
-  'pdfParseArrangementNotes', 'arrTitleKey', 'arrNoteMatchesTitle', 'arrApplyNoteToArrangement', 'mergeArrangementFillEmpty',
+  'pdfParseArrangementNotes', 'pdfLooksLikeArrangementNotes',
+  'arrTitleKey', 'arrNoteMatchesTitle', 'normalizeArtistKey', 'artistKeysMatch', 'bestNoteForSong',
+  'arrApplyNoteToArrangement', 'mergeArrangementFillEmpty',
   // Setlist → library round-trip (flatten sets to songs + reattach notes; CSV arr reassembly).
   'stripFootnoteNum', 'flattenSetlistSongs', 'csvArrangementFromRow',
   // BandHelper/stacked setlist PDF parser (X-position column assignment).
@@ -168,6 +171,7 @@ for (const f of [
 ]) pieces.push(extractDecl(f));
 pieces.push(extractDecl('BH_SET_HEADER_RE'));
 pieces.push(extractDecl('ARR_WORD_GAP_PT'));
+pieces.push(extractDecl('guardCSVCell'));
 
 // PDF export engines. The settings-panel constants must land before the layout
 // helper that reads them; the two renderers take an injected jsPDF constructor, so a
@@ -253,6 +257,7 @@ const EXPORTS = [
   'VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'epkLinkForVenue',
   'MIN_LEARN_SAMPLE', 'venueOutcome', 'collectOutreachStats', 'smoothedRate', 'typeScoreMultiplier', 'bestStatInsight',
   'ARR_ROLES', 'ARR_SECTIONS', 'ARR_SECTION_LABELS', 'ARR_FIELDS', 'ARR_ROLE_IMPORT_HEADERS',
+  'ARR_SECTION_IMPORT_HEADERS', 'ARR_FIELD_IMPORT_HEADERS', 'ARR_FIELD_EXPORT_HEADERS',
   'parseArrangement', 'serializeArrangement', 'hasArrangementData',
   'classifyArrLine', 'deriveArrangementSections',
   'repairNotationMojibake', 'repairRomanChain', 'sanitizeNotation',
@@ -262,9 +267,11 @@ const EXPORTS = [
   'ENERGY_PROFILE_FIELDS', 'extractEnergyProfile', 'applyEnergyProfile',
   'pdfEncodeArrangementData', 'arrB64Decode', 'pdfDecodeArrangementData',
   'arrRowText', 'pdfParseArrangementNotesVisible', 'pdfParseArrangementGuideVisible', 'pdfParseArrangementNotes',
-  'arrTitleKey', 'arrNoteMatchesTitle', 'arrApplyNoteToArrangement', 'mergeArrangementFillEmpty',
+  'pdfLooksLikeArrangementNotes',
+  'arrTitleKey', 'arrNoteMatchesTitle', 'normalizeArtistKey', 'artistKeysMatch', 'bestNoteForSong',
+  'arrApplyNoteToArrangement', 'mergeArrangementFillEmpty',
   'stripFootnoteNum', 'flattenSetlistSongs', 'csvArrangementFromRow',
-  'pdfParseBandHelperSets',
+  'pdfParseBandHelperSets', 'guardCSVCell',
 ];
 
 // Minimal browser shims the algorithm touches (genId uses window.crypto).
