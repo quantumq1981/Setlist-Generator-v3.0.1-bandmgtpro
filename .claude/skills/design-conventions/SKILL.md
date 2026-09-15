@@ -85,11 +85,16 @@ recoloring a genre means updating all three (badge slug = `style.replace(/\s+/g,
   icons, empty-state art.
 - **Fonts:** Space Mono for display/data, Manrope for text. Retire Oswald from the
   app (reserve for print/PDF).
-- **Brand imagery is edge-only.** The logo's 3D-chrome/photographic hero treatment
-  is for splash/landing/OG image — **never an app-wide background**. Dense data
-  screens (chord charts, venue tables, the setlist grid) need calm chrome; a busy
-  backdrop is exactly why the old 17 MB image was removed. Keep the app backdrop a
-  lightweight CSS gradient.
+- **Brand imagery on the backdrop must stay calm chrome.** Dense data screens (chord
+  charts, venue tables, the setlist grid) must stay readable — a busy backdrop is why
+  the old 17 MB image was removed. The owner-approved backdrop (§9ap) uses the brand
+  hero **as heavily blurred, dimmed atmosphere** on `.ide-background::before`
+  (`assets/bandleaderhq-hero.jpg`, 131 KB, `blur(26px) brightness(0.5) opacity(0.55)`),
+  so no legible wordmark competes with the crisp header logo; content panels keep their
+  opaque `--secondary` surfaces on top. The crisp 3D-chrome hero belongs to the header
+  logo (`assets/bandleaderhq-logo.jpg`, a cropped wordmark feathered with a radial CSS
+  mask), splash, and OG image — **never sharp and full-bleed behind data**. If you touch
+  the backdrop, keep the blur/dim heavy; do not drop a sharp photo behind the app.
 - **Icons:** `assets/icon.svg` (scalable favicon), `assets/icon-square.svg` (full-bleed
   raster source), `assets/icon-512.png` (PWA/Apple), `assets/og-image.png` (social).
   No multi-MB images ship. Regenerate rasters with headless Chromium (see

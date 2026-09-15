@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-09-15 (Arrangement-notes import routing + artist-aware matching + CSV round-trip, §9ao).
+Last updated: 2026-09-15 (BandLeaderHQ hero logo + dimmed-hero backdrop, §9ap).
 
 ---
 
@@ -1790,6 +1790,45 @@ parser though Node tolerated it — now fixed to match the `validateCSVRows` con
 `importBandHelperSetlist` note-apply loop and the setlist→library `flattenSetlistSongs` were
 left on exact-title matching (round-trips of the app's own exports; changing them risks the
 existing suite for no user-visible gain).
+
+---
+
+## 9ap. Change log — 2026-09 BandLeaderHQ hero logo + dimmed-hero backdrop
+
+Owner supplied the 3D-chrome "BANDLEADER HQ" hero art and asked for it as the app logo
+and backdrop. Display-only; no logic/schema/localStorage change (`npm test` untouched).
+
+- **Assets (lightweight, no multi-MB payload):** `assets/bandleaderhq-hero.jpg` (the full
+  1365×768 hero, 131 KB) and `assets/bandleaderhq-logo.jpg` (the wordmark lockup cropped
+  from it with `jimp`, 700×350, 69 KB). Total added ≈ 200 KB — nothing like the 17 MB
+  background §9t removed.
+- **Header logo.** The text `<h1>BandLeaderHQ</h1>` became `<img className="brand-logo"
+  src="assets/bandleaderhq-logo.jpg" alt="BandLeaderHQ">`. `.brand-logo` feathers the
+  rectangular photo crop into the dark header with a radial `mask-image`
+  (`radial-gradient(130% 118% at 50% 42%, #000 60%, transparent 90%)`) + a drop-shadow, so
+  there is no hard image edge. `width: min(440px, 78vw)` keeps it responsive.
+- **Backdrop — the calm-chrome compromise.** The design skill's rule was "never a
+  full-bleed hero behind data" (readability on dense screens; the 17 MB removal). To honor
+  the owner's request without breaking that principle, the hero is rendered as **blurred,
+  dimmed atmosphere** on a fixed `.ide-background::before` (`blur(26px) brightness(0.5)
+  saturate(1.12)`, `opacity: 0.55`, `inset: -8%` so blurred edges sit off-screen) — the
+  cosmic constellation + warm/cool brand glow read as texture, but the hero's own wordmark
+  dissolves so it never competes with the crisp header logo. The base `.ide-background`
+  keeps the dark ground + the two brand-glow radials; `.ide-background__content` is
+  `position: relative; z-index: 1` so all app content stacks above the backdrop. Content
+  panels keep their opaque `--secondary` surfaces, so tables/charts stay fully readable.
+  Tuning knobs are documented inline (lower blur / raise opacity for a bolder backdrop).
+- **Docs:** the `design-conventions` skill's "brand imagery is edge-only" bullet was
+  updated to describe this owner-approved dimmed-hero backdrop so a future pass doesn't
+  revert it to a bare gradient. Favicon/OG assets and the EPK/PDF theming surfaces were
+  left untouched (out of scope).
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → 225/225
+(no logic touched); headless Playwright render of the real app (vendored npm libs) → app
+mounts, `.brand-logo` loads (natural 700×350), 0 page errors; screenshot reviewed — the
+crisp wordmark logo reads in the header and the backdrop is soft brand atmosphere with no
+legible duplicate wordmark. The blur/dim was tuned up from an initial 7 px (which left the
+hero's wordmark legible as a doubled watermark) to 26 px after reviewing the render.
 
 ---
 
