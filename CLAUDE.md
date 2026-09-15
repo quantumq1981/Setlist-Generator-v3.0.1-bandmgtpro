@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-09-12 (StageStand annotation-exit fix, §9an).
+Last updated: 2026-09-15 (Arrangement-notes import routing + artist-aware matching + CSV round-trip, §9ao).
 
 ---
 
@@ -1724,6 +1724,72 @@ visible past the 4.5s auto-hide window while annotating, **✓ Done** exits ink 
 without leaving Stage Mode, re-entering then pressing **Esc** exits ink first, and a
 second **Esc** closes Stage Mode. Real Apple-Pencil pressure remains a device concern
 verified on the iPad (the sandbox drives synthetic pointer events).
+
+---
+
+## 9ao. Change log — 2026-09 Arrangement-notes import routing + artist-aware matching + CSV round-trip
+
+Fixes two reported bugs and closes the "one file for songs + rehearsal notes" loop. Root
+causes were confirmed empirically against the user's own three files (Master Arrangement
+Guide PDF, Master Song List PDF, the Late Shift Band songs CSV) by running the **lifted**
+parser/matcher over pdfjs-reconstructed `pages`.
+
+- **Bug A — a Master Arrangement Guide PDF imported through "Import + Normalize" became
+  ~23 junk songs.** `ImportSongsModal.handleFileUpload` sent *every* PDF to
+  `pdfExtractLibrarySongs` (a song-list parser), which scraped the guide's artist lines
+  ("Grover Washington Jr.", "Cream", "Bill Withers") and wrapped-title fragments ("FOR
+  LOVE") into songs. The **notes parser was already correct** (24/24 notes, full wrapped
+  titles). Fix is *routing*: new pure **`pdfLooksLikeArrangementNotes(pages)`** (a
+  deterministic header/marker sniff — `MASTER ARRANGEMENT GUIDE`, `ARRANGEMENT & HARMONIC
+  DIRECTIVES`, an `ARRANGEMENT NOTES` section, or the embedded `[[SLARR:…]]` block; the
+  app's own exports ARE the recognized standard). When it fires, the modal shows a
+  **notes panel** (`data-testid="notes-doc-panel"`) — "N notes, M match your library" +
+  the unmatched list — with **Apply notes to my songs** (→ the existing, now-upgraded
+  `applyArrangementNotesFromPDF`), **Import as songs instead** (fallback), and **Cancel**.
+  A plain song-list PDF is unaffected (`pdfLooksLikeArrangementNotes` → false, verified on
+  the real Master Song List). New `onApplyArrangementNotes` prop wired from App.
+- **Bug B — "CSV export blocked: invalid control characters detected."** Damaged
+  arrangement notes stored raw (NUL-interleaved per-glyph mojibake) tripped
+  `validateCSVRows`, blocking the whole export. Fix: **`guardCSVCell`** (the single CSV
+  cell choke point) now strips C0 controls (except TAB/LF/CR) — so no stored data can ever
+  block an export — and `exportSongs` runs every arrangement cell through
+  `sanitizeNotation` (repairs the mojibake → readable). The literal reproduction: OLD
+  `validateCSVRows` → false; NEW → true, and `S␀o␀ ␀s␀l␀o␀w Ⅰ-Ⅴ` exports as `So slow I-V`.
+- **Lossless songs+notes CSV round-trip.** The songs-CSV export wrote only the six *role*
+  columns, so section-heavy notes (the norm after a guide import) exported blank. Added the
+  four **section** columns (`Arr Intro Cue` / `Arr Form Harmony` / `Arr Transition Outro` /
+  `Arr General Notes`) to `exportSongs` + `importToCanonicalCSV`, and taught the importers
+  to read them via new `ARR_SECTION_IMPORT_HEADERS` / `ARR_FIELD_IMPORT_HEADERS` /
+  `ARR_FIELD_EXPORT_HEADERS` (consumed by `importNormalizeRow` + `csvArrangementFromRow`).
+  `general_notes` deliberately does not claim the bare "general notes" header (that stays
+  the `global` role), so legacy CSVs are unaffected.
+- **Artist-aware, fuzzy tiered matching** ("match by artist / abbreviation when the title
+  isn't exact"). `pdfParseArrangementGuideVisible` now captures the italic **artist** line
+  under each title (font-discriminated from title continuations). New pure
+  **`normalizeArtistKey`** ("The Allman Brothers Band"/"Allman Brothers"→`allmanbrothers`;
+  "SRV / Hendrix"/"SRVHendrix"→`srvhendrix`; strips feat./ft. tails; guarded so "The Band"
+  survives), **`artistKeysMatch`** (equal / substring, ≥4-char guard), and
+  **`bestNoteForSong(song, notes, opts)`** — tiers strongest-first: exact title →
+  high-similarity fuzzy title → same artist + a weak-but-real title overlap (never artist
+  alone). `applyArrangementNotesFromPDF`'s `mergeFor` now routes through it, so the real
+  lone miss ("WHAT'S GOING ON / MERCY MERCY ME" vs library "…Mercy Mercy") now attaches:
+  the guide's 24 notes match **24/24** (was 23/24) against the user's library.
+
+Verification: Babel compile clean (index.html + 3 companion files); `npm test` → **225/225**
+(+21 in `test/arrangement-import.test.js`: detection true/false, artist-key normalize +
+match, `bestNoteForSong` tiers incl. exact-over-fuzzy and artist-never-alone, section CSV
+round-trip, `guardCSVCell` control strip + formula guard); real-PDF probe of the lifted
+functions (24/24 parsed, 24/24 matched, artist captured, detection guide=true/songlist=false);
+export-block simulation (OLD blocks, NEW passes + repairs); headless Playwright drive of the
+**real app** (vendored npm libs) → 11/11, 0 page errors — the guide upload shows the notes
+panel (NOT the song "Map Columns" step), reports 3/24 matched to a seeded 3-song library, and
+**Apply** attaches notes to both the exact-title song and the fuzzy-title song, persisted to
+`localStorage`. (The drive also caught a self-inflicted regression — two new regexes had
+landed as literal control bytes rather than `\u` escapes, which broke the browser's regex
+parser though Node tolerated it — now fixed to match the `validateCSVRows` convention.) The
+`importBandHelperSetlist` note-apply loop and the setlist→library `flattenSetlistSongs` were
+left on exact-title matching (round-trips of the app's own exports; changing them risks the
+existing suite for no user-visible gain).
 
 ---
 

@@ -1967,6 +1967,28 @@
       guitar2:   ['arr guitar2','arrangement guitar2','arr_guitar2','guitar 2','arr guitar 2','arrangement_guitar2','arr guitar','arrangement guitar2'],
       endingCue: ['arr ending cue','arrangement ending cue','arr_ending_cue','ending cue','arr ending','arrangement_ending_cue','ending','arr ending cue'],
     };
+    // CSV column header synonyms for the four sectioned note fields (intro/cue, form &
+    // harmony, transition/outro, general notes). These sit ALONGSIDE the six roles so a
+    // songs-CSV export that carries section-heavy notes (the norm for Arrangement-Guide
+    // imports) round-trips losslessly. `general_notes` deliberately does NOT claim the
+    // bare "general notes" header — that one belongs to the `global` role above.
+    const ARR_SECTION_IMPORT_HEADERS = {
+      intro_cue:        ['arr intro cue','arr intro/cue','arr_intro_cue','intro cue','intro/cue'],
+      form_harmony:     ['arr form harmony','arr form/harmony','arr form & harmony','arr_form_harmony','form harmony','form & harmony'],
+      transition_outro: ['arr transition outro','arr transition/outro','arr_transition_outro','transition outro','transition/outro'],
+      general_notes:    ['arr general notes','arr_general_notes','general notes section','arr section notes'],
+    };
+    // Union used by every CSV arrangement reader (importNormalizeRow, csvArrangementFromRow)
+    // so roles and sections are picked up from a row with one pass over the full field set.
+    const ARR_FIELD_IMPORT_HEADERS = { ...ARR_ROLE_IMPORT_HEADERS, ...ARR_SECTION_IMPORT_HEADERS };
+    // Export column header for each arrangement field, in ARR_FIELDS order. The songs-CSV
+    // export writes all ten so a round-trip preserves both who-plays-what and where-in-the-song.
+    const ARR_FIELD_EXPORT_HEADERS = {
+      global: 'Arr General', drums: 'Arr Drums', keys: 'Arr Keys', bass: 'Arr Bass',
+      guitar2: 'Arr Guitar2', endingCue: 'Arr Ending Cue',
+      intro_cue: 'Arr Intro Cue', form_harmony: 'Arr Form Harmony',
+      transition_outro: 'Arr Transition Outro', general_notes: 'Arr General Notes',
+    };
 
     /******************* GIG NOTES REFERENCE DATA *******************/
     const GIG_NOTES_GROOVES = [
@@ -2813,7 +2835,12 @@
 
     const guardCSVCell = (s) => {
       if (s == null) return '';
-      const str = String(s);
+      // Strip C0 control characters (except TAB/LF/CR) at the single CSV choke point.
+      // Damaged arrangement notes can carry NUL bytes (per-glyph mojibake) that make an
+      // otherwise-valid export trip the invalid-control-character guard; removing them
+      // here means no export can ever be blocked by stored data, while the formula-
+      // injection guard below is preserved.
+      const str = String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
       return /^[=+\-@]/.test(str) ? `'${str}` : str;
     };
 
@@ -4199,13 +4226,15 @@
       const rawTempo = mapping.tempoCol != null ? (rowObj[mapping.tempoCol] ?? "") : "";
       const rawVox = mapping.vocalistCol != null ? (rowObj[mapping.vocalistCol] ?? "") : "";
       const rawEnergy = mapping.energyCol != null ? (rowObj[mapping.energyCol] ?? "") : "";
-      // Per-role arrangement columns take priority over single Arrangement column
+      // Per-field arrangement columns (the six roles + the four sections) take priority
+      // over a single Arrangement column, so a songs-CSV export round-trips both.
       const rowKeyMap = Object.fromEntries(Object.keys(rowObj).map(k => [k.toLowerCase().trim(), k]));
-      const roleObj = { global: '', drums: '', keys: '', bass: '', guitar2: '', endingCue: '' };
+      const roleObj = { global: '', drums: '', keys: '', bass: '', guitar2: '', endingCue: '',
+        intro_cue: '', form_harmony: '', transition_outro: '', general_notes: '' };
       let anyRoleCol = false;
-      for (const [role, syns] of Object.entries(ARR_ROLE_IMPORT_HEADERS)) {
+      for (const [field, syns] of Object.entries(ARR_FIELD_IMPORT_HEADERS)) {
         const origKey = syns.reduce((found, syn) => found || rowKeyMap[syn] || null, null);
-        if (origKey != null) { roleObj[role] = String(rowObj[origKey] ?? '').trim(); anyRoleCol = true; }
+        if (origKey != null) { roleObj[field] = String(rowObj[origKey] ?? '').trim(); anyRoleCol = true; }
       }
       const rawArrangement = anyRoleCol
         ? (Object.values(roleObj).some(v => v) ? serializeArrangement(roleObj) : '')
@@ -4360,15 +4389,16 @@
     }
 
     function importToCanonicalCSV(rows) {
-      const header = ["Title","Artist","Duration","Style","Key","BPM","Vocalist","Energy","Arr General","Arr Drums","Arr Keys","Arr Bass","Arr Guitar2","Arr Ending Cue"];
-      const esc = (s) => `"${String(s ?? "").replace(/"/g,'""')}"`;
+      const header = ["Title","Artist","Duration","Style","Key","BPM","Vocalist","Energy",
+        ...ARR_FIELDS.map(f => ARR_FIELD_EXPORT_HEADERS[f])];
+      const esc = (s) => `"${String(s ?? "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'').replace(/"/g,'""')}"`;
       const lines = [header.join(",")];
       for (const r of rows) {
         const arr = parseArrangement(r.arrangement || '');
         lines.push([
           esc(r.title), esc(r.artist || ""), r.duration || "", esc(r.style || ""),
           esc(r.key), r.tempo ? String(parseInt(r.tempo, 10)) : "", esc(r.vocalist), r.energy || "",
-          esc(arr.global), esc(arr.drums), esc(arr.keys), esc(arr.bass), esc(arr.guitar2), esc(arr.endingCue)
+          ...ARR_FIELDS.map(f => esc(sanitizeNotation(arr[f])))
         ].join(","));
       }
       return lines.join("\n");
@@ -5476,6 +5506,13 @@
           if (titleZone.length && titleZone.every(it => it.font && it.font === curTitleFont)) {
             const add = rowText(titleZone).replace(/\s+\d+\s*BPM.*$/i, '').trim();
             if (add) cur.title += ' ' + add;
+          } else if (!cur.artist && titleZone.length &&
+                     titleZone.every(it => it.font && it.font !== curTitleFont)) {
+            // The italic column-A line directly under the title is the artist. Capture it
+            // once as a SECONDARY match signal so a note whose title can't be resolved
+            // exactly still attaches to the right song by artist (see bestNoteForSong).
+            const a = rowText(titleZone).replace(/\s+\d+\s*BPM.*$/i, '').trim();
+            if (a && /[a-z]/i.test(a)) cur.artist = a;
           }
         }
         if (!cur || !colCItems.length) continue;
@@ -5490,6 +5527,7 @@
 
       return notes.map(n => ({
         num: n.num, title: n.title.replace(/\s+/g, ' ').trim(), setName: n.setName,
+        artist: (n.artist || '').replace(/\s+/g, ' ').trim(),
         si: null, pi: null, arr: normalizeArrObj(n.arr),
       })).filter(n => n.title && Object.keys(n.arr).length);
     }
@@ -5512,6 +5550,25 @@
       const legacy = pdfParseArrangementNotesVisible(pages);
       if (legacy.length) return legacy;
       return pdfParseArrangementGuideVisible(pages);
+    }
+
+    // Is this PDF an app-generated *arrangement-notes* document (Master Arrangement Guide,
+    // the Advance-view notes page, or any export carrying the embedded SLARR block) rather
+    // than a song-list PDF? Purely a header/marker sniff of the flattened page text — the
+    // app's own guide/advance exports ARE the recognized standard, so detection is
+    // deterministic. Used by the importer to route a notes PDF to the notes-apply flow
+    // instead of scraping artist lines / wrapped-title fragments into junk songs. Pure.
+    function pdfLooksLikeArrangementNotes(pages) {
+      const text = (pages || []).map(pg =>
+        (pg.rows || []).map(r =>
+          [...(r.items || [])].sort((a, b) => a.x - b.x).map(it => it.str).join(' ')
+        ).join('\n')
+      ).join('\n');
+      if (ARR_DATA_MARKER.test(text)) return true;                        // embedded lossless block
+      if (/MASTER\s+ARRANGEMENT\s+GUIDE/i.test(text)) return true;         // guide header
+      if (/ARRANGEMENT\s*&?\s*HARMONIC\s+DIRECTIVES/i.test(text)) return true; // guide column header
+      if (/(^|\n)\s*ARRANGEMENT\s+NOTES\b/i.test(text)) return true;       // Advance-view notes section
+      return false;
     }
 
     // Title comparison key for note↔song matching: lowercase, punctuation/space-stripped.
@@ -5538,6 +5595,62 @@
         if (variants.some(v => arrTitleKey(v) === nt)) return true;
       }
       return false;
+    }
+
+    // Normalised artist key for note↔song matching. Lowercase, expand "&", drop a
+    // "feat./ft." tail, remove all non-alphanumerics, then peel a leading "the" and a
+    // trailing "band". So "The Allman Brothers Band" and "Allman Brothers" both key to
+    // "allmanbrothers"; "SRV / Hendrix" and "SRVHendrix" both key to "srvhendrix". Pure.
+    function normalizeArtistKey(a) {
+      let k = String(a == null ? '' : a).toLowerCase()
+        .replace(/\bfeat(uring)?\b[\s\S]*$/, '')
+        .replace(/\bft\.?\b[\s\S]*$/, '')
+        .replace(/&/g, 'and')
+        .replace(/[^a-z0-9]+/g, '');
+      if (k.startsWith('the') && k.length > 5) k = k.slice(3);
+      if (k.endsWith('band') && k.length > 7) k = k.slice(0, -4);
+      return k;
+    }
+    // Do two artist keys name the same act? Equal, or one is a prefix/substring of the
+    // other (covers "allmanbrothers"⊂"allmanbrothersband"). The shorter key must be ≥4
+    // chars so a stray abbreviation can't collide with everything. Pure.
+    function artistKeysMatch(a, b) {
+      if (!a || !b) return false;
+      if (a === b) return true;
+      const short = a.length <= b.length ? a : b;
+      const long = a.length <= b.length ? b : a;
+      return short.length >= 4 && long.indexOf(short) >= 0;
+    }
+    // Best-matching arrangement note for a song, across a note list. Tiers, strongest first:
+    //   'title'  — exact / superscript-tolerant title key (arrNoteMatchesTitle)
+    //   'fuzzy'  — high token-similarity title (wrapped / abbreviated / lightly-misspelt)
+    //   'artist' — same act AND a weak-but-real title overlap (NEVER artist alone, so two
+    //              different songs by one artist can't collide)
+    // Returns { note, tier, score } for the highest-ranked candidate, else null.
+    // opts.fuzzy === false restricts to the exact tier. Pure; drives both the apply path
+    // and the importer's match preview.
+    function bestNoteForSong(song, notes, opts) {
+      const o = opts || {};
+      const fuzzy = o.fuzzy !== false;
+      const fuzzyGate = o.fuzzyGate == null ? 0.72 : o.fuzzyGate;
+      const artistFloor = o.artistFloor == null ? 0.3 : o.artistFloor;
+      let best = null;
+      const consider = (note, tier, score) => {
+        const rank = tier === 'title' ? 3 : tier === 'fuzzy' ? 2 : 1;
+        if (!best || rank > best.rank || (rank === best.rank && score > best.score)) {
+          best = { note, tier, score, rank };
+        }
+      };
+      for (const note of notes || []) {
+        if (arrNoteMatchesTitle(song && song.title, note)) { consider(note, 'title', 1); continue; }
+        if (!fuzzy) continue;
+        const sim = titleSimilarity(song && song.title, note && note.title);
+        if (sim >= fuzzyGate) { consider(note, 'fuzzy', sim); continue; }
+        const sa = normalizeArtistKey(song && song.artist);
+        const na = normalizeArtistKey(note && note.artist);
+        if (sa && na && artistKeysMatch(sa, na) && sim >= artistFloor) consider(note, 'artist', sim);
+      }
+      return best ? { note: best.note, tier: best.tier, score: best.score } : null;
     }
 
     // Merge a footnote's per-role notes onto an existing arrangement (imported roles win,
@@ -5643,13 +5756,14 @@
     function csvArrangementFromRow(rowObj) {
       const rowKeyMap = {};
       for (const k of Object.keys(rowObj || {})) rowKeyMap[k.toLowerCase().trim()] = k;
-      const roleObj = { global: '', drums: '', keys: '', bass: '', guitar2: '', endingCue: '' };
+      const roleObj = { global: '', drums: '', keys: '', bass: '', guitar2: '', endingCue: '',
+        intro_cue: '', form_harmony: '', transition_outro: '', general_notes: '' };
       let any = false;
-      for (const [role, syns] of Object.entries(ARR_ROLE_IMPORT_HEADERS)) {
+      for (const [field, syns] of Object.entries(ARR_FIELD_IMPORT_HEADERS)) {
         const origKey = syns.reduce((found, syn) => found || rowKeyMap[syn] || null, null);
         if (origKey != null) {
-          roleObj[role] = String(rowObj[origKey] ?? '').trim();
-          if (roleObj[role]) any = true;
+          roleObj[field] = String(rowObj[origKey] ?? '').trim();
+          if (roleObj[field]) any = true;
         }
       }
       if (any) return serializeArrangement(roleObj);
@@ -8906,7 +9020,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     }
 
     /******************* IMPORT SONGS MODAL *******************/
-    function ImportSongsModal({ open, onClose, onImport, existingSongs, onRiskyAction }) {
+    function ImportSongsModal({ open, onClose, onImport, existingSongs, onRiskyAction, onApplyArrangementNotes }) {
       const STEPS = ["input", "map", "normalize", "import"];
       const STEP_LABELS = { input: "1. Input", map: "2. Map Columns", normalize: "3. Review", import: "4. Import" };
 
@@ -8934,6 +9048,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       // Results
       const [normalizedResult, setNormalizedResult] = useState(null);
       const [dragover, setDragover] = useState(false);
+      // Arrangement-notes document detected on upload (a Master Arrangement Guide / Advance
+      // export). Holds { file, notes, matched, unmatched } so the modal offers a notes-apply
+      // flow instead of scraping the notes doc into junk songs.
+      const [notesDoc, setNotesDoc] = useState(null);
 
       if (!open) return null;
 
@@ -8944,6 +9062,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         setMapping({ titleCol: null, artistCol: null, durationCol: null, styleCol: null, keyCol: null, tempoCol: null, vocalistCol: null, energyCol: null, arrangementCol: null });
         setConfidences({});
         setNormalizedResult(null);
+        setNotesDoc(null);
       };
 
       const handleClose = () => { reset(); onClose(); };
@@ -8984,6 +9103,18 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         setStep("map");
       };
 
+      // Parse a PDF as a song list (the set-aware parser first, flat heuristic fallback)
+      // and feed it into the existing map/normalize pipeline.
+      const parsePdfAsSongs = async (arrayBuffer, name) => {
+        const songs = await pdfExtractLibrarySongs(arrayBuffer);
+        if (songs.length === 0) {
+          alert('No song data found in PDF. The PDF may not be in a recognized format.');
+          return;
+        }
+        const csvText = pdfSongsToCSV(songs);
+        parseText(csvText, name);
+      };
+
       const handleFileUpload = async (file) => {
         if (!file) return;
 
@@ -8991,16 +9122,30 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         if (file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf') {
           try {
             const arrayBuffer = await file.arrayBuffer();
-            // Prefer the set-aware parser (correctly reads this app's own stacked setlist
-            // export and recovers arrangement footnotes); falls back to the flat heuristic.
-            const songs = await pdfExtractLibrarySongs(arrayBuffer);
-            if (songs.length === 0) {
-              alert('No song data found in PDF. The PDF may not be in a recognized format.');
-              return;
+            // First decide what KIND of PDF this is. A Master Arrangement Guide / Advance
+            // export is rehearsal NOTES, not a song list — scraping it for songs produces
+            // junk (artist lines + wrapped-title fragments become songs). Route those to
+            // the notes-apply flow, which attaches each note to the matching library song.
+            let pages = null;
+            try { pages = await pdfExtractRows(arrayBuffer); } catch (e) { pages = null; }
+            if (pages && onApplyArrangementNotes && pdfLooksLikeArrangementNotes(pages)) {
+              let notes = [];
+              try { notes = pdfParseArrangementNotes(pages) || []; } catch (e) { notes = []; }
+              if (notes.length) {
+                const matched = [], unmatched = [];
+                notes.forEach(n => {
+                  // Preview against the CURRENT library using the same tiered matcher the
+                  // apply path uses (exact → fuzzy → artist), so the counts are honest.
+                  const hit = (existingSongs || []).some(s => bestNoteForSong(s, [n], { fuzzy: true }));
+                  (hit ? matched : unmatched).push(n);
+                });
+                setNotesDoc({ file, notes, matched, unmatched });
+                setFileName(file.name);
+                setStep('input');
+                return;
+              }
             }
-            // Convert to CSV (incl. arrangement) and feed into existing pipeline
-            const csvText = pdfSongsToCSV(songs);
-            parseText(csvText, file.name);
+            await parsePdfAsSongs(arrayBuffer, file.name);
           } catch (err) {
             console.error('PDF parse error:', err);
             alert('Failed to parse PDF: ' + (err.message || 'Unknown error'));
@@ -9099,8 +9244,63 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               ))}
             </div>
 
+            {/* ARRANGEMENT-NOTES DOCUMENT DETECTED — offer notes-apply instead of song scrape */}
+            {step === "input" && notesDoc && (
+              <div className="notes-doc-panel" data-testid="notes-doc-panel" style={{ border: "1px solid var(--accent)", borderRadius: "8px", padding: "1rem", background: "var(--accent-soft)", marginBottom: ".75rem" }}>
+                <h4 style={{ margin: "0 0 .5rem", color: "var(--accent)" }}>📋 Arrangement Notes detected</h4>
+                <p style={{ fontSize: ".85rem", margin: "0 0 .5rem" }}>
+                  <strong>{notesDoc.file.name}</strong> is a rehearsal / Arrangement-Guide export — a set of
+                  notes about your songs, <em>not</em> a new song list. It carries{" "}
+                  <strong>{notesDoc.notes.length}</strong> arrangement note{notesDoc.notes.length !== 1 ? "s" : ""}.
+                </p>
+                <p style={{ fontSize: ".85rem", margin: "0 0 .5rem" }}>
+                  <strong style={{ color: "var(--accent)" }}>{notesDoc.matched.length}</strong> of {notesDoc.notes.length}{" "}
+                  match a song already in your library and will be attached to it (fuzzy title + artist match).
+                </p>
+                {notesDoc.unmatched.length > 0 && (
+                  <details style={{ fontSize: ".8rem", marginBottom: ".5rem" }}>
+                    <summary style={{ cursor: "pointer", color: "var(--text-muted)" }}>
+                      {notesDoc.unmatched.length} note{notesDoc.unmatched.length !== 1 ? "s" : ""} with no matching song
+                    </summary>
+                    <ul style={{ margin: ".25rem 0 0", paddingLeft: "1.25rem" }}>
+                      {notesDoc.unmatched.slice(0, 20).map((n, i) => (
+                        <li key={i}>{n.title}{n.artist ? ` — ${n.artist}` : ""}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+                <div style={{ display: "flex", gap: ".5rem", flexWrap: "wrap", marginTop: ".5rem" }}>
+                  <button
+                    className="btn btn-primary"
+                    data-testid="apply-notes-btn"
+                    disabled={notesDoc.matched.length === 0}
+                    onClick={() => { onApplyArrangementNotes(notesDoc.file); handleClose(); }}
+                  >
+                    ✓ Apply notes to my songs
+                  </button>
+                  <button
+                    className="btn btn-small"
+                    data-testid="import-as-songs-btn"
+                    onClick={async () => {
+                      const f = notesDoc.file;
+                      setNotesDoc(null);
+                      try { await parsePdfAsSongs(await f.arrayBuffer(), f.name); }
+                      catch (err) { alert('Failed to parse PDF: ' + (err.message || 'Unknown error')); }
+                    }}
+                  >
+                    Import as songs instead
+                  </button>
+                  <button className="btn btn-small" onClick={() => setNotesDoc(null)}>Cancel</button>
+                </div>
+                <p style={{ fontSize: ".75rem", color: "var(--text-muted)", margin: ".5rem 0 0" }}>
+                  Notes attach to songs in your library and any saved gig setlists. To bring the songs
+                  in first, import the song-list CSV/PDF, then re-upload this notes file.
+                </p>
+              </div>
+            )}
+
             {/* STEP 1: INPUT */}
-            {step === "input" && (
+            {step === "input" && !notesDoc && (
               <div>
                 <div className="import-tabs">
                   <button className={`import-tab ${inputTab === "upload" ? "active" : ""}`} onClick={() => setInputTab("upload")}>Upload File</button>
@@ -14815,7 +15015,13 @@ ${headerHtml}
 
       // PHASE 2: CSV Export with proper quoting + enhanced energy/tonal data
       const exportSongs = () => {
-        const headers = ['Title', 'Artist', 'Duration', 'Style', 'Key', 'BPM', 'Vocalist', 'Energy', 'Status', 'Arr General', 'Arr Drums', 'Arr Keys', 'Arr Bass', 'Arr Guitar2', 'Arr Ending Cue'];
+        // Songs + rehearsal notes in one file. All ten arrangement fields (six roles + four
+        // sections) are written so a section-heavy library (the norm after an Arrangement-
+        // Guide import) round-trips losslessly, and every note cell is run through
+        // sanitizeNotation so mojibake/control-char damage is repaired on the way out (the
+        // export can no longer be blocked, and the notes read cleanly in a spreadsheet).
+        const headers = ['Title', 'Artist', 'Duration', 'Style', 'Key', 'BPM', 'Vocalist', 'Energy', 'Status',
+          ...ARR_FIELDS.map(f => ARR_FIELD_EXPORT_HEADERS[f])];
         const rows = songs.map(s => {
           const energy = getCompositeEnergy(s);
           const arr = parseArrangement(s.arrangement || '');
@@ -14829,12 +15035,7 @@ ${headerHtml}
             csvSafeCell(s.vocalist ?? ''),
             csvSafeCell(Math.round(energy * 10) / 10),
             csvSafeCell(s.status || 'active'),
-            csvSafeCell(arr.global),
-            csvSafeCell(arr.drums),
-            csvSafeCell(arr.keys),
-            csvSafeCell(arr.bass),
-            csvSafeCell(arr.guitar2),
-            csvSafeCell(arr.endingCue)
+            ...ARR_FIELDS.map(f => csvSafeCell(sanitizeNotation(arr[f])))
           ];
         });
         if (!validateCSVRows(rows)) {
@@ -16095,7 +16296,11 @@ ${headerHtml}
           // or null when nothing matches / nothing changes. Marks the note used so the
           // unmatched tally stays accurate across both the library and every gig.
           const mergeFor = (song) => {
-            const note = notes.find(n => arrNoteMatchesTitle(song.title, n));
+            // Tiered match: exact title → fuzzy title → same artist + weak title overlap,
+            // so a wrapped/abbreviated/lightly-misspelt title (or a title the PDF renders
+            // slightly differently) still lands on the right song.
+            const m = bestNoteForSong(song, notes, { fuzzy: true });
+            const note = m && m.note;
             if (!note) return null;
             const merged = arrApplyNoteToArrangement(song.arrangement, note);
             if (!merged || merged === song.arrangement) return null;
@@ -16664,6 +16869,7 @@ ${headerHtml}
               onImport={importCanonicalRows}
               existingSongs={songs}
               onRiskyAction={promptBackupBeforeRiskyAction}
+              onApplyArrangementNotes={applyArrangementNotesFromPDF}
             />
 
             <ChartMatchModal
