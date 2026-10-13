@@ -47,3 +47,42 @@ test('fmtBytes renders human sizes', () => {
   assert.equal(fmtBytes(2048), '2 KB');
   assert.equal(fmtBytes(1572864), '1.5 MB');
 });
+
+// --- Storage record format (2026-10, §9aq) -----------------------------------------
+// Bytes are stored as { __att:1, type, bytes:ArrayBuffer } because WebKit (every iOS
+// browser) refuses Blob/File values in IndexedDB under private browsing. Legacy records
+// are Blobs, so the read side must accept both.
+const { attRecordFromBytes, attRecordToBlob, attStorageErrorMessage } = algorithm;
+
+test('attRecordFromBytes stores a plain ArrayBuffer (structured-clone safe), not a Blob', () => {
+  const rec = attRecordFromBytes(new Uint8Array([1, 2, 3]).buffer, 'application/pdf');
+  assert.equal(rec.__att, 1);
+  assert.equal(rec.type, 'application/pdf');
+  assert.ok(rec.bytes instanceof ArrayBuffer);
+  assert.ok(!(rec instanceof Blob));
+  // A typed-array input is copied into its own buffer; the MIME defaults when blank.
+  const view = new Uint8Array([9, 4, 5, 9]).subarray(1, 3);
+  const rec2 = attRecordFromBytes(view, '');
+  assert.deepEqual(Array.from(new Uint8Array(rec2.bytes)), [4, 5]);
+  assert.equal(rec2.type, 'application/octet-stream');
+});
+
+test('attRecordToBlob rebuilds a byte-exact Blob, passes legacy Blobs through, rejects junk', async () => {
+  const bytes = new Uint8Array([0, 255, 128, 37, 80]);
+  const blob = attRecordToBlob(attRecordFromBytes(bytes.buffer, 'image/png'));
+  assert.ok(blob instanceof Blob);
+  assert.equal(blob.type, 'image/png');
+  assert.deepEqual(Array.from(new Uint8Array(await blob.arrayBuffer())), Array.from(bytes));
+  const legacy = new Blob([bytes], { type: 'application/pdf' });
+  assert.equal(attRecordToBlob(legacy), legacy);
+  assert.equal(attRecordToBlob(null), null);
+  assert.equal(attRecordToBlob(undefined), null);
+  assert.equal(attRecordToBlob({ foo: 1 }), null);
+});
+
+test('attStorageErrorMessage turns storage failures into actionable advice', () => {
+  assert.match(attStorageErrorMessage({ name: 'QuotaExceededError' }), /out of storage/);
+  assert.match(attStorageErrorMessage({ name: 'NotReadableError' }), /could not be read/);
+  assert.match(attStorageErrorMessage({ name: 'UnknownError', message: 'Error preparing Blob/File data to be stored in object store' }), /private browsing/);
+  assert.match(attStorageErrorMessage(undefined), /private browsing/);
+});

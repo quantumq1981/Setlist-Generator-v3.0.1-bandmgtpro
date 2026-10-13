@@ -33,6 +33,11 @@ introduce Tailwind build tooling, a component library that needs compilation, or
 an import statement — none of it runs here. Utility classes copied from
 shadcn/Tailwind must be hand-translated to real CSS.
 
+### 1b. No regex lookbehind
+`(?<=…)` / `(?<!…)` is a *parse* error on Safari < 16.4 and Babel Standalone doesn't transpile
+it, so a single one blanks the entire app on an older iPad. Use a capture group or a hand loop.
+`test/note-format.test.js` scans every shipped source file and fails the suite if one appears.
+
 ### 2. Never rename a `localStorage` key string
 Every persisted key is `setlist_*`-prefixed (`LS_KEYS` factory in `index.html`;
 `PDF_SETTINGS_STORAGE_KEY`; the backup restore filter
@@ -64,6 +69,10 @@ When you recolor the brand, grep for hard-coded hex too (e.g. `#ff6b35`,
   class over a new inline style; if you need an accent variant, add a modifier class.
 - **Panels / modals:** `.panel` / `.panel-header` / `.panel-title`; `.modal-backdrop` +
   `.modal`; the `InfoModal.jsx` `.info-modal-*` family for help popups.
+- **Rehearsal notes:** `<StructuredNote text mode="full|stage">` renders any arrangement note
+  organized (headings, one bullet per idea) or as its stage summary, from the pure
+  `structureNoteText` / `condenseNoteText`. Use it wherever note text is shown — never print a
+  raw note string into the UI again (that is how run-on, Markdown-littered notes reached the stage).
 - **Contextual help:** the `featureHelp.js` (`window.featureDefinitions`) +
   `InfoTrigger` + `InfoModal` trio. To add help for a feature, add a definition
   and drop an `<InfoTrigger>` — don't invent a new tooltip mechanism.
