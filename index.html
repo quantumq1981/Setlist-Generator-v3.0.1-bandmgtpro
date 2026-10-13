@@ -745,7 +745,24 @@
     .stage-cue-meta .stage-cue-key { color: #8ab4ff; font-weight: 800; opacity: 1; }
     .stage-cue-sections { text-align: left; display: flex; flex-direction: column; gap: .9rem; }
     .stage-cue-section-label { font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; opacity: .55; margin-bottom: .2rem; }
-    .stage-cue-section-text { font-size: clamp(1.05rem, 2.6vw, 1.5rem); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .stage-cue-section-text { font-size: clamp(1.05rem, 2.6vw, 1.5rem); line-height: 1.5; word-break: break-word; }
+    .stage-cue-toggle { align-self: flex-end; background: transparent; border: 1px solid var(--border); color: var(--text-muted); border-radius: 999px; padding: .2rem .7rem; font-size: .8rem; cursor: pointer; }
+    /* Structured rehearsal notes (StructuredNote) — shared by Advance view, cue card, editor preview. */
+    .sn { line-height: 1.45; white-space: normal; }
+    .sn-h { font-weight: 700; font-size: .82em; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); margin: .45em 0 .1em; }
+    .sn-h:first-child { margin-top: 0; }
+    .sn-list { margin: .1em 0 .3em; padding-left: 1.15em; }
+    .sn-list li { margin: .12em 0; }
+    .sn-label { font-weight: 700; color: var(--text); }
+    .sn-text { margin: .1em 0 .3em; }
+    .sn-fn { font-size: .8em; color: var(--text-muted); margin: .1em 0; }
+    .sn-cues { display: flex; flex-wrap: wrap; gap: .3em; margin-bottom: .3em; }
+    .sn-cue { border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 0 .55em; font-size: .85em; font-weight: 700; }
+    .sn-more { font-size: .75em; color: var(--text-muted); margin-top: .2em; }
+    .arr-tidy-bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-start; margin-top: .45rem; }
+    .arr-stage-preview { flex: 1 1 260px; font-size: .82rem; border: 1px solid var(--border); border-radius: 8px; padding: .35rem .6rem; background: var(--secondary); }
+    .arr-stage-preview summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+    .arr-stage-preview-sec { margin-top: .4rem; }
     .stage-cue-empty { opacity: .5; font-size: 1.1rem; margin-top: 1rem; }
 
     .stage-index { position: absolute; inset: 0; z-index: 5; overflow-y: auto; background: rgba(6,6,9,.975); -webkit-overflow-scrolling: touch; }
@@ -1307,6 +1324,278 @@
       return out;
     }
 
+    /******************* NOTE STRUCTURE + STAGE SUMMARY (pure) *******************/
+    // Rehearsal notes arrive as run-on prose that only LOOKS organized: inline "* "
+    // bullets, raw Markdown (**Verse** - **Bars 1-4:** …), role labels glued mid-sentence
+    // ("…comes in along with. Bass: …"), [n] footnotes, and generic advice burying the
+    // cues. These helpers recover the structure (structureNoteText), re-emit it as clean
+    // line-per-idea text (formatNoteText — the editor's "Tidy" action), and distil a short
+    // stage-ready summary (condenseNoteText). Pure + deterministic: no network, no AI;
+    // nothing is rewritten unless the user presses Tidy. Exercised by test/note-format.test.js.
+    const NOTE_ROLE_LABELS_RE = /^(drums?|drummer|bass|keys|keyboards?|organ|piano|guitar\s*[12]|lead\s*guitar|rhythm\s*guitar|guitars?|gtr\s*[12]?|vocals?|vox|horns?|sax|percussion|ending\s*cue|intro\s*cue|cue|chords|dynamics|feel|form|groove)$/i;
+    // Mid-text split points before a role label ("…along with. Bass: Bass line…").
+    const NOTE_ROLE_SPLIT_RE = /\s+(?=(?:Drums?|Drummer|Bass|Keys|Keyboards?|Organ|Piano|Guitar\s*[12]|Lead\s*Guitar|Rhythm\s*Guitar|Guitar|Gtr\s*[12]?|Vocals?|Horns?|Sax|Percussion|Ending\s+Cue)\s*:\s)/g;
+    const NOTE_BOLD_OPEN = '\u0002', NOTE_BOLD_CLOSE = '\u0003';
+
+    function noteCleanText(t) {
+      return String(t || '')
+        .replace(/[\u0002\u0003]/g, '')
+        .replace(/\s+/g, ' ')
+        .replace(/\s+([,.;:!?])/g, '$1')
+        .replace(/^[\s\-–—*•·]+/, '')
+        .replace(/[\s\-–—]+$/, '')
+        .trim();
+    }
+
+    // Is a short bullet a sub-heading ("Tempo / Feel", "Rehearsal Mark A - Main Groove")
+    // rather than an instruction ("Keep patterns subtle and intentional")?
+    function noteLooksLikeHeading(t) {
+      const s = String(t || '').trim();
+      if (!s || s.length > 48) return false;
+      if (/^rehearsal\s+mark\s+[A-Z]\b/i.test(s)) return true;
+      if (/^(footnotes?|notes?)$/i.test(s)) return true;
+      if (/[.;!?]$/.test(s) || /^\[/.test(s) || /\d/.test(s)) return false;
+      const words = s.split(/\s+/).filter(w => /[A-Za-z]/.test(w));
+      if (!words.length || words.length > 5) return false;
+      // Title Case: every word of 3+ letters starts upper-case (small joiners exempt).
+      return words.every(w => w.length < 3 || /^(and|the|of|in|on|to|for|with)$/i.test(w) || /^[A-Z(]/.test(w));
+    }
+
+    // Split prose at sentence ends: [.!?] (optionally closing-quoted) or ")" followed by
+    // whitespace and a capitalised word. An ellipsis ("cause... I'm") is not an end.
+    function noteSplitSentences(t) {
+      const s = String(t || ''), out = [];
+      const re = /([.!?]["\u201D]?|\))\s+(?=[A-Z][a-z'\u2019])/g;
+      let last = 0, m;
+      while ((m = re.exec(s))) {
+        if (m[1].charAt(0) === '.' && s.charAt(m.index - 1) === '.') continue;
+        const end = m.index + m[1].length;
+        out.push(s.slice(last, end).trim());
+        last = re.lastIndex;
+      }
+      out.push(s.slice(last).trim());
+      return out.filter(Boolean);
+    }
+
+    // text -> [{type:'heading'|'item'|'text'|'footnote', text, label?, num?}]
+    function structureNoteText(text) {
+      let s = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
+      if (!s.trim()) return [];
+      const hadBullets = /(^|\s)[*•]\s+\S/.test(s.replace(/\*\*/g, '')) || /(^|\n)\s*[-•]\s+\S/.test(s) || /\*\*[^*\n]+\*\*/.test(s);
+      // **Bold** -> private markers so the "*" bullet split can't touch them.
+      s = s.replace(/\*\*([^*\n]{1,80}?)\*\*/g, (_, inner) => NOTE_BOLD_OPEN + inner.trim() + NOTE_BOLD_CLOSE);
+      const SPLIT = '\n';
+      s = s
+        .replace(/(^|\s)[*•]\s+(?=\S)/g, SPLIT)                                // inline * / • bullets
+        .replace(/\s+-\s+(?=\u0002)/g, SPLIT)                                   // "- **Bars 1-4:**"
+        .replace(/\s+-\s+(?=[A-G][#b]?[\w#+°ø/]*(?:\s+or\s+[A-G][#b]?[\w#+°ø/]*)?\s*\(\d+\s*bars?\))/g, SPLIT) // "- Emaj7 (2 bars)"
+        .replace(/\s*(?=\u0002)/g, SPLIT)                                       // before any bold label
+        .replace(/:\s+(?=[A-G][#b]?[\w#+°ø/]*\s*\(\d+\s*bars?\))/g, ':' + SPLIT) // "gets two bars: Emaj7 (2 bars)"
+        .replace(/\s+(?=\[\d{1,2}\]\s)/g, SPLIT)                                // [n] footnotes
+        .replace(NOTE_ROLE_SPLIT_RE, SPLIT);                                    // role labels mid-text
+      const blocks = [];
+      const pushItem = (txt, label) => {
+        const t = noteCleanText(txt);
+        if (!t && !label) return;
+        if (!t) { blocks.push({ type: 'heading', text: noteCleanText(label) }); return; }
+        blocks.push(label ? { type: 'item', label: noteCleanText(label), text: t } : { type: hadBullets ? 'item' : 'text', text: t });
+      };
+      // A very long segment is several ideas: one sentence per line.
+      const segs = [];
+      s.split(/\n+/).forEach(seg => {
+        if (seg.length > 140) noteSplitSentences(seg).forEach(x => segs.push(x));
+        else segs.push(seg);
+      });
+      segs.forEach(rawSeg => {
+        // An explicitly bulleted line is always an item — never re-read as a heading, which
+        // keeps formatNoteText's output stable when it is structured again.
+        const bulleted = /^[-–—*•·]\s+/.test(rawSeg.trim());
+        let seg = rawSeg.trim().replace(/^[-–—*•·]\s+/, '');
+        if (!seg) return;
+        // **Label:** rest  |  **Heading** rest
+        const bold = seg.match(/^\u0002([^\u0003]*)\u0003\s*(.*)$/);
+        if (bold) {
+          const inner = bold[1].trim(), rest = bold[2].trim();
+          if (/:$/.test(inner)) { pushItem(rest, inner.replace(/:$/, '')); return; }
+          blocks.push({ type: 'heading', text: noteCleanText(inner) });
+          if (rest) pushItem(rest);
+          return;
+        }
+        const fn = seg.match(/^\[(\d{1,2})\]\s*(.+)$/);
+        if (fn) { blocks.push({ type: 'footnote', num: Number(fn[1]), text: noteCleanText(fn[2]) }); return; }
+        if (/^(footnotes?)\s*:?$/i.test(seg)) return;                           // implied by the footnote blocks
+        const lab = seg.match(/^([A-Za-z][A-Za-z0-9 /&'-]{0,24}?)\s*:\s*(.*)$/);
+        if (lab && NOTE_ROLE_LABELS_RE.test(lab[1].trim())) { pushItem(lab[2], lab[1].trim()); return; }
+        if (!bulleted && /^[^:]{1,90}:$/.test(seg)) { blocks.push({ type: 'heading', text: noteCleanText(seg.slice(0, -1)) }); return; }
+        if (!bulleted && hadBullets && noteLooksLikeHeading(seg)) { blocks.push({ type: 'heading', text: noteCleanText(seg) }); return; }
+        pushItem(seg);
+      });
+      return blocks.filter(b => b.text);
+    }
+
+    // Blocks -> clean line-per-idea text. Re-structuring the output yields the same
+    // blocks (headings end in ":", items start with "• ", footnotes keep "[n]").
+    function formatNoteText(text) {
+      const blocks = structureNoteText(text);
+      if (!blocks.length) return '';
+      const structured = blocks.some(b => b.type !== 'text') || blocks.length > 1;
+      if (!structured) return blocks[0].text;
+      return blocks.map((b, i) => {
+        // A heading with nothing under it is really a one-line point.
+        const next = blocks[i + 1];
+        if (b.type === 'heading' && (!next || next.type === 'heading' || next.type === 'footnote')) return '• ' + b.text;
+        if (b.type === 'heading') return b.text + ':';
+        if (b.type === 'footnote') return `[${b.num}] ${b.text}`;
+        if (b.type === 'item') return '• ' + (b.label ? b.label + ': ' : '') + b.text;
+        return b.text;
+      }).join('\n');
+    }
+
+    // Bracketed cue tags in reading order, de-duplicated: [Cold Open], [Tag×3] …
+    function noteCueTags(text) {
+      const seen = new Set(), out = [];
+      (String(text || '').replace(/\[\[[^\]]*\]\]/g, ' ').match(/\[[^\]\[\n]{2,32}\]/g) || []).forEach(t => {
+        if (/^\[\d+\]$/.test(t)) return;                                       // footnote refs (data markers stripped above)
+        const k = t.toLowerCase().replace(/\s+/g, ' ');
+        if (!seen.has(k)) { seen.add(k); out.push(t); }
+      });
+      return out;
+    }
+
+    // A chord symbol needs a quality, extension, accidental or slash — so the article
+    // "A" and the "E" in "E string" never count, while E, Emaj7, C#m7, A/B, D7#9 do.
+    // (No regex lookbehind anywhere in this app: Safari < 16.4 cannot parse it, and Babel
+    // does not transpile it — one would blank the whole page on older iPads.)
+    const NOTE_CHORD_RE = /(^|[^\w#\/])([A-G](?:#|b)?(?:maj|min|m|dim|aug|sus|add)?\d{0,2}(?:[#b]\d{1,2})?(?:\/[A-G](?:#|b)?)?)(?![\w#])/g;
+    const noteChordsIn = (t) => {
+      const out = [];
+      String(t || '').replace(NOTE_CHORD_RE, (m, pre, chord) => {
+        if (!/^[A-G]$/.test(chord) && !out.includes(chord)) out.push(chord); // bare letter: ambiguous
+        return m;
+      });
+      return out;
+    };
+    const NOTE_SPECIFIC_RE = /(\bbars?\s*\d)|(\b\d{1,2}[-\s]bar\b)|(\b[ivIV]{1,3}\d?\s*[-|]\s*[ivIV]{1,3})|(\b\d\s*[x×X]\b|[x×X]\s*\d\b|\b\d+\s*times\b|\bthree times\b|\btwice\b)|(\bkey\s+of\b)|(\b[Bb][Pp][Mm]\b)|(\b\d\/\d\b)|(\b(on|of)\s+(the\s+)?\d(\s*(&|and)\s*\d)?\b)|(\b\d+(st|nd|rd|th)[-\s]note\b)|(\b(I|IV|V|vi|ii)\s+chord\b)|(\b(in\s+)?on\s+(the\s+)?(I|IV|V|iv|vi)\b(?!\w))/;
+    const NOTE_ACTION_RE = /\b(stop|hits?|vamp|tag|segue|transition|break(down)?|build|cue|count|solo|drop|half[-\s]?(time|volume)|fade|ends?|ending|punch|kick\s*off|comes?\s+in|joins?|intro|outro|riff|turn\s?around|direct|backbeat|shuffle|groove|brings?\s+(the\s+)?band\s+in|band\s+(comes\s+)?in)\b/i;
+    const NOTE_GENERIC_RE = /\b(relaxed|cohes\w*|professional|vibe|subtle|intentional|expressive|complexity|overplay\w*|do not rush|don'?t rush|leave (room|space)|prioriti[sz]e|clean|tight(ly)?|lock\w*|support the form|interrupts?|driving)\b/i;
+    const NOTE_FILLER_RE = /^(arrangement note:\s*|my arrangement is as follows,?\s*|this (has|is) (it\s+)?|there is\s+|there's\s+|you'?ll hear\s+|the structure follows this sequence:\s*|start with\s+)/i;
+
+    function noteLineScore(t, label) {
+      const full = (label ? label + ': ' : '') + t;
+      let sc = 0;
+      if (/\[[^\]\d][^\]]*\]/.test(full)) sc += 4;
+      if (label && /^(drums?|bass|keys|guitar\s*2|ending\s*cue|intro)/i.test(label)) sc += 2;
+      const specific = NOTE_SPECIFIC_RE.test(full) || noteChordsIn(full).length > 0;
+      if (specific) sc += 3;
+      if (NOTE_ACTION_RE.test(full)) sc += 2;
+      if (NOTE_GENERIC_RE.test(full) && !specific && !/\[/.test(full)) sc -= 4;
+      if (t.length < 12 && !/\[/.test(t) && !specific) sc -= 1;
+      return sc;
+    }
+
+    function noteTokenSet(t) {
+      return new Set(String(t).toLowerCase().replace(/[^a-z0-9#]+/g, ' ').split(' ').filter(w => w.length > 2));
+    }
+
+    function noteTrim(t, maxLen) {
+      const s = String(t).replace(NOTE_FILLER_RE, '').replace(/\s+/g, ' ').trim();
+      const cap = s.charAt(0).toUpperCase() + s.slice(1);
+      if (cap.length <= maxLen) return cap;
+      const cut = cap.slice(0, maxLen - 1);
+      const sp = cut.lastIndexOf(' ');
+      return (sp > maxLen * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,;:\-–—(]+$/, '') + '…';
+    }
+
+    // Short display form of a sub-heading: "Rehearsal Mark A - Main Groove" → "Mark A – Main
+    // Groove"; drop quoted lyric cues "(\"Picket lines...\")" and "(3 Verses & Riff)" asides.
+    const noteShortHeading = (h) => String(h || '')
+      .replace(/^rehearsal\s+mark\s+/i, 'Mark ')
+      .replace(/\s*\((?:["“'][^)]*|[^)]*\bverses?\b[^)]*)\)\s*/gi, ' ')
+      .replace(/\s+-\s+/g, ' – ')
+      .replace(/\s+/g, ' ').trim();
+
+    // Stage summary: { cues:[…tags], lines:[…≤max short directives], dropped } in reading
+    // order. Items are grouped under their sub-heading, so a structured note condenses to
+    // one line per section; a section dense with chords collapses to its chord cycle
+    // ("Verse (12-Bar Cycle): Emaj7 · C#m7 · F#m7 · A/B"). Footnotes and generic advice
+    // drop out; the specific, actionable lines survive.
+    function condenseNoteText(text, opts) {
+      const o = opts || {};
+      const max = o.max == null ? 5 : o.max;
+      const maxLen = o.maxLen == null ? 96 : o.maxLen;
+      const blocks = structureNoteText(text);
+      const groups = [];
+      let cur = null;
+      blocks.forEach(b => {
+        if (b.type === 'footnote') return;
+        if (b.type === 'heading') { cur = { heading: b.text, items: [] }; groups.push(cur); return; }
+        const parts = b.type === 'text' && b.text.length > maxLen
+          ? noteSplitSentences(b.text) : [b.text];
+        parts.forEach(px => {
+          const it = { text: px.trim(), label: b.label || '' };
+          if (!it.text) return;
+          if (cur) cur.items.push(it); else groups.push({ heading: '', items: [it] });
+        });
+      });
+      const GENERIC_LABEL = /^(chords?|cue|dynamics|feel|form|groove)$/i;
+      const cands = [];
+      groups.forEach((g, gi) => {
+        if (!g.items.length) {                                   // a lone heading is a point
+          if (g.heading) cands.push({ gi, line: g.heading, score: noteLineScore(g.heading) });
+          return;
+        }
+        if (!g.heading) {
+          const it = g.items[0];
+          cands.push({ gi, line: (it.label ? it.label + ': ' : '') + it.text, score: noteLineScore(it.text, it.label) });
+          return;
+        }
+        const head = noteShortHeading(g.heading);
+        const scored = g.items.map((it, i) => ({ it, i, sc: noteLineScore(it.text, it.label) }));
+        const chords = noteChordsIn(g.items.map(it => it.text).join(' '));
+        let body;
+        if (chords.length >= 3) {
+          body = chords.join(' · ');
+          const quals = g.items.map(it => (it.text.match(/\b(twice as fast|half[-\s]?time|double[-\s]?time|repeats? (twice|\d+x)|one bar each)\b/i) || [])[0]).filter(Boolean);
+          if (quals.length) body += ' (' + [...new Set(quals.map(q => q.toLowerCase()))].join(', ') + ')';
+        } else {
+          // Best items first, added only while the joined line still fits the budget (the
+          // top item always goes in), then restored to reading order.
+          const piece = (x) => ((x.it.label && !GENERIC_LABEL.test(x.it.label)) ? x.it.label + ': ' : '') + x.it.text.replace(NOTE_FILLER_RE, '').replace(/[.;]+$/, '');
+          const keep = scored.filter(x => x.sc > 0).sort((a, b) => b.sc - a.sc || a.i - b.i);
+          const pool = keep.length ? keep : scored.slice(0, 1);
+          const pick = [];
+          let len = head.length + 2;
+          for (const x of pool) {
+            const add = piece(x).length + (pick.length ? 2 : 0);
+            if (pick.length && (pick.length >= 3 || len + add > maxLen)) continue;
+            pick.push(x); len += add;
+          }
+          pick.sort((a, b) => a.i - b.i);
+          body = pick.map(piece).join('; ');
+        }
+        const best = Math.max(...scored.map(x => x.sc), chords.length >= 3 ? 4 : -Infinity);
+        cands.push({ gi, line: head + ': ' + body, score: best + 1 });
+      });
+      const ranked = cands.filter(c => c.score > 0).sort((a, b) => b.score - a.score || a.gi - b.gi);
+      const picked = [];
+      for (const c of ranked) {
+        if (picked.length >= max) break;
+        const toks = noteTokenSet(c.line);
+        const dup = picked.some(p => {
+          const pt = noteTokenSet(p.line);
+          let inter = 0; toks.forEach(w => { if (pt.has(w)) inter++; });
+          return inter / (Math.min(toks.size, pt.size) || 1) >= 0.7;
+        });
+        if (!dup) picked.push(c);
+      }
+      picked.sort((a, b) => a.gi - b.gi);
+      return {
+        cues: noteCueTags(text),
+        lines: picked.map(c => noteTrim(c.line, maxLen)),
+        dropped: Math.max(0, cands.length - picked.length),
+      };
+    }
+
     function getArrangementCue(arrangement) {
       if (!arrangement) return '';
       const { endingCue, global: g } = parseArrangement(arrangement);
@@ -1320,13 +1609,63 @@
       return ARR_FIELDS.some(r => p[r] && String(p[r]).trim());
     }
 
+    // Renders one note's text organized ("full": sub-headings, one bullet per idea, labels
+    // bold, footnotes small) or as its stage summary ("stage": cue chips + ≤max short
+    // lines). Shared by the Advance view, the Stage Mode cue card and the editor preview,
+    // so every surface reads the same structure out of the same pure parser.
+    function StructuredNote({ text, mode, max }) {
+      const src = sanitizeNotation(text || '');
+      if (!src.trim()) return null;
+      if (mode === 'stage') {
+        const c = condenseNoteText(src, { max: max || 5 });
+        const inLines = c.lines.join(' ').toLowerCase();
+        const chips = c.cues.filter(t => inLines.indexOf(t.toLowerCase()) === -1);
+        return (
+          <div className="sn sn-stage" data-testid="sn-stage">
+            {chips.length > 0 && <div className="sn-cues">{chips.map(t => <span key={t} className="sn-cue">{t.slice(1, -1)}</span>)}</div>}
+            {c.lines.length > 0 && <ul className="sn-list">{c.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>}
+            {c.dropped > 0 && <div className="sn-more">+{c.dropped} more in the full notes</div>}
+          </div>
+        );
+      }
+      const blocks = structureNoteText(src);
+      const out = [];
+      let list = null;
+      const flush = () => { if (list) { out.push(<ul key={'l' + out.length} className="sn-list">{list}</ul>); list = null; } };
+      blocks.forEach((b, i) => {
+        if (b.type === 'item') {
+          (list = list || []).push(<li key={i}>{b.label && <span className="sn-label">{b.label}: </span>}{b.text}</li>);
+          return;
+        }
+        flush();
+        if (b.type === 'heading') out.push(<div key={i} className="sn-h">{b.text}</div>);
+        else if (b.type === 'footnote') out.push(<div key={i} className="sn-fn">[{b.num}] {b.text}</div>);
+        else out.push(<div key={i} className="sn-text">{b.text}</div>);
+      });
+      flush();
+      return <div className="sn" data-testid="sn-full">{out}</div>;
+    }
+
     // Structured section fields, shared by the add-song and inline-edit forms (the
     // roles grid below them stays exactly as it was). Rendered from ARR_SECTIONS so
     // the schema has a single source of truth; both forms must render this component
     // rather than re-hardcoding the field list.
-    function ArrSectionFields({ arr, onChange }) {
+    function ArrSectionFields({ arr, onChange, onReplace }) {
       const derived = deriveArrangementSections(arr);
       const anyExplicit = ARR_SECTIONS.some(s => arr[s] && String(arr[s]).trim());
+      // "Tidy" re-emits every note field as clean line-per-idea text (pure formatNoteText).
+      // It is one atomic replace — the forms' updater closes over a stale form, so field-by-
+      // field onChange calls in one tick would keep only the last. Nothing saves until the
+      // user saves the song, so a tidy they dislike is simply not saved (or re-typed).
+      const tidied = {};
+      let tidyCount = 0;
+      ARR_FIELDS.forEach(f => {
+        const v = arr[f] ? String(arr[f]) : '';
+        const t = v.trim() ? formatNoteText(v) : v;
+        tidied[f] = t;
+        if (v.trim() && t !== v.trim()) tidyCount++;
+      });
+      const previewSecs = ARR_SECTIONS.filter(sec => derived[sec] && String(derived[sec]).trim());
       return (
         <div className="arr-sections-block" data-testid="arr-sections">
           <div className="arr-role-item-label arr-sections-title">
@@ -1351,6 +1690,30 @@
               </div>
             ))}
           </div>
+          {(onReplace || previewSecs.length > 0) && (
+            <div className="arr-tidy-bar">
+              {onReplace && (
+                <button type="button" className="btn btn-small" data-testid="arr-tidy"
+                  disabled={!tidyCount}
+                  title={tidyCount ? 'Split run-together notes into headings and one bullet per idea (review, then save the song)' : 'Notes are already tidy'}
+                  onClick={() => onReplace({ ...arr, ...tidied })}>
+                  ✨ Tidy formatting{tidyCount ? ` (${tidyCount} field${tidyCount !== 1 ? 's' : ''})` : ''}
+                </button>
+              )}
+              {previewSecs.length > 0 && (
+                <details className="arr-stage-preview" data-testid="arr-stage-preview">
+                  <summary>🎤 Stage summary preview</summary>
+                  {previewSecs.map(sec => (
+                    <div key={sec} className="arr-stage-preview-sec">
+                      <div className="arr-role-item-label">{ARR_SECTION_LABELS[sec]}</div>
+                      <StructuredNote text={derived[sec]} mode="stage" />
+                    </div>
+                  ))}
+                  <div className="sn-more">Condensed automatically from your notes — edit the notes above to change it.</div>
+                </details>
+              )}
+            </div>
+          )}
         </div>
       );
     }
@@ -1412,31 +1775,82 @@
     // charts offline. Backup/restore serialise this store to base64 (see exportBackup/importBackup).
     const ATT_DB = 'bandleaderhq', ATT_STORE = 'attachments', ANNO_STORE = 'annotations', ATT_MAX_BYTES = 15 * 1024 * 1024;
     const ATT_KIND_LABELS = { leadsheet: 'Lead sheet', chart: 'Drum / chart', audio: 'Backing track', other: 'Document' };
+    // ---- Storage format (pure, unit-tested) -----------------------------------------
+    // Attachment bytes are stored as a plain record { __att:1, type, bytes:ArrayBuffer },
+    // NOT as a Blob/File. WebKit — every iOS browser, Chrome included — refuses Blob/File
+    // values in private browsing ("Error preparing Blob/File data to be stored in object
+    // store") and can intermittently fail on picker-backed Files elsewhere; an ArrayBuffer
+    // is a plain structured-clone value every engine stores. Records written before this
+    // change are Blobs, so the read side accepts both.
+    const attRecordFromBytes = (bytes, type) => ({
+      __att: 1,
+      type: type || 'application/octet-stream',
+      bytes: bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes).slice().buffer,
+    });
+    const attRecordToBlob = (rec) => {
+      if (!rec) return null;
+      if (typeof Blob !== 'undefined' && rec instanceof Blob) return rec;             // legacy value
+      if (rec.__att === 1 && rec.bytes) return new Blob([rec.bytes], { type: rec.type || 'application/octet-stream' });
+      return null;
+    };
+    // Classify a storage failure into a message a musician can act on. Pure.
+    const attStorageErrorMessage = (err) => {
+      const name = (err && err.name) || '', msg = String((err && err.message) || err || '');
+      if (name === 'QuotaExceededError' || /quota/i.test(msg)) return 'This device is out of storage space for charts — remove some attachments or free up space.';
+      if (name === 'NotReadableError' || /could not be read|not readable|I\/O read/i.test(msg)) return 'The file could not be read — if it lives in iCloud/Files, download it to the device first, then attach again.';
+      return 'This browser blocked offline storage (private browsing, or storage disabled for this site).';
+    };
+
+    // ---- Connection (self-healing) ---------------------------------------------------
+    // iOS Safari drops IndexedDB connections when the tab is backgrounded or the device
+    // sleeps ("Connection to Indexed Database server lost"); a cached dead handle then
+    // fails every later transaction until a reload. So: the cache is cleared on close /
+    // versionchange / any open failure, opens time out instead of hanging (a known iOS
+    // first-open hang), and a transaction that fails on a stale handle reconnects and
+    // retries once. DB v2 adds the 'annotations' store (§9ae); onupgradeneeded is additive.
     let _attDbPromise = null;
-    // DB v2 adds the 'annotations' store (personal ink layers, §9ae). onupgradeneeded is
-    // additive and fires for existing v1 users — 'attachments' data is preserved.
+    const ATT_OPEN_TIMEOUT_MS = 8000;
     const attOpen = () => {
       if (_attDbPromise) return _attDbPromise;
-      _attDbPromise = new Promise((resolve, reject) => {
+      const p = new Promise((resolve, reject) => {
         if (typeof indexedDB === 'undefined' || !indexedDB) { reject(new Error('IndexedDB unavailable')); return; }
-        const req = indexedDB.open(ATT_DB, 2);
+        let settled = false;
+        const timer = setTimeout(() => { if (!settled) { settled = true; reject(new Error('IndexedDB open timed out')); } }, ATT_OPEN_TIMEOUT_MS);
+        let req;
+        try { req = indexedDB.open(ATT_DB, 2); } catch (e) { clearTimeout(timer); settled = true; reject(e); return; }
         req.onupgradeneeded = () => {
           const db = req.result;
           if (!db.objectStoreNames.contains(ATT_STORE)) db.createObjectStore(ATT_STORE);
           if (!db.objectStoreNames.contains(ANNO_STORE)) db.createObjectStore(ANNO_STORE);
         };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
+        req.onsuccess = () => {
+          const db = req.result;
+          if (settled) { try { db.close(); } catch (e) {} return; }
+          settled = true; clearTimeout(timer);
+          const drop = () => { if (_attDbPromise === p) _attDbPromise = null; };
+          db.onclose = drop;
+          db.onversionchange = () => { try { db.close(); } catch (e) {} drop(); };
+          resolve(db);
+        };
+        req.onerror = () => { if (!settled) { settled = true; clearTimeout(timer); reject(req.error || new Error('IndexedDB open failed')); } };
+        req.onblocked = () => { /* another tab holds an older version; the timeout covers a hang */ };
       });
-      return _attDbPromise;
+      _attDbPromise = p;
+      p.catch(() => { if (_attDbPromise === p) _attDbPromise = null; });
+      return p;
     };
-    const _idbTx = (store, mode, fn) => attOpen().then(db => new Promise((resolve, reject) => {
-      const tx = db.transaction(store, mode);
+    const _idbTxOnce = (store, mode, fn) => attOpen().then(db => new Promise((resolve, reject) => {
+      const tx = db.transaction(store, mode);   // throws InvalidStateError on a dead handle
       const req = fn(tx.objectStore(store));
       tx.oncomplete = () => resolve(req ? req.result : undefined);
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
     }));
+    const _idbTx = (store, mode, fn) => _idbTxOnce(store, mode, fn).catch(err => {
+      if (err && err.name === 'QuotaExceededError') throw err;   // a retry won't make room
+      _attDbPromise = null;                                       // stale/lost connection → reopen
+      return _idbTxOnce(store, mode, fn);
+    });
     const _idbAll = (store) => attOpen().then(db => new Promise((resolve, reject) => {
       const tx = db.transaction(store, 'readonly');
       const out = {};
@@ -1445,13 +1859,40 @@
       cur.onerror = () => reject(cur.error);
     })).catch(() => ({}));
     const attTx = (mode, fn) => _idbTx(ATT_STORE, mode, fn);
+
+    // Session-memory fallback: when the browser refuses persistent storage outright, the
+    // chart still attaches and works for this session (and rides a Backup), and the UI
+    // says plainly that it won't survive the tab closing. Never silently lost.
+    const _attMem = new Map();
     const attStore = {
-      put: (id, blob) => attTx('readwrite', s => s.put(blob, id)),
-      get: (id) => attTx('readonly', s => s.get(id)),
-      del: (id) => attTx('readwrite', s => s.delete(id)),
-      clear: () => attTx('readwrite', s => s.clear()),
-      keys: () => attTx('readonly', s => s.getAllKeys()),
-      all: () => _idbAll(ATT_STORE),
+      // Resolves { persisted: true } or { persisted: false, reason } (memory fallback).
+      put: async (id, blob) => {
+        const bytes = await blob.arrayBuffer();               // read once, before any await on IDB
+        const rec = attRecordFromBytes(bytes, blob.type);
+        try {
+          await attTx('readwrite', s => s.put(rec, id));
+          _attMem.delete(id);
+          return { persisted: true };
+        } catch (err) {
+          if (err && err.name === 'QuotaExceededError') throw err;
+          _attMem.set(id, rec);
+          return { persisted: false, reason: attStorageErrorMessage(err) };
+        }
+      },
+      get: async (id) => {
+        if (_attMem.has(id)) return attRecordToBlob(_attMem.get(id));
+        try { return attRecordToBlob(await attTx('readonly', s => s.get(id))); } catch (e) { return null; }
+      },
+      del: (id) => { _attMem.delete(id); return attTx('readwrite', s => s.delete(id)); },
+      clear: () => { _attMem.clear(); return attTx('readwrite', s => s.clear()); },
+      keys: () => attTx('readonly', s => s.getAllKeys()).catch(() => []).then(k => [...new Set([...k, ..._attMem.keys()])]),
+      // id → Blob for every stored attachment (persisted + session-only), for backups.
+      all: () => _idbAll(ATT_STORE).then(raw => {
+        const out = {};
+        for (const [id, v] of Object.entries(raw)) { const b = attRecordToBlob(v); if (b) out[id] = b; }
+        for (const [id, v] of _attMem) out[id] = attRecordToBlob(v);
+        return out;
+      }),
     };
     // Annotation strokes, keyed `${attId}:${page}` → { strokes: [...] }. Personal + offline.
     const annoStore = {
@@ -1809,6 +2250,7 @@
       const list = attachments || [];
       const [busy, setBusy] = React.useState(false);
       const [err, setErr] = React.useState('');
+      const [notice, setNotice] = React.useState(''); // session-only (not persisted) warning
       const [usage, setUsage] = React.useState('');
       const [openMarks, setOpenMarks] = React.useState(null); // attId whose markers panel is open
       const [markDraft, setMarkDraft] = React.useState({});    // { [attId]: {label, page} }
@@ -1820,19 +2262,32 @@
       };
       React.useEffect(() => { refreshUsage(); }, [list.length]);
       const onPick = async (e) => {
-        const files = Array.from(e.target.files || []); e.target.value = '';
+        const input = e.currentTarget;
+        const files = Array.from(input.files || []);
         if (!files.length) return;
-        setErr(''); setBusy(true);
-        const added = [];
-        for (const f of files) {
-          if (f.size > ATT_MAX_BYTES) { setErr(`${f.name} is ${fmtBytes(f.size)} — over the ${fmtBytes(ATT_MAX_BYTES)} limit. Compress it and try again.`); continue; }
-          const id = genId();
-          const fmt = resolveChartFormat({ name: f.name, mime: f.type });
-          const kind = fmt === 'audio' ? 'audio' : (/image\//i.test(f.type) ? 'chart' : 'leadsheet');
-          try { await attStore.put(id, f); added.push({ id, name: f.name, mime: f.type || 'application/octet-stream', size: f.size, kind }); }
-          catch (ex) { setErr('Could not save attachment (is private browsing on?): ' + ex.message); }
+        setErr(''); setNotice(''); setBusy(true);
+        const added = [], errs = [];
+        let sessionOnly = '';
+        try {
+          for (const f of files) {
+            if (f.size > ATT_MAX_BYTES) { errs.push(`${f.name} is ${fmtBytes(f.size)} — over the ${fmtBytes(ATT_MAX_BYTES)} limit. Compress it and try again.`); continue; }
+            const id = genId();
+            const fmt = resolveChartFormat({ name: f.name, mime: f.type });
+            const kind = fmt === 'audio' ? 'audio' : (/image\//i.test(f.type) ? 'chart' : 'leadsheet');
+            try {
+              const res = await attStore.put(id, f);
+              if (res && res.persisted === false) sessionOnly = res.reason;
+              added.push({ id, name: f.name, mime: f.type || 'application/octet-stream', size: f.size, kind });
+            } catch (ex) { errs.push(`${f.name}: ${attStorageErrorMessage(ex)}`); }
+          }
+        } finally {
+          // Clear only AFTER the bytes are read — clearing first can invalidate a
+          // picker-backed File on iOS — so the same file can be picked again later.
+          input.value = '';
+          setBusy(false);
         }
-        setBusy(false);
+        if (errs.length) setErr(errs.join(' '));
+        if (sessionOnly) setNotice(`${sessionOnly} Attached for this session only — it will be gone when this tab closes. Turn off private browsing (or use 💾 Backup) to keep it.`);
         if (added.length) onChange([...(attachments || []), ...added]);
         refreshUsage();
       };
@@ -1901,6 +2356,7 @@
             <span className="attach-hint">PDF, image, ChordPro, ABC, MusicXML, Guitar Pro · embedded offline{usage ? ` · ${usage} stored` : ''}</span>
           </div>
           {err && <div className="media-clip-err" role="alert">{err}</div>}
+          {notice && <div className="media-clip-err" role="status" data-testid="attach-session-only" style={{ color: 'var(--warning)' }}>{notice}</div>}
         </div>
       );
     }
@@ -1911,13 +2367,20 @@
       const [url, setUrl] = React.useState(null);
       const [loading, setLoading] = React.useState(false);
       React.useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+      const [missing, setMissing] = React.useState(false);
       const open = async () => {
         if (url) { window.open(url, '_blank', 'noopener'); return; }
+        // iOS Safari blocks window.open() that happens after an await (the user gesture is
+        // gone), so open the tab synchronously and point it at the blob once it's loaded.
+        const win = window.open('', '_blank');
         setLoading(true);
         try {
           const blob = await attStore.get(att.id);
-          if (blob) { const u = URL.createObjectURL(blob); setUrl(u); window.open(u, '_blank', 'noopener'); }
-        } catch (e) { /* offline/unsupported — button simply does nothing */ }
+          if (blob) {
+            const u = URL.createObjectURL(blob); setUrl(u);
+            if (win) win.location.href = u; else window.location.assign(u);
+          } else { if (win) win.close(); setMissing(true); }
+        } catch (e) { if (win) win.close(); setMissing(true); }
         setLoading(false);
       };
       const isImg = att.mime && att.mime.startsWith('image/');
@@ -1927,6 +2390,7 @@
           <span className="attach-open-name">{att.name}</span>
           <span className="attach-open-kind">{ATT_KIND_LABELS[att.kind] || 'Document'}</span>
           {loading && <span className="attach-open-kind">…</span>}
+          {missing && <span className="attach-open-kind" style={{ color: 'var(--error)' }} title="The file isn't stored on this device (private browsing, or added on another device). Re-attach it or restore a Backup.">not on this device</span>}
         </button>
       );
     }
@@ -4479,9 +4943,25 @@
      * Extract text content from a PDF file using pdf.js.
      * Returns an array of strings, one per page.
      */
+    // PDF.js TRANSFERS the buffer passed as `data` to its worker, which detaches the
+    // caller's ArrayBuffer (byteLength → 0). Every importer reads a file once and may
+    // parse it several times (notes-detection pre-pass, set parser, flat fallback), so
+    // each entry point hands PDF.js a private copy and the caller's buffer stays usable.
+    // Accepts ArrayBuffer | TypedArray | DataView. Pure.
+    function pdfDataCopy(data) {
+      if (data instanceof ArrayBuffer) {
+        if (data.byteLength === 0) throw new Error('PDF data is empty (the file buffer was already consumed) — please re-select the file.');
+        return new Uint8Array(data.slice(0));
+      }
+      if (ArrayBuffer.isView(data)) {
+        return new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+      }
+      throw new Error('Unsupported PDF data');
+    }
+
     async function pdfExtractText(arrayBuffer) {
       if (!window.pdfjsLib) throw new Error('PDF.js not loaded');
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: pdfDataCopy(arrayBuffer) }).promise;
       const pages = [];
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
@@ -4801,7 +5281,7 @@
     // by Y. Returns [{ page, rows:[{ y, items:[{str,x}] }] }].
     async function pdfExtractRows(arrayBuffer) {
       if (!window.pdfjsLib) throw new Error('PDF.js not loaded');
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: pdfDataCopy(arrayBuffer) }).promise;
       const pages = [];
       for (let p = 1; p <= pdf.numPages; p++) {
         const page = await pdf.getPage(p);
@@ -4925,6 +5405,15 @@
       return false;
     }
 
+    // Stacked-layout meta-line test (pure). See pdfParseBandHelperSets.
+    const BH_KEY_CELL_RE = /^[A-G][b#\u266D\u266F]?(m|min|maj|M|-)?\d{0,2}(\s*\/\s*[A-G][b#\u266D\u266F]?m?)?$/;
+    function bhStackedRowIsMeta(cells) {
+      if (/^\d{1,3}$/.test(String(cells.num || '').trim())) return true;
+      if (/^\d{2,3}$/.test(String(cells.bpm || '').trim())) return true;
+      if (/\d/.test(String(cells.duration || ''))) return true;
+      return BH_KEY_CELL_RE.test(String(cells.key || '').trim());
+    }
+
     // Parse a BandHelper setlist document (rows from pdfExtractRows) into sets.
     // Returns { sets:[{ name, songs:[{title,artist,key,bpm,style,duration,vocalist}] }],
     //           songCount } — songs before any "Set N" header fall into "Set 1".
@@ -5024,10 +5513,14 @@
         const cells = bhAssignRow(row, cols);
 
         if (stacked) {
-          // A row is a song's meta line when it carries the number or Key/BPM/Style.
-          const hasMeta = !!(cells.num || cells.key || cells.bpm || cells.duration);
-          if (!hasMeta) {
-            if (cells.title) pending.push({ y: row.y, text: cells.title.trim() });
+          // A row is a song's meta line only on real meta evidence: the row number, a
+          // numeric BPM/duration, or a Key cell that parses as a key. A long centered
+          // title's last word can sit past the Title/Key midpoint ("THAT'S THE WAY LOVE"
+          // | "GOES") — that word must not make the title line pass for a meta line, or
+          // the title is clipped and the real meta line below it is dropped.
+          if (!bhStackedRowIsMeta(cells)) {
+            const lineText = [...row.items].sort((a, b) => a.x - b.x).map(it => it.str.trim()).join(' ').replace(/\s+/g, ' ').trim();
+            if (lineText) pending.push({ y: row.y, text: lineText });
             continue;
           }
           const curMetaY = row.y;
@@ -7524,7 +8017,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 </React.Fragment>
               ))}
             </div>
-            <ArrSectionFields arr={arrObj} onChange={upd} />
+            <ArrSectionFields arr={arrObj} onChange={upd} onReplace={obj => setForm({ ...form, arrangement: serializeArrangement(obj) })} />
             <div className="arr-roles-grid">
               <div className="arr-role-item arr-role-full">
                 <div className="arr-role-item-label">General Notes</div>
@@ -7680,8 +8173,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const [newClip, setNewClip] = useState({ url: '', ts: '', te: '', label: '' });
       const [clipErr, setClipErr] = useState('');
 
+      // Never fail silently: a musician who attached a lead sheet and tapped Add with a
+      // required field blank used to see nothing happen — indistinguishable from "the
+      // attachment didn't work". Name the missing fields instead.
+      const [addErr, setAddErr] = useState('');
       const handleAdd = () => {
-        if (!form.title || !form.artist || !form.duration) return;
+        const missing = [!form.title && 'Title', !form.artist && 'Artist', !form.duration && 'Duration'].filter(Boolean);
+        if (missing.length) { setAddErr(`Fill in ${missing.join(', ')} to add this song.`); return; }
+        setAddErr('');
         onAddSong({ ...form, energy: form.energy === '' ? '' : String(form.energy).trim() });
         setForm({ title: '', artist: '', duration: '', style: 'midtempo', key: '', bpm: '', energy: '', arrangement: '', mediaLinks: [], attachments: [], midi: { ch: 1, program: '' } });
         setNewClip({ url: '', ts: '', label: '' });
@@ -7805,7 +8304,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     </React.Fragment>
                   ))}
                 </div>
-                <ArrSectionFields arr={arrObj} onChange={upd} />
+                <ArrSectionFields arr={arrObj} onChange={upd} onReplace={obj => setForm({ ...form, arrangement: serializeArrangement(obj) })} />
                 <div className="arr-roles-grid">
                   <div className="arr-role-item arr-role-full">
                     <div className="arr-role-item-label">General Notes</div>
@@ -7867,6 +8366,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           <SongAttachments attachments={form.attachments} onChange={a => setForm({ ...form, attachments: a })} />
           <MidiPresetFields midi={form.midi} onChange={m => setForm({ ...form, midi: m })} />
 
+          {addErr && <div className="media-clip-err" role="alert" data-testid="add-song-err" style={{ marginBottom: '.4rem' }}>{addErr}</div>}
           <button className="btn btn-primary" onClick={handleAdd} style={{ width: '100%', marginBottom: '1rem' }}>
             Add Song (to Active)
           </button>
@@ -8975,15 +9475,25 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   const arr = parseArrangement(song.arrangement);
                   const rf = advanceRoleFilter || new Set(ARR_ROLES);
                   const visibleRoles = ARR_ROLES.filter(r => arr[r] && rf.has(r));
-                  if (!visibleRoles.length) return null;
+                  // Section notes (Intro/Cue, Form & Harmony, …) are what an Arrangement Guide
+                  // import writes; only the role fields used to render here, so imported
+                  // rehearsal notes never showed in the Advance view. Both render organized.
+                  const secs = ARR_SECTIONS.filter(sec => arr[sec] && String(arr[sec]).trim());
+                  if (!visibleRoles.length && !secs.length) return null;
                   return (
                     <div className="arrangement-notes-row">
                       <div className="arrangement-label">Arrangement</div>
-                      <div className="arrangement-notes-content arr-role-display">
+                      <div className="arrangement-notes-content arr-role-display" data-testid="advance-arr">
+                        {secs.map(sec => (
+                          <div key={sec} className="arr-role-display-row">
+                            <span className="arr-role-display-label">{ARR_SECTION_LABELS[sec]}</span>
+                            <span className="arr-role-display-text"><StructuredNote text={arr[sec]} /></span>
+                          </div>
+                        ))}
                         {visibleRoles.map(role => (
                           <div key={role} className="arr-role-display-row">
                             <span className="arr-role-display-label">{ARR_ROLE_LABELS[role]}</span>
-                            <span className="arr-role-display-text">{arr[role]}</span>
+                            <span className="arr-role-display-text"><StructuredNote text={arr[role]} /></span>
                           </div>
                         ))}
                       </div>
@@ -9337,7 +9847,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   >
                     <div style={{ fontSize: "2rem", marginBottom: ".5rem" }}>Drop file here or click to browse</div>
                     <div style={{ fontSize: ".85rem" }}>Supports CSV, TSV, TXT, and PDF</div>
-                    <input id="import-file-input" type="file" accept=".csv,.tsv,.txt,.tab,.pdf" onChange={(e) => handleFileUpload(e.target.files?.[0])} />
+                    {/* The input lives inside the clickable drop zone: stop its own click from
+                        bubbling back up and re-triggering .click() (re-entrant picker open — iOS
+                        Safari mishandles it). MIME types alongside extensions so iOS's document
+                        picker doesn't grey files out. Reset only AFTER the read so the same file
+                        can be re-picked (no change event otherwise) without invalidating it. */}
+                    <input id="import-file-input" type="file"
+                      accept=".csv,.tsv,.txt,.tab,.pdf,application/pdf,text/csv,text/plain,text/tab-separated-values"
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => { const input = e.currentTarget; Promise.resolve(handleFileUpload(input.files?.[0])).finally(() => { input.value = ''; }); }} />
                   </div>
                 )}
 
@@ -9668,19 +10186,23 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const doAttach = async () => {
         if (!matchedRows.length) return;
         setBusy(true);
-        let attached = 0;
+        let attached = 0, failed = 0, sessionOnly = 0;
         const bySong = {};
         for (const r of matchedRows) {
           try {
-            await attStore.put(r.id, r.file);
+            const res = await attStore.put(r.id, r.file);
+            if (res && res.persisted === false) sessionOnly++;
             (bySong[r.songId] = bySong[r.songId] || []).push({ id: r.id, name: r.name, mime: r.mime, size: r.size, kind: r.kind });
             attached++;
-          } catch (e) { /* skip a file that won't store */ }
+          } catch (e) { failed++; }
         }
         // One functional update per song folds all its new attachments on at once.
         onAttach(bySong);
         setBusy(false);
-        showToast && showToast(`Attached ${attached} chart${attached !== 1 ? 's' : ''} to ${Object.keys(bySong).length} song${Object.keys(bySong).length !== 1 ? 's' : ''}`, 'success');
+        const n = Object.keys(bySong).length;
+        const extra = (failed ? ` · ${failed} could not be read` : '') +
+          (sessionOnly ? ` · ${sessionOnly} kept for this session only (this browser blocked offline storage)` : '');
+        showToast && showToast(`Attached ${attached} chart${attached !== 1 ? 's' : ''} to ${n} song${n !== 1 ? 's' : ''}${extra}`, (failed || sessionOnly) ? 'warning' : 'success');
         close();
       };
 
@@ -10481,9 +11003,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     }
 
     // The "chart" for a song with no attachment: title + arrangement roadmap, big.
+    // On stage the default is the condensed summary (cue chips + a few short lines); the
+    // full organized notes are one tap away. The choice persists for the session.
+    let _cueCardFull = false;
     function CueCard({ song }) {
       const sections = deriveArrangementSections(song.arrangement || '');
       const present = ARR_SECTIONS.filter(k => sections[k] && sections[k].trim());
+      const [full, setFull] = React.useState(_cueCardFull);
+      const toggle = (e) => { e.stopPropagation(); _cueCardFull = !full; setFull(!full); };
       return (
         <div className="stage-cue-card">
           <div className="stage-cue-title">{song.title || 'Untitled'}</div>
@@ -10495,10 +11022,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           </div>
           {present.length > 0 ? (
             <div className="stage-cue-sections">
+              <button type="button" className="stage-cue-toggle" data-testid="cue-full-toggle" onClick={toggle}>
+                {full ? 'Show stage summary' : 'Show full notes'}
+              </button>
               {present.map(k => (
                 <div key={k} className="stage-cue-section">
                   <div className="stage-cue-section-label">{ARR_SECTION_LABELS[k]}</div>
-                  <div className="stage-cue-section-text">{sanitizeNotation(sections[k])}</div>
+                  <div className="stage-cue-section-text"><StructuredNote text={sections[k]} mode={full ? 'full' : 'stage'} /></div>
                 </div>
               ))}
             </div>
@@ -13177,6 +13707,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       docKind: 'stage',
       // Optional venue / event line, printed in both documents' headers.
       eventLabel: '',
+      // How the Arrangement Guide prints each note: 'organized' (sub-headings + one
+      // bullet per idea), 'condensed' (stage summary — cue tags + a few short lines), or
+      // 'raw' (exactly as written, the pre-2026-10 behaviour).
+      guideNoteStyle: 'organized',
       // Package export only: when true, the stage sheet + arrangement guide are
       // concatenated into ONE PDF (single download) instead of two separate files.
       // Defaults on for iOS/iPadOS, where two rapid downloads get suppressed to one.
@@ -13506,6 +14040,31 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     // No full-bleed watermark: a background wash behind dense chord prose is exactly the
     // overlap that made the old combined export unreadable. The logo, if any, is a small
     // mark in the header band instead.
+    // One guide note -> drawable runs [{kind:'heading'|'item'|'text'|'fn'|'cue', text}] for
+    // the chosen style (see DEFAULT_PDF_SETTINGS.guideNoteStyle). Pure; the renderer only
+    // wraps + draws them, so the layout decision is unit-tested without jsPDF.
+    const GUIDE_NOTE_STYLES = ['organized', 'condensed', 'raw'];
+    function guideNoteRuns(text, style) {
+      const t = String(text || '').trim();
+      if (!t) return [];
+      if (style === 'raw') return [{ kind: 'text', text: t }];
+      if (style === 'condensed') {
+        const c = condenseNoteText(t, { max: 4, maxLen: 110 });
+        const inLines = c.lines.join(' ').toLowerCase();
+        const chips = c.cues.filter(x => inLines.indexOf(x.toLowerCase()) === -1);
+        const runs = [];
+        if (chips.length) runs.push({ kind: 'cue', text: chips.join('  ') });
+        c.lines.forEach(l => runs.push({ kind: 'item', text: l }));
+        return runs.length ? runs : [{ kind: 'text', text: t }];
+      }
+      return structureNoteText(t).map(b => {
+        if (b.type === 'heading') return { kind: 'heading', text: b.text };
+        if (b.type === 'footnote') return { kind: 'fn', text: `[${b.num}] ${b.text}` };
+        if (b.type === 'item') return { kind: 'item', text: (b.label ? b.label + ': ' : '') + b.text };
+        return { kind: 'text', text: b.text };
+      });
+    }
+
     function generateArrangementGuidePDF(entries, ctx) {
       const L = pdfBaseLayout(ctx);
       const { doc, pageW, pageH, margin, FONT, fScale, tableX, tableW } = L;
@@ -13558,15 +14117,33 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           pageW / 2, pageH - margin / 2, { align: 'center' });
       };
 
+      // Each note is laid out as runs (guideNoteRuns): sub-headings bold, one bullet per
+      // idea with a hanging indent, footnotes small + muted. Runs are wrapped here with the
+      // font they will be drawn in, so the measured height is exact.
+      const noteStyle = GUIDE_NOTE_STYLES.indexOf(ctx.ps && ctx.ps.guideNoteStyle) !== -1 ? ctx.ps.guideNoteStyle : 'organized';
+      const F_FN = Math.max(6.5, F_BODY - 1.5);
+      const BULLET_IND = 9;
+      const runStyle = (kind) => {
+        if (kind === 'heading') return { font: 'bold', size: F_BODY, color: P.TEXT, indent: 0, lh: LINE_H, before: 2 };
+        if (kind === 'cue') return { font: 'bold', size: F_BODY, color: P.SECTION, indent: 0, lh: LINE_H, before: 0 };
+        if (kind === 'fn') return { font: 'italic', size: F_FN, color: P.MUTED, indent: 0, lh: F_FN + 2.4, before: 0 };
+        if (kind === 'item') return { font: 'normal', size: F_BODY, color: P.TEXT, indent: BULLET_IND, lh: LINE_H, before: 0 };
+        return { font: 'normal', size: F_BODY, color: P.TEXT, indent: 0, lh: LINE_H, before: 0 };
+      };
       // Pre-measure a directive block so a song is never split across a page mid-note.
       const measureBlocks = (entry) => {
         const blocks = [];
         let h = 0;
         const push = (label, text, color) => {
-          doc.setFont(FONT, 'normal'); doc.setFontSize(F_BODY);
-          const lines = doc.splitTextToSize(text, COL_C - PAD * 2);
-          blocks.push({ label, lines, color });
-          h += F_LABEL + 3 + lines.length * LINE_H + 5;
+          const runs = guideNoteRuns(text, noteStyle).map(r => {
+            const st = runStyle(r.kind);
+            doc.setFont(FONT, st.font); doc.setFontSize(st.size);
+            const lines = doc.splitTextToSize(r.text, COL_C - PAD * 2 - st.indent);
+            return { ...r, st, lines };
+          });
+          const bodyH = runs.reduce((acc, r) => acc + r.st.before + r.lines.length * r.st.lh, 0);
+          blocks.push({ label, runs, color });
+          h += F_LABEL + 3 + bodyH + 5;
         };
         entry.sections.forEach(s => push(s.label, s.text, P.SECTION));
         entry.roles.forEach(r => push(r.label, r.text, P.ROLE));
@@ -13580,9 +14157,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       (entries || []).forEach(entry => {
         const { blocks, h: blocksH } = measureBlocks(entry);
         // Left column needs room for the number badge, wrapped title and artist.
+        // Title + artist are drawn right of the 22pt number badge (x = colA + PAD + 28), so
+        // they wrap to the width that is actually left — not the full column — or a long
+        // title/artist runs into the KEY column.
+        const TITLE_W = COL_A - PAD * 2 - 28;
         doc.setFont(FONT, 'bold'); doc.setFontSize(F_TITLE);
-        const titleLines = doc.splitTextToSize(entry.title, COL_A - PAD * 2 - 4);
-        const leftH = 14 + titleLines.length * (F_TITLE + 2) + (entry.artist ? F_META + 2 : 0) + 6;
+        const titleLines = doc.splitTextToSize(entry.title, TITLE_W);
+        doc.setFont(FONT, 'italic'); doc.setFontSize(F_META);
+        const artistLines = entry.artist ? doc.splitTextToSize(entry.artist, TITLE_W) : [];
+        const leftH = 14 + titleLines.length * (F_TITLE + 2) + artistLines.length * (F_META + 2) + 6;
         const rowH = Math.max(blocksH + 10, leftH, 34);
 
         const newSet = entry.setIdx !== lastSetIdx;
@@ -13631,9 +14214,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         doc.setFont(FONT, 'bold'); doc.setFontSize(F_TITLE); doc.setTextColor(...P.TEXT);
         titleLines.forEach((ln, i) => doc.text(ln, colA + PAD + 28, ay + i * (F_TITLE + 2)));
         ay += titleLines.length * (F_TITLE + 2);
-        if (entry.artist) {
+        if (artistLines.length) {
           doc.setFont(FONT, 'italic'); doc.setFontSize(F_META); doc.setTextColor(...P.MUTED);
-          doc.text(entry.artist, colA + PAD + 28, ay + 2);
+          artistLines.forEach((ln, i) => doc.text(ln, colA + PAD + 28, ay + 2 + i * (F_META + 2)));
         }
 
         // --- Column B: key / bpm / style
@@ -13654,8 +14237,16 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           doc.setFont(FONT, 'bold'); doc.setFontSize(F_LABEL); doc.setTextColor(...b.color);
           doc.text(b.label.toUpperCase(), colC + PAD, cy);
           cy += F_LABEL + 3;
-          doc.setFont(FONT, 'normal'); doc.setFontSize(F_BODY); doc.setTextColor(...P.TEXT);
-          b.lines.forEach(ln => { doc.text(ln, colC + PAD, cy); cy += LINE_H; });
+          b.runs.forEach(r => {
+            cy += r.st.before;
+            doc.setFont(FONT, r.st.font); doc.setFontSize(r.st.size); doc.setTextColor(...r.st.color);
+            if (r.kind === 'item') {
+              // A small square bullet (drawn, not a glyph — WinAnsi fonts have no "•").
+              doc.setFillColor(...b.color);
+              doc.rect(colC + PAD + 1.5, cy - r.st.size * 0.36, 2.4, 2.4, 'F');
+            }
+            r.lines.forEach(ln => { doc.text(ln, colC + PAD + r.st.indent, cy); cy += r.st.lh; });
+          });
           cy += 5;
         });
 
@@ -13955,6 +14546,16 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     </span>
                   </span>
                 </label>
+              )}
+              {(s.docKind === 'guide' || s.docKind === 'package') && (
+                <div className="input-group" style={{ marginTop: '.6rem' }} data-testid="pdf-guide-note-style">
+                  <label>Guide note style</label>
+                  <select value={s.guideNoteStyle || 'organized'} onChange={e => set('guideNoteStyle', e.target.value)}>
+                    <option value="organized">Organized — headings + one bullet per idea</option>
+                    <option value="condensed">Condensed — stage summary (cues + key lines)</option>
+                    <option value="raw">As written — exactly as typed</option>
+                  </select>
+                </div>
               )}
               <div className="input-group" style={{ marginTop: '.6rem' }}>
                 <label>Venue / Event <span style={{ color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none' }}>(optional, printed in both headers)</span></label>

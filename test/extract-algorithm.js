@@ -167,15 +167,27 @@ for (const f of [
   'stripFootnoteNum', 'flattenSetlistSongs', 'csvArrangementFromRow',
   // BandHelper/stacked setlist PDF parser (X-position column assignment).
   'bhFieldOfHeader', 'bhDetectColumns', 'bhAssignRow', 'bhCleanDuration', 'bhCleanKey',
-  'bhCleanVocalist', 'bhIsNoiseRow', 'pdfParseBandHelperSets',
+  'bhCleanVocalist', 'bhIsNoiseRow', 'bhStackedRowIsMeta', 'pdfParseBandHelperSets',
+  // PDF.js input guard (PDF.js transfers + detaches the caller's buffer).
+  'pdfDataCopy',
 ]) pieces.push(extractDecl(f));
 pieces.push(extractDecl('BH_SET_HEADER_RE'));
+pieces.push(extractDecl('BH_KEY_CELL_RE'));
 pieces.push(extractDecl('ARR_WORD_GAP_PT'));
 pieces.push(extractDecl('guardCSVCell'));
 
 // PDF export engines. The settings-panel constants must land before the layout
 // helper that reads them; the two renderers take an injected jsPDF constructor, so a
 // recording stub drives them without any dependency.
+// Rehearsal-note structure + stage summary (§9aq) — constants before the functions.
+const NOTE_FORMAT_SYMBOLS = [
+  'NOTE_ROLE_LABELS_RE', 'NOTE_ROLE_SPLIT_RE', 'NOTE_BOLD_OPEN', 'noteCleanText', 'noteLooksLikeHeading',
+  'noteSplitSentences', 'structureNoteText', 'formatNoteText', 'noteCueTags', 'NOTE_CHORD_RE', 'noteChordsIn',
+  'NOTE_SPECIFIC_RE', 'NOTE_ACTION_RE', 'NOTE_GENERIC_RE', 'NOTE_FILLER_RE', 'noteLineScore', 'noteTokenSet',
+  'noteTrim', 'noteShortHeading', 'condenseNoteText', 'GUIDE_NOTE_STYLES', 'guideNoteRuns',
+];
+for (const g of NOTE_FORMAT_SYMBOLS) pieces.push(extractDecl(g));
+
 for (const g of ['PDF_PAGE_SIZES', 'PDF_MARGIN_PRESETS', 'PDF_FONT_FAMILIES', 'PDF_FONT_BASE',
   'DEFAULT_PDF_SETTINGS', 'PDF_DOC_KINDS', 'PDF_DOC_LABELS', 'PDF_PALETTE',
   'pdfBaseLayout', 'generateStageSetlistPDF', 'drawStageSummaryPage',
@@ -213,7 +225,7 @@ for (const f of [
   // Reference-clip (YouTube) helpers — parser, timestamp math, feedback, start-from-URL, embed.
   'getYTVideoId', 'tsToSeconds', 'ytStartFromUrl', 'ytUrlIssue', 'getYTEmbedUrl',
   // Attachment backup helpers — base64 <-> bytes/blob round-trip + byte formatter.
-  'bytesToB64', 'b64ToBytes', 'blobToB64', 'b64ToBlob', 'fmtBytes',
+  'bytesToB64', 'b64ToBytes', 'blobToB64', 'b64ToBlob', 'fmtBytes', 'attRecordFromBytes', 'attRecordToBlob', 'attStorageErrorMessage',
   // Stage chart viewer — pure navigation core (renderer key, queue, page clamp, nav step).
   'resolveChartKind', 'buildChartQueue', 'clampChartPage', 'stageNavStep',
   // Page-pin markers — normalize/sort + next/prev marker page.
@@ -240,7 +252,7 @@ const EXPORTS = [
   'GENRE_DATABASE', 'GENRE_PARAMS', 'ENERGY_MAP', 'ENERGY_ARC_SHAPES', 'SET_STRUCTURE_TEMPLATES',
   'parseDuration', 'getGenreParams', 'getCompositeEnergy', 'targetEnergyCurve', 'templateStylePenalty',
   'getYTVideoId', 'tsToSeconds', 'ytStartFromUrl', 'ytUrlIssue', 'getYTEmbedUrl',
-  'bytesToB64', 'b64ToBytes', 'blobToB64', 'b64ToBlob', 'fmtBytes',
+  'bytesToB64', 'b64ToBytes', 'blobToB64', 'b64ToBlob', 'fmtBytes', 'attRecordFromBytes', 'attRecordToBlob', 'attStorageErrorMessage',
   'resolveChartKind', 'buildChartQueue', 'clampChartPage', 'stageNavStep',
   'normalizeMarks', 'nextMarkPage',
   'chartExt', 'resolveChartFormat', 'transposeNote', 'transposeChord', 'parseChordProLine', 'parseChordPro',
@@ -271,7 +283,9 @@ const EXPORTS = [
   'arrTitleKey', 'arrNoteMatchesTitle', 'normalizeArtistKey', 'artistKeysMatch', 'bestNoteForSong',
   'arrApplyNoteToArrangement', 'mergeArrangementFillEmpty',
   'stripFootnoteNum', 'flattenSetlistSongs', 'csvArrangementFromRow',
-  'pdfParseBandHelperSets', 'guardCSVCell',
+  'pdfParseBandHelperSets', 'guardCSVCell', 'bhStackedRowIsMeta', 'pdfDataCopy',
+  'structureNoteText', 'formatNoteText', 'condenseNoteText', 'noteCueTags', 'noteChordsIn',
+  'noteSplitSentences', 'guideNoteRuns', 'GUIDE_NOTE_STYLES',
 ];
 
 // Minimal browser shims the algorithm touches (genId uses window.crypto).

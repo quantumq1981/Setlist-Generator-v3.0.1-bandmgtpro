@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-09-15 (BandLeaderHQ hero logo + dimmed-hero backdrop, §9ap).
+Last updated: 2026-10-13 (normalizer PDF import, iOS/private-mode attachments, structured + condensed rehearsal notes, §9aq).
 
 ---
 
@@ -114,7 +114,8 @@ runbook. Project design/engineering conventions now also live in
               //        intro_cue, form_harmony, transition_outro, general_notes }  <- sections
               // or legacy free text. See §11.
   styleInferred?, mediaLinks?,
-  attachments?  // [{id,name,mime,size,kind}] — metadata only; blob bytes live in IndexedDB (§9x)
+  attachments?  // [{id,name,mime,size,kind}] — metadata only; bytes live in IndexedDB (§9x) as
+                // {__att:1,type,bytes:ArrayBuffer} records (legacy Blob values still read — §9aq)
 }
 ```
 
@@ -1832,6 +1833,85 @@ hero's wordmark legible as a doubled watermark) to 26 px after reviewing the ren
 
 ---
 
+## 9aq. Change log — 2026-10 normalizer PDF import, iOS/private-mode attachments, structured rehearsal notes
+
+Three user-reported problems (iPad/iPhone Safari, "same in Chrome"), each reproduced on `main` with
+the user's own files before fixing, plus two defects the drives surfaced.
+
+- **"PDF fails in Import + Normalize but works in Gig Profiles" — detached `ArrayBuffer`.** PDF.js
+  *transfers* the buffer passed to `getDocument({data})` to its worker, detaching it. §9ao's
+  notes-detection pre-pass called `pdfExtractRows(buf)` and then `parsePdfAsSongs(buf)` re-used the
+  now-empty buffer → `Cannot perform Construct on a detached ArrayBuffer` on **every** song-list PDF
+  in every browser (Gig Profiles reads once, so it worked). `pdfExtractLibrarySongs`' own flat
+  fallback had the same latent bug (Quick Import). Fix at the source: new pure **`pdfDataCopy`**
+  hands PDF.js a private copy in both `pdfExtractRows` and `pdfExtractText`. **Rule: never pass a
+  caller-owned buffer straight to `getDocument`.** The normalizer's `<input>` also stopped its click
+  bubbling back into the drop zone's `.click()` (re-entrant picker on iOS), accepts MIME types
+  alongside extensions, and resets `value` only after the read.
+- **Stacked-layout title leak (both import doors).** A long centered title's last word sat past the
+  Title/Key midpoint (`THAT'S THE WAY LOVE` | `GOES`), so the title row passed for the meta line:
+  title clipped, key = "GOES", the real Key/BPM/Style dropped — **24/175** songs in the user's list.
+  New pure `bhStackedRowIsMeta` (row number, numeric BPM/duration, or a Key cell that parses as a
+  key — `BH_KEY_CELL_RE`) decides; non-meta rows push their full x-ordered text. Now 175/175 clean.
+- **Attachments failing in private browsing / "occasionally" otherwise.** `attStore.put` stored the
+  raw `File`; WebKit (every iOS browser, Chrome included) refuses Blob/File values in IndexedDB in
+  private mode and can fail on picker-backed Files elsewhere. And `_attDbPromise` cached the
+  connection forever — iOS kills IDB connections when Safari is backgrounded, so the dead handle
+  failed every later attach until reload. Rewritten storage layer:
+  - bytes stored as **`{__att:1, type, bytes:ArrayBuffer}`** (`attRecordFromBytes` /
+    `attRecordToBlob`; legacy Blob values still read, so existing libraries need no migration);
+  - self-healing connection: cache dropped on `close`/`versionchange`/open failure, 8 s open
+    timeout (iOS first-open hang), and a failed transaction reconnects + retries once;
+  - last resort **session-memory fallback**: `put` resolves `{persisted:false, reason}`, the chart
+    still attaches/renders/rides a Backup, and the form says plainly it won't survive the tab
+    (`attStorageErrorMessage` maps Quota/NotReadable/blocked to actionable text);
+  - `SongAttachments` reads before clearing the input; Match Charts reports failed/session-only
+    counts; `AttachmentRow` opens its tab synchronously (iOS blocks `window.open` after an
+    `await`) and shows "not on this device" instead of doing nothing.
+  - **Add Song no longer fails silently** — it names the missing required fields (Title/Artist/
+    Duration). Attaching a lead sheet then tapping Add with Artist blank looked exactly like
+    "the attachment didn't work".
+- **Rehearsal notes: structured + condensed rendering** (pure, deterministic, no AI/network):
+  `structureNoteText` recovers structure from run-on notes — inline `*` bullets, raw Markdown
+  (`**Verse** - **Bars 1-4:**`), role labels glued mid-sentence (`…along with. Bass: …`), `[n]`
+  footnotes, nested chord lists, one-sentence-per-line for long prose — into heading/item/text/
+  footnote blocks. `formatNoteText` re-emits them as clean line-per-idea text (idempotent);
+  `condenseNoteText` builds a stage summary: cue chips (`noteCueTags`) + ≤5 short lines, grouped by
+  sub-heading, chord-dense sections collapsed to their cycle (`Verse (12-Bar Cycle): Emaj7 · C#m7 ·
+  F#m7 · A/B`), generic advice and footnotes dropped. Surfaces:
+  - shared **`<StructuredNote text mode="full|stage">`** component;
+  - **Advance view** now renders *section* notes too — previously it showed only role fields, so
+    everything an Arrangement Guide import writes (sections) was invisible there;
+  - **Stage Mode cue card** defaults to the stage summary, "Show full notes" toggles;
+  - **editor** (`ArrSectionFields`): "✨ Tidy formatting (N fields)" applies `formatNoteText` to every
+    note field in one atomic `onReplace` (the forms' `upd` closes over a stale form, so per-field
+    calls would drop writes) — reviewable, nothing saves until the song does; plus a collapsible
+    "🎤 Stage summary preview";
+  - **Arrangement Guide PDF**: new `pdfSettings.guideNoteStyle` = `organized` (default: bold
+    sub-headings, square bullets with hanging indent, small muted footnotes) | `condensed` (stage
+    summary) | `raw` (pre-change behaviour), chosen in `PdfSettingsModal`; layout via the pure
+    `guideNoteRuns`. The embedded `[[SLARR:…]]` block is untouched, so re-import stays lossless.
+  - Fixed while there: guide titles/artists wrapped to the full column width but were drawn 28pt in
+    (after the number badge), overflowing into the KEY column.
+- **No regex lookbehind, ever.** Safari < 16.4 cannot parse `(?<=` / `(?<!` and Babel Standalone
+  does not transpile it — one blanks the whole app on an older iPad. A test now scans every
+  shipped source file for it.
+
+Verification: `npm test` → **243/243** (+18: `test/pdf-import-robustness.test.js` — buffer copy vs
+a simulated transfer-detach, real song-list geometry; `test/attachments.test.js` record format +
+error mapping; `test/note-format.test.js` over verbatim notes in `test/fixtures/rehearsal-notes.json`,
+incl. idempotency and the lookbehind guard); Babel compile clean (index.html + 3 companions).
+Headless drives (vendored libs) — each failure first **reproduced on `main`**:
+normalizer + real song-list PDF → Map → Review 175/175 → Import; guide PDF through the same door →
+notes panel 24/24 matched → applied; attach under four emulated failure modes (normal, WebKit
+private Blob rejection, lost connection, IDB blocked → session-only notice) 4/4 (all 4 fail on
+`main`); legacy Blob records + backup enumeration; stored PDF renders in Stage Mode after reload;
+editor Tidy/preview/save + cue card summary↔full 8/8; guide PDF rendered in all three styles and
+reviewed visually; organized guide re-imports 24/24. 0 page errors throughout. Real-device
+confirmation (iOS private tab, backgrounding mid-session) is still worth a smoke test.
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing
@@ -1864,6 +1944,12 @@ download — the fully reliable path where multi-download suppression bites. The
 seam is `pdfBaseLayout`: pass `ctx.doc` and the renderer `addPage`s onto that existing doc
 instead of `new jsPDF()`, so `generateStageSetlistPDF` then `generateArrangementGuidePDF({...ctx,
 doc})` draw into one instance. Keep both paths if you touch the dispatcher.
+
+**Note style (§9aq).** `pdfSettings.guideNoteStyle` — `organized` (default) | `condensed` | `raw` —
+picks how column C lays each note out, via the pure `guideNoteRuns(text, style)` (headings bold,
+items with a drawn square bullet + hanging indent, footnotes small/muted). Runs are wrapped with
+the font they're drawn in, so `measureBlocks` stays exact. Column A wraps title/artist to
+`COL_A − 2·PAD − 28` (the badge offset).
 
 **Layout rules the guide must keep.** No full-bleed watermark — a background wash under
 dense chord prose is what made the combined export unreadable; the logo is a 30pt mark in
