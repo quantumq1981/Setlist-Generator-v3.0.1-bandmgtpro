@@ -2684,7 +2684,7 @@
       techRiderUrl: '', oneSheetUrl: '', hospitalityRiderUrl: '', pressNews: '',
       credibility: '', techAdvance: '',
       // 5 — Contact & official links
-      contactEmail: '', contactPhone: '', pressEmail: '',
+      contactEmail: '', contactPhone: '', pressEmail: '', mailingAddress: '',
       website: EPK_SITE_URL, linktree: '', socials: '', epkUrl: EPK_LIVE_URL, syncUrl: EPK_SYNC_URL,
       templates: EMAIL_TEMPLATES_DEFAULT
     };
@@ -3214,82 +3214,174 @@
         extra: 'Weekend show details on their Facebook business page.' },
     ];
 
-    // ── Gig Prospector: discover rooms that could host solo/duo acts via OpenStreetMap ──
+    // ── Gig Prospector: discover rooms that could host live acts via OpenStreetMap ──
     // Queries the free Overpass API (no key, CORS-open) for named bars/pubs/restaurants/
     // clubs/casinos around a point, then scores each for live-music potential — including
-    // places that don't advertise entertainment at all.
+    // places that don't advertise entertainment at all. Every place is scored twice
+    // (solo/duo fit vs full-band fit); the better fit becomes the venue's preferredFormat,
+    // so its tagged EPK link opens the matching act. All helpers below are pure.
     const PROSPECT_AREAS = [
-      { key: 'lv-central',  label: 'Las Vegas — Central & Strip',          lat: 36.1447, lon: -115.1728, city: 'Las Vegas' },
-      { key: 'lv-downtown', label: 'Las Vegas — Downtown & Arts District', lat: 36.1620, lon: -115.1470, city: 'Las Vegas' },
-      { key: 'lv-west',     label: 'Las Vegas — West & Summerlin',         lat: 36.1672, lon: -115.2410, city: 'Las Vegas' },
-      { key: 'lv-east',     label: 'Las Vegas — East & Boulder Hwy',       lat: 36.1130, lon: -115.0620, city: 'Las Vegas' },
-      { key: 'lv-north',    label: 'North Las Vegas',                      lat: 36.1989, lon: -115.1175, city: 'North Las Vegas' },
-      { key: 'henderson',   label: 'Henderson / Green Valley',             lat: 36.0395, lon: -114.9817, city: 'Henderson' },
-      { key: 'boulder',     label: 'Boulder City',                         lat: 35.9789, lon: -114.8341, city: 'Boulder City' },
-      { key: 'pahrump',     label: 'Pahrump',                              lat: 36.2083, lon: -115.9839, city: 'Pahrump' },
+      { key: 'lv-central',  label: 'Las Vegas — Central & Strip',          lat: 36.1447, lon: -115.1728, city: 'Las Vegas',       state: 'NV' },
+      { key: 'lv-downtown', label: 'Las Vegas — Downtown & Arts District', lat: 36.1620, lon: -115.1470, city: 'Las Vegas',       state: 'NV' },
+      { key: 'lv-west',     label: 'Las Vegas — West & Summerlin',         lat: 36.1672, lon: -115.2410, city: 'Las Vegas',       state: 'NV' },
+      { key: 'lv-east',     label: 'Las Vegas — East & Boulder Hwy',       lat: 36.1130, lon: -115.0620, city: 'Las Vegas',       state: 'NV' },
+      { key: 'lv-north',    label: 'North Las Vegas',                      lat: 36.1989, lon: -115.1175, city: 'North Las Vegas', state: 'NV' },
+      { key: 'henderson',   label: 'Henderson / Green Valley',             lat: 36.0395, lon: -114.9817, city: 'Henderson',       state: 'NV' },
+      { key: 'boulder',     label: 'Boulder City',                         lat: 35.9789, lon: -114.8341, city: 'Boulder City',    state: 'NV' },
+      { key: 'pahrump',     label: 'Pahrump',                              lat: 36.2083, lon: -115.9839, city: 'Pahrump',         state: 'NV' },
     ];
+    // Casinos default ON: casino lounges are a core room type for working Vegas acts.
     const PROSPECT_KINDS = [
       { key: 'bar',        label: 'Bars & Pubs',  regex: 'bar|pub|biergarten', on: true },
       { key: 'restaurant', label: 'Restaurants',  regex: 'restaurant',         on: true },
       { key: 'nightclub',  label: 'Clubs',        regex: 'nightclub',          on: true },
+      { key: 'casino',     label: 'Casinos',      regex: 'casino|gambling',    on: true },
       { key: 'cafe',       label: 'Cafes',        regex: 'cafe',               on: false },
-      { key: 'casino',     label: 'Casinos',      regex: 'casino|gambling',    on: false },
     ];
+    // Tried in order; a busy/timed-out instance falls through to the next.
     const OVERPASS_ENDPOINTS = [
       'https://overpass-api.de/api/interpreter',
+      'https://overpass.private.coffee/api/interpreter',
       'https://overpass.kumi.systems/api/interpreter',
     ];
-    const buildOverpassQuery = (lat, lon, radiusM, kindRegexes) => {
+    // Overpass returns elements in id order, not by fit, so a low cap silently drops
+    // most of a dense area before scoring ever sees it. 2000 covers a 10-mile Vegas
+    // radius; hitting it is reported to the user rather than hidden.
+    const PROSPECT_RESULT_CAP = 2000;
+    const PROSPECT_FETCH_TIMEOUT_MS = 45000;
+    const buildOverpassQuery = (lat, lon, radiusM, kindRegexes, cap = PROSPECT_RESULT_CAP) => {
       const rx = kindRegexes.join('|');
-      return `[out:json][timeout:30];(node["amenity"~"^(${rx})$"]["name"](around:${radiusM},${lat},${lon});way["amenity"~"^(${rx})$"]["name"](around:${radiusM},${lat},${lon}););out center tags 400;`;
+      return `[out:json][timeout:60];(node["amenity"~"^(${rx})$"]["name"](around:${radiusM},${lat},${lon});way["amenity"~"^(${rx})$"]["name"](around:${radiusM},${lat},${lon}););out center tags ${cap};`;
     };
-    // Score a place 0–10 for solo/duo gig potential from its OSM tags, with named signals.
+    // Overpass reports a server-side timeout / memory abort as HTTP 200 with a `remark`
+    // and an empty element list — indistinguishable from "nothing here" unless checked.
+    const overpassResponseIssue = (json) => {
+      if (!json || typeof json !== 'object' || !Array.isArray(json.elements)) return 'unexpected response from the map service';
+      const remark = String(json.remark || '');
+      if (/runtime error|timed out|out of memory|too many requests|rate_limited/i.test(remark)) return remark.slice(0, 160);
+      return null;
+    };
+    const prospectsTruncated = (json, cap = PROSPECT_RESULT_CAP) => !!(json && Array.isArray(json.elements) && json.elements.length >= cap);
+    // Great-circle distance in miles (haversine).
+    const distanceMi = (lat1, lon1, lat2, lon2) => {
+      if (![lat1, lon1, lat2, lon2].every(n => typeof n === 'number' && isFinite(n))) return null;
+      const r = (d) => d * Math.PI / 180;
+      const a = Math.sin(r(lat2 - lat1) / 2) ** 2 + Math.cos(r(lat1)) * Math.cos(r(lat2)) * Math.sin(r(lon2 - lon1) / 2) ** 2;
+      return 3958.8 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    };
+    // True when OSM opening_hours shows the room open at 10pm or later (or past midnight /
+    // 24-7) on some day — a late room is a live-music room far more often than not.
+    const opensLate = (oh) => {
+      const s = String(oh || '');
+      if (/24\/7/.test(s)) return true;
+      const rx = /(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/g;
+      let m;
+      while ((m = rx.exec(s))) {
+        const start = +m[1] * 60 + +m[2], end = +m[3] * 60 + +m[4];
+        if (end >= 22 * 60 || end < start) return true;
+      }
+      return false;
+    };
+    // Name cues, weighted per format. "grill" and "social" were dropped: they matched
+    // takeout counters and coffee shops far more often than bar rooms.
+    const PROSPECT_NAME_CUES = [
+      { rx: /saloon|tavern|roadhouse|honky|cantina|juke|ale ?house|sports bar|bar (&|and) grill|\bpub\b/, band: 2, soloDuo: 1, signal: '🍺 bar-room name' },
+      { rx: /taproom|tap ?house|brewer|brewing|winery|wine|distill|bistro|speakeasy/, band: 1, soloDuo: 2, signal: '🍷 wine/tap-room name' },
+      { rx: /lounge/, band: 1, soloDuo: 2, signal: '🍸 lounge' },
+    ];
+    // Score a place 0–10 for gig potential from its OSM tags, with named signals.
+    // Returns { score, signals, fit: { soloDuo, band }, format } — score is the better fit.
     const scoreProspect = (tags) => {
-      let score = 0; const signals = [];
-      const amenity = tags.amenity || '';
-      if (/bar|pub|nightclub|biergarten|casino|gambling/.test(amenity)) score += 3;
-      else if (amenity === 'restaurant') score += 2;
-      else score += 1;
-      if (tags.live_music === 'yes') { score += 4; signals.push('🎵 live music tagged'); }
-      if (tags.outdoor_seating && tags.outdoor_seating !== 'no') { score += 2; signals.push('🌿 patio — acoustic-friendly'); }
-      const name = (tags.name || '').toLowerCase();
-      if (/saloon|tavern|lounge|roadhouse|honky|cantina|speakeasy|taproom|tap house|brewer|winery|wine|distill|social|grill/.test(name)) { score += 2; signals.push('🍸 bar-room style name'); }
-      const cuisine = (tags.cuisine || '').toLowerCase();
-      if (/steak|italian|american|mexican|bbq|barbecue|seafood|tapas|wine/.test(cuisine)) { score += 1; signals.push('🍽 dinner-crowd cuisine'); }
-      if (tags.phone || tags['contact:phone'] || tags.website || tags['contact:website'] || tags.email || tags['contact:email']) { score += 1; signals.push('☎ contactable'); }
-      if (tags.brand || amenity === 'fast_food') { score = 0; signals.length = 0; signals.push('⛔ chain / franchise'); }
-      return { score: Math.max(0, Math.min(10, score)), signals };
+      const t = tags || {};
+      const amenity = t.amenity || '';
+      const signals = [];
+      const zero = (why) => ({ score: 0, signals: [why], fit: { soloDuo: 0, band: 0 }, format: 'duo' });
+      if (amenity === 'fast_food' || t.takeaway === 'only' || t.drive_through === 'yes') return zero('⛔ takeout / fast food');
+      const liveMusic = t.live_music === 'yes';
+      if (t.brand && !liveMusic) return zero('⛔ chain / franchise');
+
+      const BASE = { bar: [3, 3], pub: [3, 3], biergarten: [3, 2], nightclub: [1, 4], casino: [2, 4], gambling: [1, 2], restaurant: [2, 1], cafe: [1, 0] };
+      let [soloDuo, band] = BASE[amenity] || [1, 1];
+      const add = (sd, b, signal) => { soloDuo += sd; band += b; if (signal) signals.push(signal); };
+
+      if (liveMusic) add(4, 4, '🎵 live music tagged');
+      if (t.outdoor_seating && t.outdoor_seating !== 'no') add(2, 0, '🌿 patio — acoustic-friendly');
+      if (opensLate(t.opening_hours)) add(0, 2, '🌙 open late');
+      const cap = parseInt(t.capacity, 10);
+      if (cap >= 150) add(0, 2, `👥 capacity ${cap}`);
+      else if (cap >= 40) add(1, 0, `👥 capacity ${cap}`);
+      const name = (t.name || '').toLowerCase();
+      PROSPECT_NAME_CUES.forEach(c => { if (c.rx.test(name)) add(c.soloDuo, c.band, c.signal); });
+      if (/steak|italian|american|mexican|bbq|barbecue|seafood|tapas|wine|cajun|creole|southern/.test((t.cuisine || '').toLowerCase())) add(1, 0, '🍽 dinner-crowd cuisine');
+      if (t.phone || t['contact:phone'] || t.website || t['contact:website'] || t.email || t['contact:email']) add(1, 1, '☎ contactable');
+      // A chain that tags live music books acts at the location level — keep it, ranked lower.
+      if (t.brand) add(-2, -2, '🏷 chain location that books music — ask for the GM');
+
+      const clamp = (n) => Math.max(0, Math.min(10, n));
+      soloDuo = clamp(soloDuo); band = clamp(band);
+      const format = band > soloDuo ? 'band' : 'duo';
+      return { score: Math.max(soloDuo, band), signals, fit: { soloDuo, band }, format };
     };
     // Flatten an Overpass response into scored prospect rows (named places only).
-    const overpassToProspects = (json, fallbackCity) => (json && json.elements || []).map(el => {
-      const t = el.tags || {};
-      if (!t.name) return null;
-      const { score, signals } = scoreProspect(t);
-      const street = [t['addr:housenumber'], t['addr:street']].filter(Boolean).join(' ');
-      const addr = [street, t['addr:city'] || fallbackCity].filter(Boolean).join(', ');
+    // `area` is a PROSPECT_AREAS entry (or a bare fallback-city string, the old signature).
+    const overpassToProspects = (json, area) => {
+      const ctx = typeof area === 'string' ? { city: area } : (area || {});
       const typeMap = { bar: 'Bar', pub: 'Bar', biergarten: 'Bar', restaurant: 'Restaurant', cafe: 'Restaurant', nightclub: 'Club', casino: 'Casino', gambling: 'Casino' };
-      return {
-        key: `${el.type}/${el.id}`, name: t.name, amenity: t.amenity,
-        type: typeMap[t.amenity] || 'Bar',
-        city: t['addr:city'] || fallbackCity || '', addr,
-        phone: t.phone || t['contact:phone'] || '',
-        website: (t.website || t['contact:website'] || '').replace(/^https?:\/\//, ''),
-        email: t.email || t['contact:email'] || '',
-        cuisine: t.cuisine || '', score, signals,
-      };
-    }).filter(Boolean);
-    // Map a scored prospect onto the venue schema.
+      return ((json && json.elements) || []).map(el => {
+        const t = el.tags || {};
+        if (!t.name) return null;
+        const { score, signals, fit, format } = scoreProspect(t);
+        const lat = typeof el.lat === 'number' ? el.lat : (el.center && el.center.lat);
+        const lon = typeof el.lon === 'number' ? el.lon : (el.center && el.center.lon);
+        const dist = distanceMi(ctx.lat, ctx.lon, lat, lon);
+        const city = t['addr:city'] || ctx.city || '';
+        const street = [t['addr:housenumber'], t['addr:street']].filter(Boolean).join(' ');
+        return {
+          key: `${el.type}/${el.id}`, name: t.name, amenity: t.amenity,
+          type: typeMap[t.amenity] || 'Bar',
+          city, cityGuessed: !t['addr:city'] && !!ctx.city,
+          state: t['addr:state'] || ctx.state || '',
+          addr: [street, city].filter(Boolean).join(', '),
+          phone: t.phone || t['contact:phone'] || '',
+          website: (t.website || t['contact:website'] || '').replace(/^https?:\/\//, ''),
+          email: t.email || t['contact:email'] || '',
+          cuisine: t.cuisine || '', score, signals, fit, format,
+          lat: typeof lat === 'number' ? lat : null, lon: typeof lon === 'number' ? lon : null,
+          distanceMi: dist == null ? null : Math.round(dist * 10) / 10,
+        };
+      }).filter(Boolean);
+    };
+    // Map a scored prospect onto the venue schema. lat/lon are additive venue fields.
     const prospectToVenue = (p) => ({
       ...BLANK_VENUE,
-      name: p.name, type: p.type, city: p.city, state: 'NV',
+      name: p.name, type: p.type, city: p.city, state: p.state || '',
       email: p.email, phone: p.phone, website: p.website,
+      preferredFormat: VENUE_FORMATS.includes(p.format) ? p.format : '',
+      lat: p.lat == null ? null : p.lat, lon: p.lon == null ? null : p.lon,
       notes: [
-        '🔎 Gig Prospector find (OpenStreetMap) — may not advertise entertainment; pitch solo/duo formats.',
-        p.addr ? `📍 ${p.addr}.` : '',
+        '🔎 Gig Prospector find (OpenStreetMap) — may not advertise entertainment.',
+        p.fit ? `Best fit: ${p.format === 'band' ? 'full band' : 'solo/duo'} (solo/duo ${p.fit.soloDuo}/10 · band ${p.fit.band}/10).` : '',
+        p.addr ? `📍 ${p.addr}${p.cityGuessed ? ' (city inferred from search area — verify)' : ''}.` : '',
         p.signals.length ? `Signals: ${p.signals.join(', ')}.` : '',
         p.cuisine ? `Cuisine: ${p.cuisine}.` : '',
       ].filter(Boolean).join(' '),
     });
+
+    // ── Outreach compliance footer ────────────────────────────────────────────
+    // US CAN-SPAM requires commercial email to carry a way to opt out and a valid
+    // postal address (a P.O. box or registered mailbox qualifies). Cold outreach and
+    // its follow-ups are commercial; a reply to a buyer who asked for a call, or a
+    // booking confirmation, is transactional — those stay footer-free. Idempotent:
+    // a body that already has opt-out wording is left alone.
+    const OUTREACH_FOOTER_EXEMPT = ['callRequest', 'bookingConfirmation'];
+    const outreachNeedsFooter = (templateKey) => !OUTREACH_FOOTER_EXEMPT.includes(templateKey);
+    const appendOutreachFooter = (body, templateKey, mailingAddress) => {
+      const text = String(body || '');
+      if (!outreachNeedsFooter(templateKey)) return text;
+      if (/no thanks|unsubscribe|opt[ -]?out/i.test(text)) return text;
+      const addr = String(mailingAddress || '').trim().replace(/\s*\n\s*/g, ', ');
+      return text.replace(/\s+$/, '') + '\n\n—\nNot booking live music, or not the right contact? Just reply "no thanks" and I won\'t follow up.' + (addr ? '\n' + addr : '');
+    };
 
     // Map a directory entry onto the venue schema (address/styles/booking route → notes).
     const directoryEntryToVenue = (d) => ({
@@ -11839,6 +11931,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           .join('\n')
           .replace(/[ \t]+$/gm, '')   // trim trailing spaces
           .replace(/\n{3,}/g, '\n\n'); // collapse the blank gap a dropped line could leave
+        body = appendOutreachFooter(body, templateKey, localEpk.mailingAddress);
         return { to: venue?.email || '', subject: subj, body };
       };
 
@@ -12313,9 +12406,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     <span className="fr-ic" style={{ color: 'var(--accent)' }}>📂</span>
                     <span className="fr-txt"><strong>Vegas Directory</strong><span>{VENUE_DIRECTORY.length} curated live-music rooms with booking contacts</span></span>
                   </button>
-                  <button role="menuitem" onClick={e => { e.currentTarget.closest('details').open = false; openProspector(); }} title="Search the open map for bars, restaurants & clubs in an area — even ones that don't advertise entertainment — scored for solo/duo potential">
+                  <button role="menuitem" onClick={e => { e.currentTarget.closest('details').open = false; openProspector(); }} title="Search the open map for bars, restaurants, clubs & casinos in an area — even ones that don't advertise entertainment — scored for solo/duo and full-band fit">
                     <span className="fr-ic" style={{ color: 'var(--success)' }}>🔎</span>
-                    <span className="fr-txt"><strong>Prospector</strong><span>Discover rooms on the map, scored for solo/duo fit</span></span>
+                    <span className="fr-txt"><strong>Prospector</strong><span>Discover rooms on the map, scored for solo/duo and full-band fit</span></span>
                   </button>
                   <button role="menuitem" onClick={e => { e.currentTarget.closest('details').open = false; venueCsvRef.current?.click(); }} title="Bulk-import venues from a CSV file">
                     <span className="fr-ic">⬆</span>
@@ -13010,6 +13103,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               <div className="set-config">
                 <div className="input-group"><label>Booking Email</label><input value={localEpk.contactEmail || ''} onChange={e => upd('contactEmail', e.target.value)} placeholder="booking@yourband.com" /></div>
                 <div className="input-group"><label>Booking Phone</label><input value={localEpk.contactPhone || ''} onChange={e => upd('contactPhone', e.target.value)} placeholder="(555) 000-0000" /></div>
+                <div className="input-group" data-testid="mailing-address"><label>Mailing address (for outreach emails)</label><input value={localEpk.mailingAddress || ''} onChange={e => upd('mailingAddress', e.target.value)} placeholder="P.O. Box 1234, Las Vegas, NV 89101" /><span style={{ fontSize: '.66rem', color: 'var(--text-muted)' }}>US anti-spam law (CAN-SPAM) requires a postal address in cold outreach — a P.O. box or registered mailbox is fine. Printed under the "reply no thanks" line that outreach emails now end with.</span></div>
               </div>
               <div className="set-config">
                 <div className="input-group"><label>Press / PR Email</label><input value={localEpk.pressEmail || ''} onChange={e => upd('pressEmail', e.target.value)} placeholder="pr@yourband.com" /></div>
@@ -13174,32 +13268,39 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const openProspector = () => setProspector({
         area: 'lv-central', radius: 8000,
         kinds: PROSPECT_KINDS.filter(k => k.on).map(k => k.key),
-        loading: false, error: '', results: null, selected: [],
+        loading: false, error: '', results: null, selected: [], sort: 'score', truncated: false,
       });
       const prospectorSearch = async () => {
         const p = prospector; if (!p || p.loading) return;
         const area = PROSPECT_AREAS.find(a => a.key === p.area) || PROSPECT_AREAS[0];
         const kinds = PROSPECT_KINDS.filter(k => p.kinds.includes(k.key));
         if (!kinds.length) { showToast('Pick at least one venue kind', 'warning'); return; }
-        setProspector({ ...p, loading: true, error: '', results: null, selected: [] });
+        setProspector({ ...p, loading: true, error: '', results: null, selected: [], truncated: false });
         const query = buildOverpassQuery(area.lat, area.lon, p.radius, kinds.map(k => k.regex));
         let lastErr = null;
         for (const endpoint of OVERPASS_ENDPOINTS) {
+          // Per-endpoint timeout: a hung mirror must fall through, not spin forever.
+          const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+          const timer = ctl ? setTimeout(() => ctl.abort(), PROSPECT_FETCH_TIMEOUT_MS) : null;
           try {
             const res = await fetch(endpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
               body: 'data=' + encodeURIComponent(query),
+              signal: ctl ? ctl.signal : undefined,
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const json = await res.json();
+            const issue = overpassResponseIssue(json);
+            if (issue) throw new Error(issue);
             const seen = new Set();
             // Re-weight the heuristic score by the user's own reply history per room
             // type (feedback loop) — chains stay zeroed, everything stays 0–10.
             const stats = collectOutreachStats(venues);
-            const learnedTypes = [...new Set(overpassToProspects(json, area.city).map(r => r.type))]
+            const raw = overpassToProspects(json, area);
+            const learnedTypes = [...new Set(raw.map(r => r.type))]
               .map(t => [t, typeScoreMultiplier(stats, t)]).filter(([, m]) => m !== 1);
-            const results = overpassToProspects(json, area.city)
+            const results = raw
               .filter(r => { const k = r.name.trim().toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
               .map(r => {
                 const mult = r.score > 0 ? typeScoreMultiplier(stats, r.type) : 1;
@@ -13211,11 +13312,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 };
               })
               .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
-            setProspector(prev => prev && { ...prev, loading: false, results, selected: [], learnedTypes });
+            setProspector(prev => prev && { ...prev, loading: false, results, selected: [], learnedTypes, truncated: prospectsTruncated(json) });
             return;
-          } catch (e) { lastErr = e; }
+          } catch (e) {
+            lastErr = e && e.name === 'AbortError' ? new Error(`no answer within ${PROSPECT_FETCH_TIMEOUT_MS / 1000}s`) : e;
+          } finally {
+            if (timer) clearTimeout(timer);
+          }
         }
-        setProspector(prev => prev && { ...prev, loading: false, error: `Search failed — the free map service may be busy; try again in a minute. (${(lastErr && lastErr.message) || 'network error'})` });
+        setProspector(prev => prev && { ...prev, loading: false, error: `Search failed on all ${OVERPASS_ENDPOINTS.length} map servers — they may be busy; try again in a minute or use a smaller radius. (${(lastErr && lastErr.message) || 'network error'})` });
       };
       const prospectorAddSelected = () => {
         const p = prospector; if (!p || !p.results) return;
@@ -13229,7 +13334,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const p = prospector;
         const setP = (patch) => setProspector(prev => prev && { ...prev, ...patch });
         const scoreColor = (s) => s >= 7 ? 'var(--success)' : s >= 4 ? 'var(--accent)' : 'var(--text-muted)';
-        const newResults = (p.results || []).filter(r => !prospectIsAdded(r));
+        const sorted = p.sort === 'distance' && p.results
+          // Nearest first, but filtered-out rooms (score 0: chains, takeout) stay at the bottom.
+          ? [...p.results].sort((a, b) => (a.score === 0) - (b.score === 0) || (a.distanceMi ?? 1e9) - (b.distanceMi ?? 1e9) || b.score - a.score)
+          : (p.results || []);
+        const newResults = sorted.filter(r => !prospectIsAdded(r));
         const pickedNew = p.selected.filter(k => newResults.some(r => r.key === k)).length;
         return (
           <div className="compose-backdrop" onClick={() => setProspector(null)}>
@@ -13239,7 +13348,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <button className="btn btn-small" onClick={() => setProspector(null)}>✕</button>
               </div>
               <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                Searches the open map database for every named bar, restaurant &amp; club in an area — including rooms that don't advertise entertainment — and scores each 0–10 for solo/duo potential (live-music tag, patio, bar-room name, dinner crowd, contactability; chains are filtered out). Pick the promising ones and they join your pipeline as prospects.
+                Searches the open map database for every named bar, restaurant, club &amp; casino in an area — including rooms that don't advertise entertainment — and scores each 0–10 twice: as a <b>solo/duo</b> room (patio, wine/tap room, dinner crowd) and as a <b>full-band</b> room (late hours, capacity, bar-room name, clubs/casinos). The better fit is saved as the venue's act, so its EPK link opens the right page. Takeout counters and chains are filtered out unless they tag live music. Map coverage is community-maintained and patchy — treat it as a supplement to the Vegas Directory, not a census.
               </div>
               <div style={{ display: 'flex', gap: '.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
                 <select value={p.area} onChange={e => setP({ area: e.target.value })} style={{ flex: '1 1 200px', fontSize: '.78rem' }}>
@@ -13272,12 +13381,19 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap', fontSize: '.72rem', color: 'var(--text-muted)' }}>
                     <span>{p.results.length} places found · {newResults.length} not in your list</span>
                     <span style={{ flex: 1 }} />
+                    <select value={p.sort || 'score'} onChange={e => setP({ sort: e.target.value })} style={{ fontSize: '.72rem' }} data-testid="prospect-sort">
+                      <option value="score">Sort: best fit</option>
+                      <option value="distance">Sort: nearest</option>
+                    </select>
                     <button className="btn btn-small" onClick={() => setP({ selected: newResults.slice(0, 25).map(r => r.key) })}>Select top 25</button>
                     <button className="btn btn-small" onClick={() => setP({ selected: [] })}>Clear</button>
                   </div>
+                  {p.truncated && (
+                    <div className="compose-warn" data-testid="prospect-truncated">⚠ The map returned its maximum of {PROSPECT_RESULT_CAP.toLocaleString()} places, so some rooms in this area are missing. Narrow the radius or turn off a kind and search again to see them.</div>
+                  )}
                   <div className="dir-list">
                     {p.results.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.2rem', fontSize: '.8rem' }}>No places found here — widen the radius or add more kinds.</div>}
-                    {p.results.map(r => {
+                    {sorted.map(r => {
                       const added = prospectIsAdded(r);
                       return (
                         <div key={r.key} className={`dir-row${added ? ' dir-added' : ''}`}>
@@ -13288,7 +13404,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                             <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
                               <span className="dir-row-name">{r.name}</span>
                               <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '.72rem', fontWeight: 700, color: scoreColor(r.score) }} title="Solo/duo gig potential (0–10)">{r.score}/10</span>
-                              <span className="dir-row-meta">{r.type}{r.city ? ` · ${r.city}` : ''}</span>
+                              <span className="dir-row-meta">{r.type}{r.city ? ` · ${r.city}` : ''}{r.distanceMi != null ? ` · ${r.distanceMi} mi` : ''}</span>
+                              {r.score > 0 && r.fit && <span className="dir-row-meta" data-testid="prospect-fit" title={`Solo/duo fit ${r.fit.soloDuo}/10 · full-band fit ${r.fit.band}/10`}>{r.format === 'band' ? '🥁 band fit' : '🎸 solo/duo fit'}</span>}
                               {added && <span className="dir-added-tag">✓ in your list</span>}
                             </div>
                             {(r.addr || r.phone || r.website) && (
@@ -13301,7 +13418,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     })}
                   </div>
                   <div className="compose-actions">
-                    <span className="compose-queue-meta">Adds land as prospects with the find signals in notes — ready for Compose.</span>
+                    <span className="compose-queue-meta">Adds land as prospects with their best-fit act set and the find signals in notes — ready for Compose. <span data-testid="osm-attribution">Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit' }}>OpenStreetMap contributors</a>.</span></span>
                     <button className="btn btn-small btn-primary" onClick={prospectorAddSelected} disabled={pickedNew === 0}>+ Add {pickedNew} prospect{pickedNew !== 1 ? 's' : ''}</button>
                   </div>
                 </React.Fragment>
@@ -13319,6 +13436,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         const unresolved = [];
         if (c.body.includes('[EPK Link]')) unresolved.push('EPK link');
         if (c.body.includes('[Demo Link]')) unresolved.push('demo link');
+        const needsAddress = outreachNeedsFooter(c.templateKey) && !String(localEpk.mailingAddress || '').trim();
         const mailtoLen = 18 + encodeURIComponent(c.subject).length + encodeURIComponent(c.body).length;
         const tooLongForMailto = mailtoLen > 1800;
         return (
@@ -13344,6 +13462,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     title="Switching template re-fills the draft for this venue">{def.label}</button>
                 ))}
               </div>
+              {needsAddress && (
+                <div className="compose-warn" data-testid="address-warn">⚠ No mailing address set — US law (CAN-SPAM) requires one in cold outreach. Add a P.O. box or business address in EPK &amp; Templates → Mailing address.</div>
+              )}
               {unresolved.length > 0 && (
                 <div className="compose-warn">⚠ Your {unresolved.join(' and ')} placeholder{unresolved.length > 1 ? 's are' : ' is'} unfilled — add the link{unresolved.length > 1 ? 's' : ''} in the EPK &amp; Templates tab so buyers get something to click.</div>
               )}
