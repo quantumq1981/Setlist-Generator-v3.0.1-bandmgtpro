@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-10-13 (normalizer PDF import, iOS/private-mode attachments, structured + condensed rehearsal notes, §9aq).
+Last updated: 2026-10-16 (Gig Prospector v2 — result cap, timeout handling, dual-format scoring, CAN-SPAM footer, §9ar).
 
 ---
 
@@ -1909,6 +1909,72 @@ private Blob rejection, lost connection, IDB blocked → session-only notice) 4/
 editor Tidy/preview/save + cue card summary↔full 8/8; guide PDF rendered in all three styles and
 reviewed visually; organized guide re-imports 24/24. 0 page errors throughout. Real-device
 confirmation (iOS private tab, backgrounding mid-session) is still worth a smoke test.
+
+
+---
+
+## 9ar. Change log — 2026-10 Gig Prospector v2 (vetting pass)
+
+The Prospector (§9g) had never been run for real outreach. A code audit + fixture probe of the
+lifted engine found it silently hid good rooms. The sandbox can't reach Overpass (proxy blocks it),
+so everything was verified against fixtures shaped like real OSM tags + a mocked-network drive.
+
+- **Result cap 400 → `PROSPECT_RESULT_CAP` (2000).** Overpass returns elements in **id order, not
+  by fit**, so `out … 400` dropped most of a dense 5–10 mi Vegas area *before* scoring saw it (a
+  fixture with 199 live-music rooms at high ids → 0 survived). `prospectsTruncated` now surfaces a
+  warning when the cap is hit instead of hiding it.
+- **Timeouts are errors, not "no places found".** Overpass reports a server abort as HTTP 200 with a
+  `remark` + empty `elements`; the old code rendered that as an empty area. `overpassResponseIssue`
+  detects it so the loop falls through to the next mirror. Each endpoint gets an `AbortController`
+  timeout (`PROSPECT_FETCH_TIMEOUT_MS`, 45 s) so a hung mirror can't spin forever. A third public
+  instance (`overpass.private.coffee`) sits between the main and kumi.systems endpoints.
+- **Dual-format scoring.** `scoreProspect` now returns `{ score, signals, fit: { soloDuo, band },
+  format }` — each place is scored as a solo/duo room (patio, wine/tap-room name, dinner cuisine,
+  modest capacity) and as a full-band room (clubs/casinos, `opensLate` from `opening_hours`,
+  capacity ≥ 150, bar-room name); `score` is the better fit. `prospectToVenue` writes `format` to
+  `preferredFormat`, so the tagged EPK link (`?act=`) opens the matching act — previously every
+  prospect fell back to `band`, sending solo/duo rooms to the full-band page.
+- **Scoring corrections.** A `brand` + `live_music=yes` place is kept at −2 (chains book acts at the
+  location level) instead of zeroed; `takeaway=only` / `drive_through=yes` / `fast_food` are zeroed;
+  the name cues "grill" and "social" were dropped (they matched takeout counters and coffee shops) —
+  "bar & grill" still counts. Cues live in the `PROSPECT_NAME_CUES` table.
+- **Casinos default on** (the owner's actual room history). Areas carry `state`; prospects keep
+  `lat`/`lon` + `distanceMi` (haversine) and flag `cityGuessed` when the city came from the search
+  area rather than `addr:city`. Venues gain additive `lat`/`lon` fields (not in `BLANK_VENUE`; old
+  venues unaffected). `overpassToProspects(json, area)` still accepts the old city-string argument.
+- **UI:** fit chip (🎸 solo/duo / 🥁 band, hover shows both scores), distance, a best-fit / nearest
+  sort (`data-testid="prospect-sort"`; nearest keeps score-0 rows at the bottom), the truncation
+  warning, and the ODbL-required "Map data © OpenStreetMap contributors" credit
+  (`data-testid="osm-attribution"`). Overlay copy states OSM coverage is patchy — a supplement to
+  the Vegas Directory, not a census.
+- **CAN-SPAM footer.** `appendOutreachFooter(body, templateKey, mailingAddress)` runs at the end of
+  `fillTemplate`: every template except the transactional `OUTREACH_FOOTER_EXEMPT`
+  (`callRequest`, `bookingConfirmation`) ends with a "reply 'no thanks' and I won't follow up" line
+  plus the new EPK field **`mailingAddress`** (blank default; a P.O. box is fine). Idempotent —
+  skipped when the body already has no-thanks / unsubscribe / opt-out wording, so user templates with
+  their own opt-out are respected. Compose shows `data-testid="address-warn"` while the address is
+  blank. Marking a "no thanks" venue **Pass** halts its sequence (existing §9l behavior).
+
+**Email context (owner setup, not code):** the owner's `booking@zembamusicco.com` is an **IONOS**
+mailbox, not Google, so the §9j Gmail integration can't send from it. The supported path is the
+compose overlay's **Email App** button (mailto → the device's mail app with the IONOS account as
+default), with replies marked Responded by hand. Automatic reply detection for IMAP providers needs
+a small backend — deferred to the marketplace/hosting phase. IONOS DNS: root A records → GitHub
+Pages, `www` CNAME → `quantumq1981.github.io`; IONOS auto-creates MX/SPF/DKIM per subdomain. Root
+SPF/DKIM/DMARC were not yet confirmed — a `_dmarc` TXT (`v=DMARC1; p=none; …`) is the likely gap.
+
+Verification: `npm test` → **255/255** (+12 in `test/prospector.test.js`: query cap, defaults,
+remark/malformed detection, truncation, haversine, `opensLate`, chain/takeout/name-cue scoring,
+dual-format fit, coords/state/city-guess mapping incl. the legacy string signature, format → `?act=`
+link, footer exemptions + idempotency + address flattening); Babel compile clean (index.html + 3
+companions); headless Playwright drive (vendored libs; Overpass mocked — endpoint 1 returns an
+HTTP-200 timeout remark, endpoint 2 the fixture) → **23/23**, 0 page errors: fall-through to the
+second mirror, casino ranks first with a band fit, wine bar gets solo/duo, takeout last,
+chain-with-live-music kept, distance + nearest sort, attribution, 5 venues added with
+`preferredFormat`/coords/state/token, compose body ends with the opt-out line and shows the address
+warning, and with an address set the footer prints it and a duo venue's link reads
+`?act=duo&track=…`. Live Overpass behaviour (real Vegas tag density, mirror availability) still needs
+one real-browser run.
 
 ---
 

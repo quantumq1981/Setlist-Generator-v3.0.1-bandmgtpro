@@ -211,6 +211,14 @@ for (const g of [
 // consults both to decide between the ?act=&track= and legacy ?ref= schemes).
 for (const g of ['VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'epkLinkForVenue']) pieces.push(extractDecl(g));
 
+// Gig Prospector (OpenStreetMap discovery) + the outreach compliance footer.
+for (const g of [
+  'BLANK_VENUE', 'PROSPECT_AREAS', 'PROSPECT_KINDS', 'OVERPASS_ENDPOINTS', 'PROSPECT_RESULT_CAP',
+  'buildOverpassQuery', 'overpassResponseIssue', 'prospectsTruncated', 'distanceMi', 'opensLate',
+  'PROSPECT_NAME_CUES', 'scoreProspect', 'overpassToProspects', 'prospectToVenue',
+  'OUTREACH_FOOTER_EXEMPT', 'outreachNeedsFooter', 'appendOutreachFooter',
+]) pieces.push(extractDecl(g));
+
 // Outreach sequences ("Today's Outreach") — constants before the brain that uses them.
 for (const g of [
   'FOLLOWUP_DUE_DAYS', 'DAILY_OUTREACH_CAP', 'MAX_SEQUENCE_SENDS', 'SEQUENCE_STEP_DAYS',
@@ -267,6 +275,10 @@ const EXPORTS = [
   'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
   'DAILY_OUTREACH_CAP', 'MAX_SEQUENCE_SENDS', 'SEQUENCE_STEP_DAYS', 'addDaysISO', 'sendsToday', 'nextActionFor',
   'VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'epkLinkForVenue',
+  'BLANK_VENUE', 'PROSPECT_AREAS', 'PROSPECT_KINDS', 'OVERPASS_ENDPOINTS', 'PROSPECT_RESULT_CAP',
+  'buildOverpassQuery', 'overpassResponseIssue', 'prospectsTruncated', 'distanceMi', 'opensLate',
+  'scoreProspect', 'overpassToProspects', 'prospectToVenue',
+  'outreachNeedsFooter', 'appendOutreachFooter',
   'MIN_LEARN_SAMPLE', 'venueOutcome', 'collectOutreachStats', 'smoothedRate', 'typeScoreMultiplier', 'bestStatInsight',
   'ARR_ROLES', 'ARR_SECTIONS', 'ARR_SECTION_LABELS', 'ARR_FIELDS', 'ARR_ROLE_IMPORT_HEADERS',
   'ARR_SECTION_IMPORT_HEADERS', 'ARR_FIELD_IMPORT_HEADERS', 'ARR_FIELD_EXPORT_HEADERS',
