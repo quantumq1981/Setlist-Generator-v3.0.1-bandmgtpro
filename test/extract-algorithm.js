@@ -217,6 +217,8 @@ for (const g of [
   'buildOverpassQuery', 'overpassResponseIssue', 'prospectsTruncated', 'distanceMi', 'opensLate',
   'PROSPECT_NAME_CUES', 'scoreProspect', 'overpassToProspects', 'prospectToVenue',
   'OUTREACH_FOOTER_EXEMPT', 'outreachNeedsFooter', 'appendOutreachFooter',
+  // Built-in Vegas venue directory + its venue mapper.
+  'VENUE_TYPES', 'VENUE_DIRECTORY', 'directoryEntryToVenue',
 ]) pieces.push(extractDecl(g));
 
 // Outreach sequences ("Today's Outreach") — constants before the brain that uses them.
@@ -284,6 +286,7 @@ const EXPORTS = [
   'buildOverpassQuery', 'overpassResponseIssue', 'prospectsTruncated', 'distanceMi', 'opensLate',
   'scoreProspect', 'overpassToProspects', 'prospectToVenue',
   'outreachNeedsFooter', 'appendOutreachFooter',
+  'VENUE_TYPES', 'VENUE_DIRECTORY', 'directoryEntryToVenue',
   'MIN_LEARN_SAMPLE', 'venueOutcome', 'collectOutreachStats', 'smoothedRate', 'typeScoreMultiplier', 'bestStatInsight',
   'ARR_ROLES', 'ARR_SECTIONS', 'ARR_SECTION_LABELS', 'ARR_FIELDS', 'ARR_ROLE_IMPORT_HEADERS',
   'ARR_SECTION_IMPORT_HEADERS', 'ARR_FIELD_IMPORT_HEADERS', 'ARR_FIELD_EXPORT_HEADERS',
