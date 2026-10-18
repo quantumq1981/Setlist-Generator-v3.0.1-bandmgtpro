@@ -252,7 +252,11 @@ for (const f of [
   'areParallelKeys_TG', 'circleDirection_TG', 'anchorKeyBonus_TG', 'determineAnchorKey_TG',
   'isContrastSlot_TG', 'calculateTonalTransitionScore_TG',
   'calculateSetlistQualityScore', 'generateTonalDiagnostics_TG',
-  'simulatedAnnealingOptimize', 'generateSetlistsCore', 'generateSetlistsCore_WithTonalGravity',
+  'simulatedAnnealingOptimize',
+  // Set-length modes (time vs whole library) — before the core generator that uses them.
+  'SET_LENGTH_MODES', 'LIBRARY_FILL_UNDERSHOOT', 'libraryDistributedDurations', 'resolveSetDurations',
+  'distributeLeftoverSongs',
+  'generateSetlistsCore', 'generateSetlistsCore_WithTonalGravity',
   'validateGenerationConstraints',
 ]) pieces.push(extractDecl(f));
 
@@ -270,6 +274,7 @@ const EXPORTS = [
   'normalizeKey_TG', 'circleDistance_TG', 'determineAnchorKey_TG', 'calculateTonalTransitionScore_TG',
   'calculateSetlistQualityScore', 'generateTonalDiagnostics_TG', 'simulatedAnnealingOptimize',
   'generateSetlistsCore', 'generateSetlistsCore_WithTonalGravity', 'validateGenerationConstraints',
+  'SET_LENGTH_MODES', 'libraryDistributedDurations', 'resolveSetDurations', 'distributeLeftoverSongs',
   'GMAIL_REPLY_CHECK_COOLDOWN_MS', 'gmailB64Utf8', 'gmailBase64Url', 'gmailEncodeHeader',
   'gmailBuildRfc2822', 'gmailThreadHasReply', 'gmailReplyCheckCandidates',
   'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
