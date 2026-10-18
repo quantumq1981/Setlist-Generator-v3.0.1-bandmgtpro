@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-10-18 (pairing order fixes on every generator path + set-length mode in saved profiles, §9at).
+Last updated: 2026-10-18 (Vegas venue directory expanded 49 → 230 from the Oct 2026 booking-leads research, §9au).
 
 ---
 
@@ -2065,6 +2065,49 @@ modes with locked openers/closers, plus the pair-at-set-tail case; all 7 **fail 
 → 20/20, 0 page errors (save a 4-set whole-library profile, switch to by-duration × 2, load it →
 mode + 4 sets restored; 5 generations with an S10→S11→S12 chain + 4 locked closers: chain always
 adjacent and ordered, every set ends on a locked closer, all 190 songs placed).
+
+---
+
+## 9au. Change log — 2026-10 Vegas venue directory expansion (Oct 2026 booking-leads research)
+
+Cross-checked the owner's "Las Vegas Live-Entertainment Booking Leads for Solo, Duo and Trio
+Acts (October 2026)" report against `VENUE_DIRECTORY` (§9f) and added everything missing.
+Data-only change: no schema, localStorage, or UI logic touched (the browser already groups by
+`region` and counts via `VENUE_DIRECTORY.length`).
+
+- **49 → 230 entries** (+181). Two new regions: `Southwest & Spring Valley` (Orleans, Silverton,
+  M Resort, Durango, Gold Coast, Palace Station, UnCommons…) and `Private Events: Country & Golf
+  Clubs` (25 clubs, type `Event Space`, notes point at the coordinator's preferred-vendor list).
+  Multi-room properties under one entertainment office are **one entry naming the rooms** (e.g.
+  "ARIA Lounges: Lift Bar, Lobby Bar, Easy's"), because one contact books them all; unrelated
+  venues the report grouped on one row are split.
+- **`verified` semantics kept strict:** `true` only where the report gives a *published booking
+  channel* (new: Category 10, Gold Mine Tavern; existing Sand Dollar Lounge flipped to true with
+  `booking@thesanddollarlv.com`). Corporate casino rooms are CONFIRMED music rooms but publish no
+  booking channel, so they stay `false` (the "⚠ verify" prefix fits). Every new entry's `extra`
+  carries the report's status: `Oct 2026 research: CONFIRMED | LIKELY | SPECULATIVE | NEW …`.
+  Addresses the report didn't give are left at district level rather than guessed.
+- **Dedup:** 19 report rooms were already present (Vic's, Sand Dollar, Maxan, Dispensary, Piazza,
+  Carnaval Court, Gilley's, Rí Rá, Rush, Backstage, Mob Museum Underground, Atomic Liquors,
+  SoulBelly, Golden Tiki, Red Dwarf, Hammer's, Lovelady, Roxy's, Railhead); "Grape Street Café"
+  is the existing **Grape Vine Cafe** (same address/phone) — alias noted, not re-added. Those
+  entries were **enriched** in place (Sand Dollar email/phone/Pro Jam, Dispensary general inbox,
+  Maxan manager inbox, Piazza piano-bar night, schedules for Gilley's/Rí Rá/Rush/Roxy's/Railhead,
+  Backstage talent-application link + phone discrepancy, Red Dwarf/Grey Witch Fat Cat move).
+- **Deliberately excluded:** closed rooms (Fat Cat, Mama Rabbit, Skyfall, The Mirage, Vino Del
+  Lago), Double Down Saloon ("no singer-songwriters, no country"), Hard Rock (2027, no room yet),
+  and the agencies/union (§9 of the report — not venues). Vinyl Room is listed but flagged
+  private-events-only.
+- **New guard test** `test/venue-directory.test.js` (VENUE_TYPES / VENUE_DIRECTORY /
+  directoryEntryToVenue added to the extract whitelist): case/accent-insensitive unique names
+  (the browser and `bulkAddVenues` both dedup by lowercase name, so a duplicate would hide an
+  entry), valid types/emails/state, closed rooms absent, the six direct-booking channels present,
+  and the unverified-notes mapping.
+
+Verification: `npm test` → 282/282 (+5); Babel compile clean (index.html + 3 companions);
+headless Playwright drive → 8/8, 0 page errors (directory renders 230 rows in 9 regions with no
+duplicate names, "+ Add 230 venues" lands all of them in the pipeline with tracking tokens and the
+Sand Dollar booking email, re-opening shows every row "✓ in your list").
 
 ---
 
