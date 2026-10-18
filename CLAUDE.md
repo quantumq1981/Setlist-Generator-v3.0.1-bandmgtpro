@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-10-18 (whole-library set-length mode — split the entire library across N sets, §9as).
+Last updated: 2026-10-18 (pairing order fixes on every generator path + set-length mode in saved profiles, §9at).
 
 ---
 
@@ -2014,10 +2014,7 @@ stays the default.
   inputs for a summary (`data-testid="library-split"`: "All N active songs → K sets, ≈ songs ·
   ~min per set") and hides Allow Song Reuse and the pool-size meter. Generate toast reads
   "Generated K set(s) from all N songs — trim as needed".
-- **Known, pre-existing (not changed):** with a *locked closer pool* plus a "pair together"
-  couple, the closer swap can occasionally replace a pair's follower (~7% of trials in a probe),
-  in time mode as well. Library mode re-seats the bumped follower beside its leader when the
-  slot allows.
+- ~~Known, pre-existing: the closer swap could replace a pair's follower~~ — fixed in §9at.
 
 Verification: `npm test` → **267/267** (+12 in `test/set-length-library.test.js`: even split,
 mode resolution, every song once across 1/3/4 sets from 200 songs, balanced set times, locked
@@ -2027,6 +2024,47 @@ headless Playwright drive of the real app (vendored libs, 200-song library with 
 14/14, 0 page errors: toggle defaults to By duration, library mode hides duration inputs and
 shows "All 190 active songs → 4 sets", Generate yields 4 sets holding all 190 active songs once
 (no shelved songs) at 190/189/191/191 min, the mode persists, switching back restores the inputs.
+
+---
+
+## 9at. Change log — 2026-10 "pair together" order fixes + set-length mode in saved profiles
+
+Follow-ups to §9as. A stress probe (60 songs, 3 sets, locked opener + closer pools, a pair, an
+A→B→C chain, a keep-apart pair) showed pairs breaking on **every** generator path in both
+set-length modes — on `main`: greedy 532/600, tonal 437/600, deep 85/150 runs clean. Three
+independent root causes, each fixed at its source:
+
+1. **Forced-closer swap orphaned a pair's follower** (`generateSetlistsCore`, closer block). When
+   the set's last song is the trailing half of a pair (`affinityNextMap` says its predecessor
+   leads it — `lastIsPairFollower`), a designated closer is now **appended** after the pair
+   instead of replacing the follower, and the soft style-closer swap is skipped.
+2. **End-of-set deadlock fallback let a follower in before its leader.** Near the end of a set
+   the duration window can leave a pair's follower as the *only* candidate; the hard order
+   guard then fell through and picked it, the leader landed after it (or got evicted by the
+   closer and reused in the next set). Now, when every candidate is a held-back follower, the
+   generator places that follower's **leader** instead (never a reserved opener/closer), and the
+   existing forced-adjacency pass glues the follower after it.
+3. **Tonal refinement + deep SA scored pairs symmetrically.** `_affSet` (wrapper) and the SA
+   adjacency term treated `B,A` like `A,B`, so an adjacent swap could reverse a pair for a
+   marginal tonal gain. The adjacency reward is now **ordered** (`_affSet` holds `a|b` only; SA
+   uses a new `affinityOrdered` set for its −50 term). Anti-affinity stays bidirectional; SA's
+   small gap-2/3 affinity bonus still uses the either-order set.
+
+After: 600/600, 600/600, 150/150 in both modes, no duplicates, openers first, closers last.
+
+**Profiles.** `ENERGY_PROFILE_FIELDS` gains `setLengthMode`. A whole-library profile also stores
+`numSets` (in that mode the count is the gig's shape); `applyEnergyProfile` restores it and
+resizes `setDurations` to match (same rule as the Number of Sets input). By-duration profiles
+never store the set count, and profiles saved before this change (no `setLengthMode`) leave the
+current mode and count alone. `saveEnergyProfile` stamps the effective mode (`|| 'time'`) so a
+band that never touched the toggle still saves "by duration".
+
+Verification: `npm test` → **277/277** (+7 in `test/pairing-order.test.js` — all 3 paths × both
+modes with locked openers/closers, plus the pair-at-set-tail case; all 7 **fail on the previous
+`index.html`**; +3 profile tests); Babel compile clean; headless Playwright drive of the real app
+→ 20/20, 0 page errors (save a 4-set whole-library profile, switch to by-duration × 2, load it →
+mode + 4 sets restored; 5 generations with an S10→S11→S12 chain + 4 locked closers: chain always
+adjacent and ordered, every set ends on a locked closer, all 190 songs placed).
 
 ---
 
