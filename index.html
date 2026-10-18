@@ -289,6 +289,14 @@
     .profile-bar-label { font-size:.72rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color: var(--accent); }
     .profile-bar-select { flex:0 1 auto; font-size:.8rem; padding:.25rem .3rem; }
     .profile-bar-name { flex:1 1 8rem; min-width:6rem; font-size:.8rem; padding:.25rem .45rem; }
+    .set-length-mode { display:flex; flex-wrap:wrap; align-items:center; gap:.4rem; margin-bottom:.75rem; }
+    .set-length-mode-label { font-size:.72rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color: var(--text-muted); flex-basis:100%; }
+    .set-length-opt { flex:1 1 9rem; min-height:2.5rem; padding:.45rem .7rem; font-size:.85rem; font-weight:600; color: var(--text); background: var(--secondary); border:1px solid var(--border); border-radius:8px; cursor:pointer; }
+    .set-length-opt.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+    .set-length-opt:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .library-split { flex:1; margin-bottom:.6rem; padding:.5rem .65rem; background: var(--accent-soft); border:1px solid var(--border); border-radius:8px; }
+    .library-split-head { font-weight:700; font-size:.9rem; color: var(--accent); }
+    .library-split-sub { font-size:.75rem; color: var(--text-muted); margin-top:.2rem; line-height:1.35; }
     .toolbar { display:flex; gap:.6rem; flex-wrap: wrap; align-items:center; }
 
     .song-list { max-height: 420px; overflow:auto; }
@@ -6876,8 +6884,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     base.diagnostics = generateTonalDiagnostics_TG(base);
     base.anchorKey = anchor?.displayTonic || anchor?.tonic || null;
     // Calculate unified quality score for each set
-    base.qualityScores = base.map(set => calculateSetlistQualityScore(set, {
+    base.qualityScores = base.map((set, si) => calculateSetlistQualityScore(set, {
       ...opts,
+      setDuration: (base.targetDurations && base.targetDurations[si]) || opts.setDuration,
       _anchorKey: anchor
     }));
   } catch (e) {
@@ -7305,7 +7314,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       }
 
       // Library-size sanity: not enough material to fill the requested sets without reuse.
-      if (!allowReuse && songs.length > 0) {
+      if (!allowReuse && songs.length > 0 && settings.setLengthMode !== 'library') {
         const durations = settings.setDurations || [];
         let requested = 0;
         for (let i = 0; i < numSets; i++) requested += (durations[i] > 0 ? durations[i] : (settings.setDuration || 45));
@@ -7318,6 +7327,105 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       return issues;
     }
 
+    /******************* SET LENGTH MODES (time vs whole library) *******************/
+    // 'time'    — each set fills to its configured minutes (setDuration / setDurations).
+    // 'library' — ignore the minute targets: split the ENTIRE active library across
+    //             numSets, every song placed exactly once, ordered by the same
+    //             energy/tonal/diversity optimizer. Trim afterwards.
+    const SET_LENGTH_MODES = ['time', 'library'];
+    // In library mode the greedy builder aims each set slightly under its fair share so
+    // it never exhausts the pool mid-set (an exhausted set is dropped by the no-reuse
+    // abort guard); the leftover sweep then places every remaining song.
+    const LIBRARY_FILL_UNDERSHOOT = 0.9;
+
+    // Fair-share minutes per set for the whole library. Songs without a parseable
+    // duration count as 4 min so a sparse library still splits evenly.
+    function libraryDistributedDurations(songs, numSets) {
+      const n = Math.max(1, Math.floor(Number(numSets) || 1));
+      const total = (songs || []).reduce((s, x) => s + (parseDuration(x && x.duration) || 4), 0);
+      const share = Math.max(1, Math.round((total / n) * 10) / 10);
+      return Array.from({ length: n }, () => share);
+    }
+
+    // The per-set target minutes the optimizer + quality score should use, for either
+    // mode. Single source of truth for App.generate(), re-scoring, and the UI preview.
+    function resolveSetDurations(settings, songs) {
+      const s = settings || {};
+      const n = Math.max(1, Math.floor(Number(s.numSets) || 1));
+      if (s.setLengthMode === 'library') return libraryDistributedDurations(songs, n);
+      const base = s.setDuration || 45;
+      const per = Array.isArray(s.setDurations) ? s.setDurations : [];
+      return Array.from({ length: n }, (_, i) => (per[i] > 0 ? per[i] : base));
+    }
+
+    // Place every leftover song into the sets (mutates `sets`). Each song goes to the
+    // currently shortest set, at the slot whose target energy best matches it, never
+    // displacing a forced opener (index 0) or closer (last), never splitting a
+    // "pair together" couple, and never landing next to a "keep apart" partner when
+    // any other slot exists. Recomputes each touched set's totalTime.
+    function distributeLeftoverSongs(sets, leftovers, opts) {
+      const o = opts || {};
+      if (!Array.isArray(sets) || !sets.length || !Array.isArray(leftovers) || !leftovers.length) return sets;
+      const aff = new Set(), anti = new Set();
+      for (const [a, b] of (o.songAffinities || [])) { if (a != null && b != null) aff.add(`${a}|${b}`); }
+      for (const [a, b] of (o.songAntiAffinities || [])) { if (a != null && b != null) { anti.add(`${a}|${b}`); anti.add(`${b}|${a}`); } }
+      const curveType = o.energyCurveType || 'standard';
+      const divW = o.diversityWeight ?? 1.0;
+      const setTime = (st) => st.songs.reduce((t, x) => t + (parseDuration(x && x.duration) || 0), 0);
+
+      // Highest-energy songs first so the strongest material claims the peak slots.
+      const queue = [...leftovers].sort((a, b) => getCompositeEnergy(b) - getCompositeEnergy(a));
+      // A leftover with an already-placed "pair together" partner goes right beside it
+      // (after its leader / before its follower) — e.g. a follower bumped by a forced
+      // closer. Returns true when placed.
+      const placeByPartner = (song) => {
+        for (const st of sets) {
+          const arr = st.songs, len = arr.length;
+          const lo = (o.forceOpener && len > 0) ? 1 : 0;
+          const hi = (o.forceCloser && len > 0) ? len - 1 : len;
+          for (let i = 0; i < len; i++) {
+            let p = -1;
+            if (aff.has(`${arr[i].id}|${song.id}`)) p = i + 1;
+            else if (aff.has(`${song.id}|${arr[i].id}`)) p = i;
+            if (p < lo || p > hi) continue;
+            const prev = arr[p - 1], next = arr[p];
+            if (prev && next && aff.has(`${prev.id}|${next.id}`)) continue;
+            arr.splice(p, 0, song);
+            st.totalTime = setTime(st);
+            return true;
+          }
+        }
+        return false;
+      };
+
+      for (const song of queue) {
+        if (aff.size && placeByPartner(song)) continue;
+        let si = 0, best = Infinity;
+        sets.forEach((st, i) => { const t = setTime(st); if (t < best) { best = t; si = i; } });
+        const arr = sets[si].songs;
+        const len = arr.length;
+        const lo = (o.forceOpener && len > 0) ? 1 : 0;
+        const hi = (o.forceCloser && len > 0) ? len - 1 : len;
+        const e = getCompositeEnergy(song);
+        let pick = -1, pickCost = Infinity, fallback = -1, fallbackCost = Infinity;
+        for (let p = lo; p <= Math.max(lo, hi); p++) {
+          const prev = arr[p - 1], next = arr[p];
+          if (prev && next && aff.has(`${prev.id}|${next.id}`)) continue; // would split a pair
+          let cost = o.useEnergyCurve === false ? 0
+            : Math.abs(e - targetEnergyCurve(len ? p / len : 0, curveType, o.setTemplate));
+          if (prev && prev.style && prev.style === song.style) cost += 0.5 * divW;
+          if (next && next.style && next.style === song.style) cost += 0.5 * divW;
+          const clash = (prev && anti.has(`${prev.id}|${song.id}`)) || (next && anti.has(`${next.id}|${song.id}`));
+          if (clash) { if (cost < fallbackCost) { fallbackCost = cost; fallback = p; } continue; }
+          if (cost < pickCost) { pickCost = cost; pick = p; }
+        }
+        if (pick < 0) pick = fallback >= 0 ? fallback : Math.max(lo, hi);
+        arr.splice(Math.min(pick, arr.length), 0, song);
+        sets[si].totalTime = setTime(sets[si]);
+      }
+      return sets;
+    }
+
     /******************* CORE GENERATOR (PHASE 2 OPTIMIZED) *******************/
     function generateSetlistsCore(songs, opts) {
       const {
@@ -7325,7 +7433,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         defaultSetDuration = 45,
         setDuration: _legacySetDuration = 45,
         setDurations = [],
-        allowSongReuse = false,
+        allowSongReuse: _allowSongReuse = false,
         useEnergyCurve = true,
         forceOpener = false,
         forceCloser = true,
@@ -7336,8 +7444,19 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         lockPlan = null
       } = opts || {};
 
+      // Whole-library mode places each song exactly once, so reuse is off by definition.
+      const allowSongReuse = _allowSongReuse && !(opts && opts.setLengthMode === 'library');
+
       // Resolve the uniform fallback duration from whichever field is present.
       const uniformDuration = defaultSetDuration !== 45 ? defaultSetDuration : (_legacySetDuration || 45);
+
+      // Whole-library mode: minute targets come from an even split of the library
+      // (aimed slightly under — see LIBRARY_FILL_UNDERSHOOT), then every leftover song
+      // is swept in after the greedy pass.
+      const libraryMode = opts && opts.setLengthMode === 'library';
+      const targetDurations = libraryMode
+        ? libraryDistributedDurations(songs, numSets)
+        : Array.from({ length: numSets }, (_, i) => (Array.isArray(setDurations) && setDurations[i] > 0) ? setDurations[i] : uniformDuration);
 
       const pool = [...songs].map(s => ({ ...s, duration: parseDuration(s.duration) }));
       const used = new Map();
@@ -7457,9 +7576,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
         // Resolve this set's target duration: per-set override takes priority,
         // falling back to the uniform duration when no override is configured.
-        const setDuration = (Array.isArray(setDurations) && setDurations[setNum] > 0)
-          ? setDurations[setNum]
-          : uniformDuration;
+        const setDuration = libraryMode
+          ? targetDurations[setNum] * LIBRARY_FILL_UNDERSHOOT
+          : targetDurations[setNum];
 
         const lockedSlots = new Map(); // idx -> song
         const plan = Array.isArray(lockPlan) && Array.isArray(lockPlan[setNum]) ? lockPlan[setNum] : null;
@@ -7625,7 +7744,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           if (candidates.length === 0) {
             candidates = pool.filter(s => !setUsedIds.has(s.id) && !reservedRoleIds.has(s.id) && isAvailable(s));
             if (candidates.length === 0) {
-              if (!allowSongReuse) {
+              if (!allowSongReuse && !libraryMode) {
                 // FIX (LEAK #2 — v3.8.0): Hard-abort the entire generation when the unique
                 // song pool is exhausted. Previously this only broke the inner while loop,
                 // allowing the outer for loop to continue and produce partial/duplicate sets.
@@ -7957,6 +8076,22 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         });
       }
 
+      // WHOLE-LIBRARY SWEEP: every active song not yet placed goes into a set. Dedup
+      // by id and title+artist (same keys as the no-reuse guard) so a library that
+      // holds a song twice still yields it once.
+      if (libraryMode && results.length) {
+        const placedKeys = new Set();
+        for (const r of results) for (const s of r.songs) for (const k of getSongDedupKeys(s)) placedKeys.add(k);
+        const leftovers = [];
+        for (const s of pool) {
+          const keys = getSongDedupKeys(s);
+          if (keys.some(k => placedKeys.has(k))) continue;
+          keys.forEach(k => placedKeys.add(k));
+          leftovers.push(s);
+        }
+        distributeLeftoverSongs(results, leftovers, opts);
+      }
+
       // POST-GENERATION DUPLICATE AUDIT (regression guard)
       // Scans the final output for cross-set duplicate songs when allowSongReuse=false.
       // Checks by BOTH song ID and normalized title+artist so spelling variants of the
@@ -7990,6 +8125,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
       const songsUsed = new Set(results.flatMap(r => r.songs.map(s => s.id))).size;
       results.stats = { songsUsed, attempts: totalAttempts };
+      results.targetDurations = targetDurations;
       results.generationWarnings = Array.from(generationWarnings);
 
       return results;
@@ -8572,7 +8708,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         }
         return needed;
       })();
-      const poolOk = !!(settings.allowSongReuse) || poolAvailable >= poolRequired;
+      const libraryMode = settings.setLengthMode === 'library';
+      const poolOk = libraryMode || !!(settings.allowSongReuse) || poolAvailable >= poolRequired;
+      const librarySplit = libraryMode ? resolveSetDurations(settings, activeSongs) : null;
 
       return (
         <div className="panel">
@@ -8607,6 +8745,18 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               onClick={() => { onSaveProfile && onSaveProfile(profName); setProfName(''); }}>💾 Save</button>
           </div>
 
+          <div className="set-length-mode" role="radiogroup" aria-label="Set length" data-testid="set-length-mode">
+            <span className="set-length-mode-label">Set length</span>
+            {[['time', '⏱ By duration', 'Fill each set to the minutes you set'],
+              ['library', '📚 Whole library', 'Split every active song across the sets — then trim']].map(([val, label, tip]) => (
+              <button key={val} type="button" role="radio" title={tip}
+                aria-checked={(settings.setLengthMode || 'time') === val}
+                data-testid={`set-length-${val}`}
+                className={`set-length-opt${(settings.setLengthMode || 'time') === val ? ' active' : ''}`}
+                onClick={() => onChange({ ...settings, setLengthMode: val })}>{label}</button>
+            ))}
+          </div>
+
           <div className="set-config">
             <div className="input-group">
               <label>Number of Sets</label>
@@ -8620,7 +8770,16 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                   onChange({ ...settings, numSets: n, setDurations: next });
                 }} />
             </div>
-            {(settings.numSets || 1) === 1 ? (
+            {libraryMode ? (
+              <div className="library-split" data-testid="library-split">
+                <div className="library-split-head">All {poolAvailable} active song{poolAvailable === 1 ? '' : 's'} → {settings.numSets || 1} set{(settings.numSets || 1) === 1 ? '' : 's'}</div>
+                <div className="library-split-sub">
+                  {poolAvailable
+                    ? `≈ ${Math.ceil(poolAvailable / (settings.numSets || 1))} songs · ~${Math.round(librarySplit[0])} min per set, ordered by the energy/tonal optimizer. Remove what you don't need.`
+                    : 'Add songs to your library to split them into sets.'}
+                </div>
+              </div>
+            ) : (settings.numSets || 1) === 1 ? (
               <div className="input-group">
                 <label>Duration (min)</label>
                 <input type="number" min="15" max="180"
@@ -8659,6 +8818,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             )}
           </div>
 
+          {!libraryMode && (
           <div className="input-group">
             <label style={{ display: 'flex', alignItems: 'center', gap: '.5rem', cursor: 'pointer', textTransform: 'none' }}>
               <input type="checkbox" checked={settings.allowSongReuse}
@@ -8667,6 +8827,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               Allow Song Reuse Across Sets
             </label>
           </div>
+          )}
 
           <details className="config-group" open data-testid="group-energy">
           <summary>⚡ Energy Curve</summary>
@@ -9111,7 +9272,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 </div>
           </details>
 
-          {!settings.allowSongReuse && poolAvailable > 0 && poolRequired > 0 && (
+          {!libraryMode && !settings.allowSongReuse && poolAvailable > 0 && poolRequired > 0 && (
             <div style={{
               padding: '.35rem .65rem', borderRadius: 6, marginTop: '.5rem', marginBottom: '.3rem',
               background: poolOk ? 'rgba(74,222,128,.07)' : 'rgba(255,107,53,.08)',
@@ -15526,12 +15687,9 @@ ${headerHtml}
         // Compute quality scores if not already attached (non-tonal-gravity path)
         if (!out.qualityScores) {
           try {
-            out.qualityScores = out.map((set, si) => {
-              const dur = (settings.setDurations && settings.setDurations[si] > 0)
-                ? settings.setDurations[si]
-                : (settings.setDuration || 45);
-              return calculateSetlistQualityScore(set, { ...settings, setDuration: dur, _anchorKey });
-            });
+            const durs = resolveSetDurations(settings, activeSongs);
+            out.qualityScores = out.map((set, si) =>
+              calculateSetlistQualityScore(set, { ...settings, setDuration: durs[si], _anchorKey }));
           } catch (e) { console.warn('Quality score computation failed:', e); }
         }
 
@@ -15579,7 +15737,9 @@ ${headerHtml}
         } else if (constraintErrors.length) {
           showToast(`Generated with ${constraintErrors.length} unresolved conflict(s) — see the constraint check.`, 'warning');
         } else {
-          showToast(`Generated ${settings.numSets} set(s)`, 'success');
+          showToast(settings.setLengthMode === 'library'
+            ? `Generated ${out.length} set(s) from all ${out.stats?.songsUsed ?? activeSongs.length} songs — trim as needed`
+            : `Generated ${settings.numSets} set(s)`, 'success');
         }
       };
 
@@ -15597,12 +15757,9 @@ ${headerHtml}
             const enriched = activeSongs.map(s => ({ ...s, normalizedKey: normalizeKey_TG(s.key, s.tags || []) }));
             _anchorKey = determineAnchorKey_TG(enriched, settings.anchorKey || '');
           }
-          sets.qualityScores = sets.map((set, si) => {
-            const dur = (settings.setDurations && settings.setDurations[si] > 0)
-              ? settings.setDurations[si]
-              : (settings.setDuration || 45);
-            return calculateSetlistQualityScore(set, { ...settings, setDuration: dur, _anchorKey });
-          });
+          const durs = resolveSetDurations(settings, activeSongs);
+          sets.qualityScores = sets.map((set, si) =>
+            calculateSetlistQualityScore(set, { ...settings, setDuration: durs[si], _anchorKey }));
           if (_anchorKey) sets.anchorKey = _anchorKey;
         } catch (e) { console.warn('Quality score recompute failed:', e); }
         return sets;

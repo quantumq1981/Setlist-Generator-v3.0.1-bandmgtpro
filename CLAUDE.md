@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-10-16 (Gig Prospector v2 — result cap, timeout handling, dual-format scoring, CAN-SPAM footer, §9ar).
+Last updated: 2026-10-18 (whole-library set-length mode — split the entire library across N sets, §9as).
 
 ---
 
@@ -184,6 +184,10 @@ Pipeline:
    - **templatePenalty** — `templateStylePenalty(style, pos, setTemplate)`.
    - **affinity/anti-affinity** — user "keep together / keep apart" song pairs.
    Also honors forced openers/closers, locks/pins, and set-count/duration targets.
+   **Set-length mode** (`settings.setLengthMode`, §9as): `'time'` (default — fill each
+   set to `setDurations`/`setDuration`) or `'library'` (split the whole active library
+   evenly across `numSets`; every song placed exactly once). Per-set targets for either
+   mode come from `resolveSetDurations(settings, songs)` — use it, not raw `setDurations`.
 
 2. **Tonal-gravity refinement** (`_WithTonalGravity`) — bidirectional adjacent-swap
    sweeps + distance-2/3 swaps that improve `calculateTonalTransitionScore_TG`
@@ -1975,6 +1979,54 @@ chain-with-live-music kept, distance + nearest sort, attribution, 5 venues added
 warning, and with an address set the footer prints it and a duo venue's link reads
 `?act=duo&track=…`. Live Overpass behaviour (real Vegas tag density, mirror availability) still needs
 one real-browser run.
+
+---
+
+## 9as. Change log — 2026-10 whole-library set-length mode
+
+Owner request: generate N sets from the **entire library** without picking minutes, then trim —
+instead of nudging per-set durations until omitted songs fit. Time-based mode is unchanged and
+stays the default.
+
+- **Setting (additive):** `settings.setLengthMode` = `'time'` (default; absent ⇒ time) |
+  `'library'`. Persisted with the per-band settings — no new localStorage key.
+- **Pure helpers** (module scope, just above `generateSetlistsCore`; whitelisted in
+  `extract-algorithm.js`): `SET_LENGTH_MODES`, `LIBRARY_FILL_UNDERSHOOT` (0.9),
+  `libraryDistributedDurations(songs, n)` (even split of total minutes; blank durations count
+  as 4), `resolveSetDurations(settings, songs)` (per-set targets for either mode — the single
+  source for `generate()`, `recomputeSetlistScores` and the UI), and
+  `distributeLeftoverSongs(sets, leftovers, opts)`.
+- **Core (`generateSetlistsCore`)** in library mode: each set's greedy target is its fair share
+  × 0.9, so the builder never exhausts the pool mid-set (the no-reuse abort guard would drop
+  that whole set); pool exhaustion no longer aborts in this mode. After the set loop a sweep
+  places every unplaced song (dedup by id **and** title+artist, same keys as the reuse guard):
+  highest-energy first, into the currently shortest set, at the slot whose
+  `targetEnergyCurve` best matches it, never at a forced opener/closer slot, never splitting a
+  pair, avoiding keep-apart neighbours, and seated beside an already-placed pair partner when it
+  has one. Tonal refinement / deep SA then polish the order as usual. `allowSongReuse` is
+  forced off in library mode (each song exactly once by definition).
+- `results.targetDurations` now rides on the output; the tonal wrapper's quality score uses it
+  per set (previously it scored every set against the uniform `opts.setDuration`, ignoring
+  per-set overrides). The validator skips the "library too small for the requested minutes"
+  warning in library mode.
+- **UI** (`SetConfiguration`): a "Set length" radio pair — ⏱ By duration / 📚 Whole library
+  (`data-testid="set-length-time" / "set-length-library"`). Library mode swaps the duration
+  inputs for a summary (`data-testid="library-split"`: "All N active songs → K sets, ≈ songs ·
+  ~min per set") and hides Allow Song Reuse and the pool-size meter. Generate toast reads
+  "Generated K set(s) from all N songs — trim as needed".
+- **Known, pre-existing (not changed):** with a *locked closer pool* plus a "pair together"
+  couple, the closer swap can occasionally replace a pair's follower (~7% of trials in a probe),
+  in time mode as well. Library mode re-seats the bumped follower beside its leader when the
+  slot allows.
+
+Verification: `npm test` → **267/267** (+12 in `test/set-length-library.test.js`: even split,
+mode resolution, every song once across 1/3/4 sets from 200 songs, balanced set times, locked
+closers last, pairs/anti-pairs, tonal+deep path, time mode unchanged, sweep opener/closer +
+partner seating, validator, reuse ignored); Babel compile clean (index.html + 3 companions);
+headless Playwright drive of the real app (vendored libs, 200-song library with 10 shelved) →
+14/14, 0 page errors: toggle defaults to By duration, library mode hides duration inputs and
+shows "All 190 active songs → 4 sets", Generate yields 4 sets holding all 190 active songs once
+(no shelved songs) at 190/189/191/191 min, the mode persists, switching back restores the inputs.
 
 ---
 
