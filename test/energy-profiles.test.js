@@ -17,6 +17,7 @@ const FULL = {
   useEnergyCurve: true, energyCurveType: 'party', energyWeight: 0.5,
   useTonalGravity: true, tonalSmoothness: 40, anchorKey: 'A', tonalWeight: 0.3,
   setTemplate: 'slowBurn', optimizationLevel: 'deep', randomness: 20, diversityWeight: 0.8,
+  setLengthMode: 'time',
 };
 
 test('extractEnergyProfile picks exactly the optimizer fields, nothing else', () => {
@@ -60,4 +61,31 @@ test('applyEnergyProfile tolerates a missing/empty config', () => {
   assert.deepEqual(applyEnergyProfile(base, null), base);
   assert.deepEqual(applyEnergyProfile(base, {}), base);
   assert.deepEqual(applyEnergyProfile(base, { config: {} }), base);
+});
+
+test('a whole-library profile carries setLengthMode + numSets and restores both', () => {
+  const cfg = extractEnergyProfile({ ...FULL, setLengthMode: 'library', numSets: 4 });
+  assert.equal(cfg.setLengthMode, 'library');
+  assert.equal(cfg.numSets, 4);
+  const out = applyEnergyProfile({ numSets: 2, setDuration: 45, setDurations: [40, 50], setLengthMode: 'time' }, { config: cfg });
+  assert.equal(out.setLengthMode, 'library');
+  assert.equal(out.numSets, 4);
+  assert.deepEqual(out.setDurations, [40, 50, 45, 45], 'durations resized, existing values kept');
+});
+
+test('a by-duration profile stores the mode but never the set count', () => {
+  const cfg = extractEnergyProfile({ ...FULL, setLengthMode: 'time', numSets: 4 });
+  assert.equal(cfg.setLengthMode, 'time');
+  assert.equal('numSets' in cfg, false);
+  const out = applyEnergyProfile({ numSets: 2, setLengthMode: 'library' }, { config: cfg });
+  assert.equal(out.setLengthMode, 'time');
+  assert.equal(out.numSets, 2, 'band set count untouched');
+});
+
+test('an old profile (no setLengthMode) leaves the current mode and set count alone', () => {
+  const old = { config: { energyCurveType: 'party' } };
+  const out = applyEnergyProfile({ numSets: 3, setLengthMode: 'library' }, old);
+  assert.equal(out.setLengthMode, 'library');
+  assert.equal(out.numSets, 3);
+  assert.equal(out.energyCurveType, 'party');
 });

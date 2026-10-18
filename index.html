@@ -3527,16 +3527,29 @@
     // one global key (additive; never touches an existing per-band key). The two pure
     // helpers are whitelisted for the test suite.
     const ENERGY_PROFILES_KEY = 'setlist_energy_profiles_v3';
-    const ENERGY_PROFILE_FIELDS = ['useEnergyCurve', 'energyCurveType', 'energyWeight', 'useTonalGravity', 'tonalSmoothness', 'anchorKey', 'tonalWeight', 'setTemplate', 'optimizationLevel', 'randomness', 'diversityWeight'];
+    // setLengthMode rides along so a profile remembers "whole library" vs "by duration".
+    // A whole-library profile also stores numSets — in that mode the set count IS the
+    // gig's shape. Time-mode profiles leave numSets/durations alone (the band's own).
+    const ENERGY_PROFILE_FIELDS = ['useEnergyCurve', 'energyCurveType', 'energyWeight', 'useTonalGravity', 'tonalSmoothness', 'anchorKey', 'tonalWeight', 'setTemplate', 'optimizationLevel', 'randomness', 'diversityWeight', 'setLengthMode'];
     function extractEnergyProfile(settings) {
       const cfg = {};
       ENERGY_PROFILE_FIELDS.forEach(f => { if (settings && settings[f] !== undefined) cfg[f] = settings[f]; });
+      if (settings && settings.setLengthMode === 'library' && settings.numSets > 0) cfg.numSets = settings.numSets;
       return cfg;
     }
     function applyEnergyProfile(settings, profile) {
       const cfg = (profile && profile.config) || {};
       const next = { ...settings };
       ENERGY_PROFILE_FIELDS.forEach(f => { if (cfg[f] !== undefined) next[f] = cfg[f]; });
+      if (cfg.setLengthMode === 'library' && cfg.numSets > 0) {
+        const n = Math.max(1, Math.min(10, Math.floor(cfg.numSets)));
+        const base = next.setDuration || 45;
+        const prev = Array.isArray(next.setDurations) ? next.setDurations : [];
+        next.numSets = n;
+        // Keep setDurations sized to numSets (same rule as the Number of Sets input) so
+        // switching the profile back to "by duration" has a value for every set.
+        next.setDurations = Array.from({ length: n }, (_, i) => (prev[i] > 0 ? prev[i] : base));
+      }
       return next;
     }
 
@@ -6675,15 +6688,17 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
   const tonalOpts = { anchorKey: anchor };
   const smoothness = opts.tonalSmoothness ?? 70;
 
-  // Pairing-aware refinement: build bidirectional affinity / anti-affinity sets so
-  // the tonal swap sweeps never separate a "pair together" couple or push a
-  // "keep apart" pair adjacent. The constants dwarf any tonal delta so pairing
+  // Pairing-aware refinement so the tonal swap sweeps never separate a "pair
+  // together" couple, reverse it, or push a "keep apart" pair adjacent. The
+  // affinity set is ORDERED (a → b only): a symmetric set scored B,A the same as
+  // A,B, so an adjacent swap could flip a pair for a marginal tonal gain. The
+  // anti set stays bidirectional. The constants dwarf any tonal delta so pairing
   // intent always wins over a marginal harmonic improvement.
   const _affSet = new Set();
   const _antiSet = new Set();
   for (const [a, b] of (opts.songAffinities || [])) {
     if (a == null || b == null) continue;
-    _affSet.add(`${a}|${b}`); _affSet.add(`${b}|${a}`);
+    _affSet.add(`${a}|${b}`);
   }
   for (const [a, b] of (opts.songAntiAffinities || [])) {
     if (a == null || b == null) continue;
@@ -6927,10 +6942,15 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       }
 
       // PERF: Pre-build affinity lookup maps (O(1) instead of O(k) per pair check)
+      // affinityOrdered drives the dominant adjacency reward: only A → B counts, so
+      // SA never reverses a pair. affinitySet (either order) keeps the small
+      // near-but-not-adjacent bonus.
       const affinitySet = new Set();
+      const affinityOrdered = new Set();
       for (const pair of affinities) {
         affinitySet.add(`${pair[0]}|${pair[1]}`);
         affinitySet.add(`${pair[1]}|${pair[0]}`);
+        affinityOrdered.add(`${pair[0]}|${pair[1]}`);
       }
       const antiAffinitySet = new Set();
       for (const pair of antiAffinities) {
@@ -6984,7 +7004,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           // harmonic gain.
           if (i > 0) {
             const pairKey = `${arr[i - 1].id}|${arr[i].id}`;
-            if (affinitySet.has(pairKey)) c -= 50; // adjacent affinity bonus (dominant)
+            if (affinityOrdered.has(pairKey)) c -= 50; // adjacent, in-order affinity bonus (dominant)
             if (antiAffinitySet.has(pairKey)) c += 50; // adjacent anti-affinity penalty (dominant)
           }
         }
@@ -7882,7 +7902,18 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               if (!leaders) return true;
               return !leaders.some(leaderPlaceable);
             });
-            if (notHeldBack.length > 0) selectable = notHeldBack;
+            if (notHeldBack.length > 0) {
+              selectable = notHeldBack;
+            } else {
+              // Every candidate is a held-back follower (typical in the last slot, when
+              // only a pair's second song fits the remaining time). Place its LEADER
+              // instead so the forced-adjacency pass glues the pair in order, rather
+              // than letting the follower in first. Reserved openers/closers stay out.
+              for (const c of selectable) {
+                const lid = (affinitySecondOf.get(c.s.id) || []).find(id => leaderPlaceable(id) && !reservedRoleIds.has(id));
+                if (lid) { selectable = [{ ...c, s: pool.find(x => x.id === lid) }]; break; }
+              }
+            }
           }
 
           // Temperature-controlled selection: randomness 0=deterministic, 50=top-6, 100=softmax-all
@@ -7962,6 +7993,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         if (forceCloser && setSongs.length > 0) {
           const lastIdx = setSongs.length - 1;
           const lastSong = setSongs[lastIdx];
+          // When the last song is the trailing half of a "pair together" couple (its
+          // leader sits right before it), replacing it with a closer would orphan the
+          // pair. Instead a designated closer is APPENDED after the pair, and the soft
+          // style-closer swap is skipped.
+          const lastIsPairFollower = lastIdx > 0
+            && (affinityNextMap.get(setSongs[lastIdx - 1].id) || []).includes(lastSong.id);
           const closerStyles = ['ballad', 'acoustic', 'slow blues', 'blues', 'midtempo', 'swing', 'soul', 'waltz', 'americana', 'blues rock'];
 
           // Check if a designated closer should be used.
@@ -8017,7 +8054,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             if (!useLockedCloser && !allowSongReuse) markUsed(lastSong);
           }
 
-          if (useLockedCloser && lockedCloserSong) {
+          if (useLockedCloser && lockedCloserSong && lockedCloserSong.id !== lastSong.id && lastIsPairFollower) {
+            // Keep the pair intact; the designated closer goes after it.
+            if (!allowSongReuse) markUsed(lastSong);
+            unmarkUsed(lockedCloserSong);
+            setSongs.push(lockedCloserSong);
+            setUsedIds.add(lockedCloserSong.id);
+            markUsed(lockedCloserSong);
+          } else if (useLockedCloser && lockedCloserSong) {
             if (lockedCloserSong.id !== lastSong.id) {
               // Unmark the closer song before re-marking so count is accurate
               unmarkUsed(lockedCloserSong);
@@ -8029,7 +8073,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
               // Locked closer is already the last song; re-mark it
               if (!allowSongReuse) markUsed(lastSong);
             }
-          } else if (!closerStyles.includes(lastSong.style)) {
+          } else if (!closerStyles.includes(lastSong.style) && !lastIsPairFollower) {
             // Fallback to style-based closer selection.
             // FIX (LEAK #1 — v3.8.0): Unmark lastSong before the isAvailable() candidate
             // scan so the song being replaced doesn't falsely occupy a dedup slot. If no
@@ -15772,7 +15816,7 @@ ${headerHtml}
       const saveEnergyProfile = (name) => {
         const nm = (name || '').trim();
         if (!nm) return showToast('Name the profile first', 'warning');
-        const prof = { id: genId(), name: nm, ts: Date.now(), config: extractEnergyProfile(settings) };
+        const prof = { id: genId(), name: nm, ts: Date.now(), config: extractEnergyProfile({ ...settings, setLengthMode: settings.setLengthMode || 'time' }) };
         // Overwrite a same-named profile so re-saving updates in place; keep sorted.
         const list = [...energyProfiles.filter(p => (p.name || '').toLowerCase() !== nm.toLowerCase()), prof]
           .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
