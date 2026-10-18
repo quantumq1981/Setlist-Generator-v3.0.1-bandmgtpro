@@ -49,3 +49,99 @@
 - Glitter Gulch Tiki: 113 N 4th St LV 89101; 702-826-2475; info@glittergulchtiki.com (contact page); Event Request form
 - Jive Turkey: 608 S Maryland Pkwy Ste 160 LV 89101 (Huntridge area, not Fremont); shows events@jiveturkeydive.com (mailto actually goes to sam@jiveturkeydive.com cc aod@); jiveturkeydive.com; live music per RJ
 - Juan's Flaming Fajitas (NLV): 2660 W Centennial Pkwy NLV 89084; (702) 473-5529; Saturday live music 6-9pm (lvlocalmusicians FB group)
+
+---
+
+## Pass 2 — country/golf clubs + speculative rooms (Firecrawl / WebSearch, 2026-10-18)
+
+## Clubs
+- Red Rock CC: Sarah Gamble, Director of Catering/Sales, sgamble@redrockcc.com (redrockcountryclub.com/Weddings_Events); dining/events reservations@redrockcc.com, (702) 304-5600 (club FB)
+- Canyon Gate CC: Invited Clubs "Private Events Team" — inquiry form at invitedclubs.com/clubs/canyon-gate-country-club/host-an-event/weddings/; no email published
+- Las Vegas CC: Catering Director brandim@lasvegascc.com, 702-734-1122 x298 (lasvegascc.com/Contact_us + /gatherings); general Info@LasVegasCC.com
+- Las Vegas National GC: 1911 E Desert Inn Rd LV 89109; up to 1000 guests (Wedding Spot); no contact found
+- Las Vegas Golf Club (Arcis): Events | Tournaments — Megan Scholl megan.scholl@arcisgolf.com; Sahar Panahizadeh spanahizadeh@arcisgolf.com (arcisgolf.com/clubs/las-vegas-golf-club/club-contacts)
+- Wildhorse GC: 2100 W Warm Springs Rd Henderson 89014; 702-434-9000; golfwildhorse.com; City of Henderson-owned, managed by Elite Golf; Grand Ballroom 200 seated
+- Angel Park GC (Arcis): 100 S Rampart Blvd LV 89145; weddings at arcisgolf.com/clubs/angel-park-golf-club/weddings
+- Angel Park GC (Arcis): Events | Tournaments Megan Scholl (Tournament Sales Director) megan.scholl@arcisgolf.com; 702.254.4653; general inquiry form (arcisgolf.com/clubs/angel-park-golf-club/club-contacts)
+- Rhodes Ranch GC: weddings inquiry form only (rhodesranchgolf.com/weddings); no email
+- Cascata GC: Special Event (Non-Golf) Inquiries Bheulitt@golfcascata.com; golf events klescenski@golfcascata.com (golfcascata.com/contact)
+- Serket GC: 2851 Grand Hills Dr Henderson NV 89052 (city is Henderson, not LV); 702-777-6809 (Here Comes The Guide); golfserket.com/events (form); no email
+- The Legacy GC: 130 Par Excellence Dr Henderson 89074; 702-476-0090 (Tripleseat); thelegacygc.com; no email
+- Siena GC: 10575 Siena Monte Ave LV 89135; 702-341-9200 (general line); no email
+- Revere GC: 2600 Hampton Rd Henderson 89052; 702.617.5757; contact page names Katie Schwalbe, Wedding & Events Coordinator, kschwalbe@wgolfp.com (reveregolf.com/contact-us); wedding page mailto cyakubow@reveregolf.com (reveregolf.com/las-vegas-wedding)
+- DragonRidge CC: 552 S Stephanie St Henderson 89012; Catering Director clivingston@dragonridgecc.com (702) 835-8148 (dragonridge.com weddings page); events@dragonridgecc.com (club weddings FB)
+- Anthem CC: 1 Club Side Dr Henderson 89052; Invited Clubs private-events form; no email
+- SouthShore CC: 100 Strada Di Circolo Henderson 89011; 702-856-8458; southshorecclv.com (Henderson Chamber); wedding & events coordinator Michelle Hare (The Knot); no email
+- Spanish Trail CC: 5050 Spanish Trail Ln LV 89113; 702.364.5050; private events/weddings inquiry form (spanishtrailcc.com/Inquiries/Private_Events); no email
+- Los Prados GC: weddings & banquets page lospradosgolf.com/weddings-banquets; no email in results
+- Desert Pines GC (Arcis): 3415 E Bonanza Rd LV 89122; 888-427-6678
+- Painted Desert GC (Arcis): 5555 Painted Mirage Rd LV 89149; 702-645-2570 (2023 flyer)
+- Desert Pines GC: 702.388.4400 (arcisgolf.com home); club-contacts page lists no event email; general inquiry form
+- Painted Desert GC: Events | Tournaments Sahar Panahizadeh (arcisgolf.com/clubs/painted-desert-golf-club/club-contacts); her email spanahizadeh@arcisgolf.com + 702.967.3209 per the Las Vegas Golf Club contacts page; club 702.645.2570
+- Las Vegas Golf Club extra: Megan Scholl 702.967.2240; club 702.646.3003
+- LV Paiute Golf Resort: 10325 Nu-Wav Kaiv Blvd LV 89124; weddings page lvpaiutegolf.com/weddings.html; no email found
+- Cili at Bali Hai: 5160 S Las Vegas Blvd LV 89119; (702) 597-6324 (Tripleseat); now mainly a private-event space (Gayot); no email
+- The Stirling Club: 2827 Paradise Rd LV 89109; Director of Events "Chelsea" — Events@TheStirlingClubLV.com, 702.732.9700 ext 2 (club Facebook); thestirlingclub.com/private-events (6 spaces, 30–500 guests)
+- Firelight Barn: 546 S Boulder Hwy Henderson 89015; (702) 518-7464; info@firelightbarn.com (firelightbarn.com/contact — site title "Live Music Las Vegas & Henderson"; dinner theater + private events/weddings)
+- Atomic Golf: 1850 S Main St LV 89104; 725-234-4985; info@atomicgolf.com (contact page); private-event packages w/ live band or DJ add-ons
+- Canyon Gate CC: main line 702-363-0481; private events director Dawn Ulrey per ClubCorp team page + RJ (undated — may have changed); Invited Clubs inquiry form
+
+## Speculative rooms (Yelp status/phone/address unless noted)
+- Stray Pirate: OPEN; 1321 S Commerce St LV 89102 (Arts District); (725) 254-2769; tiki/cocktail bar
+- Alchemist Bar & Restaurant: OPEN; 4300 W Spring Mountain Rd LV 89102; (702) 745-4664
+- Herbs & Rye: OPEN; 3713 W Sahara Ave LV 89102; (702) 982-8036
+- The Black Sheep: OPEN; 8680 W Warm Springs Rd LV 89148; (702) 954-3998
+- 595 Craft & Kitchen: OPEN; 4950 S Rainbow Blvd Ste 100 LV 89118; (702) 586-1050
+- Esther's Kitchen: OPEN; 1131 S Main St LV 89104; (702) 570-7864
+- **Aces & Ales: no Arts District location** — Yelp shows 2801 N Tenaya Way Ste A LV 89128 (702) 638-2337; 3740 S Nellis Blvd LV 89121 (702) 436-7600; sister Evolve Brewing 8680 W Sunset. The report's "1327 S Main" is Nevada Brew Works' address → fix entry
+- **Nevada Brew Works is in the Arts District, not Henderson**: 1327 S Main St Ste 160 LV 89104; (702) 664-1500 → fix city/region
+- CraftHaus Arts District: OPEN; 197 E California St Ste 130 LV 89104; (702) 888-1026
+- CraftHaus Brewery (Henderson): OPEN; 7350 Eastgate Rd Ste 110 Henderson 89011; (702) 462-5934
+- Commonwealth: OPEN; 525 E Fremont St LV 89101; (702) 445-6400; Yelp tags it a music venue
+- Downtown Cocktail Room: not returned by Yelp → check status
+- **Downtown Cocktail Room: CLOSED Nov 2024** (Eater Vegas, City Cast; Yelp CLOSED) → remove
+- Barley's Casino: OPEN; 4500 E Sunset Rd Ste 30 Henderson 89014; (702) 458-2739 (Yelp lists it as a casino only)
+- Remedy's Tavern: OPEN; 530 Conestoga Way Henderson 89002 (702) 478-8300; 3265 St Rose Pkwy Henderson 89052 (702) 982-3026
+- Bäco Grill: not on Yelp under that name → check
+- BLVD Grille (existing): phone 702-570-3095; theblvdgrille.com (site + Yelp)
+- Bäco Grill: no listing found on Yelp or the web (search returns BLVD Grille) → keep, flag "could not confirm it exists"
+- Giuseppe's Bar & Grille: OPEN; 1461 E Lake Mead Pkwy Henderson 89015 (725) 204-8647; 2630 W Horizon Ridge Pkwy Henderson 89052 (702) 675-4487; also 6065 S Durango Dr LV
+- Mimi & Coco Bistro: OPEN; 40 Costa Di Lago Ste 120 Henderson 89011 (Lake Las Vegas); (702) 382-7900; wine bar/French
+- Sunset Patio Bar: OPEN; 869 S Boulder Hwy Henderson 89015; (702) 478-5555
+- Scoundrels Pub II: OPEN; 4850 Camino Al Norte Ste D North Las Vegas 89031; (702) 642-8014
+- Seventy Six Aliante (Station Casinos tavern): OPEN; 7225 Aliante Pkwy North Las Vegas 89084; (702) 631-1000
+- Sierra Gold: OPEN; 6929 Aliante Pkwy North Las Vegas 89084; (702) 899-4307 (chain — also 6515 S Jones Blvd LV)
+- PT's Gold: OPEN, multiple Henderson locations e.g. 903 E Lake Mead Pkwy 89015 (702) 991-1791; 61 W Horizon Ridge Pkwy 89012 (702) 566-9025
+- Sartiano's Italian Steakhouse (Wynn): OPEN; (702) 770-3463
+- Gigolo (Vanderpump Hotel): OPEN; (702) 777-3777
+- Vinyl Room: OPEN; (702) 632-7631 (matches existing)
+- Maroon by Kwame Onwuachi (Sahara): OPEN (275 Yelp reviews — confirms it opened); (702) 761-8888
+- Cantina Contramar: not on Yelp → check web
+- Cantina Contramar (Fontainebleau): NOW OPEN (Fontainebleau site); 2777 S Las Vegas Blvd Level 2; (702) 678-9000 (Yelp); IG cantinacontramarlv
+- The Corner Store (Cosmopolitan): no listing yet (report says opens Nov 9 2026) — keep as announced
+- Ellis Island Front Yard: (702) 733-8901 (Ellis Island main)
+- Bottled Blonde: OPEN (RJ: $50M multi-story bar & kitchen opened June 26 at Grand Bazaar Shops); rooftop + events/groups; bottledblondelv.com
+- Sip Sip Wok (Virgin): announced Oct 2 2026, slated Oct 1 but delayed — "hits a snag" (casino.org Vital Vegas); not open yet
+- Alex Prime (El Cortez): OPEN; 600 E Fremont St; (702) 474-3603
+- Neon Fork: not found on Yelp → check web
+- Durango Casino & Resort main line: (888) 899-7770
+- Neon Fork: Boyd Gaming gastropub ("elevated comfort food and handcrafted cocktails") replacing Tony Roma's at the Fremont (casino.org Vital Vegas); no listing yet
+- Bojangles LINQ: no Yelp listing found
+- Lotus of Siam: OPEN again at Commercial Center — 953 E Sahara Ave Ste A5 LV 89104; (702) 735-3033 (also 620 E Flamingo; Red Rock)
+- Braseria by EDO: OPEN; 3900 Paradise Rd Unit Z LV 89169; (702) 641-1345
+- PISCES (Wynn): OPEN; (702) 770-3310
+- EDO Gastropub (Gramercy) / Stix Asia (UnCommons): no listings yet — still announced
+- Finney's Crafthouse: existing Downtown Summerlin location OPEN — 10955 Oval Park Dr LV 89135, (725) 334-2990; the report's 6563 S Las Vegas Blvd is a new announced location
+- Carbone Riviera (Bellagio): OPEN; (702) 693-8105
+- Trattoria Reggiano (Summerlin): OPEN; 2020 Park Centre Dr Ste 140 LV 89135; (702) 749-6966
+- Pancho's (Summerlin): OPEN; 11020 Lavender Hills Dr LV 89135; (702) 982-0111
+- Jing (existing): OPEN; 10975 Oval Park Dr Ste 100 LV 89135; (702) 333-1512
+- Andiron: Yelp shows Harlo Steakhouse & Bar at 1720 Festival Plaza Dr instead → check closure
+- Public School 702: not on Yelp → check closure
+- **Andiron Steak & Sea: CLOSED** (Yelp CLOSED; Eater: "Harlo replaces Andiron Steak & Sea") → remove. Harlo Steakhouse & Bar now at 1720 Festival Plaza Dr, (702) 333-0402
+- **Public School 702: CLOSED** (Review-Journal "Downtown Summerlin restaurant closes after almost a decade"; Yelp CLOSED) → remove
+- Casa Playa (Encore): OPEN; (702) 770-5340
+- Hearthstone Kitchen & Cellar (Red Rock): OPEN; (702) 797-7344; hearthstonelv.com
+- Girograno Pizza Rodizio: "Opening soon at the Miracle Mile Shops" / "Coming Fall 2026" (girograno.com)
+- Summerlin Room: replacing Clubhouse Deli, behind the Summerlin Bar; construction timeline being finalized, target before year end (casino.org). NOTE property rebrand: JW Marriott Las Vegas + Rampart Casino are now "The Resort at Summerlin" (Fox5 Dec 2025, Hotel Management)
+- Bugsy's Bar (Flamingo): full revamp announced Nov 2025 for the 80th anniversary, new cocktail menu, 24-hour service (Caesars release); no reopening date found

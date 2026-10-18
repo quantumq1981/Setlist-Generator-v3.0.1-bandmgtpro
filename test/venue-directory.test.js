@@ -19,7 +19,7 @@ test('no duplicate names (case- and accent-insensitive)', () => {
     assert.ok(!seen.has(k), `duplicate directory name: "${d.name}" vs "${seen.get(k)}"`);
     seen.set(k, d.name);
   }
-  assert.ok(VENUE_DIRECTORY.length >= 225);
+  assert.ok(VENUE_DIRECTORY.length >= 220);
 });
 
 test('every entry is well-formed', () => {
@@ -35,7 +35,8 @@ test('every entry is well-formed', () => {
 test('closed and not-a-fit rooms are not listed', () => {
   const names = VENUE_DIRECTORY.map(d => key(d.name));
   for (const dead of ['fat cat', 'mama rabbit', 'vino del lago', 'skyfall', 'double down', 'foundation room',
-    'e-string', "don't tell mama", 'pepper club', 'artifice', 'beauty bar', 'joseph james']) {
+    'e-string', "don't tell mama", 'pepper club', 'artifice', 'beauty bar', 'joseph james',
+    'downtown cocktail room', 'andiron', 'public school 702']) {
     assert.ok(!names.some(n => n.includes(dead)), `closed/unfit venue listed: ${dead}`);
   }
 });
@@ -50,6 +51,8 @@ test('the direct-booking leads carry their published channels', () => {
   assert.equal(byName['Category 10 (Flamingo)'].email, 'promotions@category10.com');
   assert.equal(byName['Red Dwarf'].email, 'Natalie@reddwarflv.com');
   assert.equal(byName['Taverna Costera'].email, 'booking@tavernacostera.com');
+  assert.equal(byName['Red Rock Country Club'].email, 'sgamble@redrockcc.com');
+  assert.equal(byName['Las Vegas Country Club'].email, 'brandim@lasvegascc.com');
 });
 
 test('directoryEntryToVenue flags unverified entries and keeps contacts', () => {

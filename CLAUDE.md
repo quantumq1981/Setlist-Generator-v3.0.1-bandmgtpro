@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-10-18 (directory contact research + Prospector pulls contacts from the directory, §9av).
+Last updated: 2026-10-18 (club + speculative-room research pass, §9aw).
 
 ---
 
@@ -2146,6 +2146,38 @@ map-data-wins, venue mapping); Babel compile clean; headless drives — director
 no dups, bulk add, 0 page errors) and Prospector 5/5 with a mocked Overpass response (Red Dwarf
 and "Mickie Finnz Fish House & Bar" rows show their directory emails, an unlisted place is
 untouched, the added venue keeps email + contact + provenance note, 0 page errors).
+
+---
+
+## 9aw. Change log — 2026-10 club + speculative-room research pass
+
+Second research pass after §9av, covering the 25 country/golf clubs and the ~56 rooms the
+report marked SPECULATIVE / ANNOUNCED / NEW / STALE. Data-only (77 entries patched, 3
+removed, 222 total); the same rules as §9av — only venue-published contacts, each touched
+entry's `extra` ends with `Contact research (Oct 18 2026): <source>`, nothing guessed. Tools:
+Firecrawl search/scrape for emails, the **Yelp connector** for open/closed status + phone +
+address (it reports `is_closed` directly and doesn't rate-limit like Firecrawl), WebSearch as
+fallback. Log: `docs/venue-contact-research-2026-10.md` (pass 2 section).
+
+- **Clubs:** 11 of 25 now carry an events email (Red Rock CC, Las Vegas CC, Las Vegas Golf
+  Club, Angel Park, Cascata, Revere, DragonRidge, Painted Desert, The Stirling Club, Firelight
+  Barn, Atomic Golf) and 19 a phone. For clubs the catering/events director *is* the booking
+  route for event entertainment, so `verified: true` where that email is on the club's own
+  site (7). Arcis Golf clubs share an events team (Megan Scholl / Sahar Panahizadeh). Serket
+  is in Henderson, not Las Vegas. Firelight Barn turned out to be a live-music dinner theater.
+- **Speculative rooms:** almost all confirmed open with a phone; **removed 3 closed** —
+  Downtown Cocktail Room (closed Nov 2024), Andiron Steak & Sea (replaced by Harlo), Public
+  School 702. **Corrected:** "Aces & Ales (Arts District)" → `Aces & Ales` (no Arts District
+  location; the report's 1327 S Main is Nevada Brew Works, which is in the Arts District, not
+  Henderson). Rampart Casino is now **The Resort at Summerlin** (noted on Round Bar / Summerlin
+  Room; names kept so existing pipelines still dedup). Still not open: Sip Sip Wok (delayed),
+  Neon Fork, Girograno, EDO Gastropub, Stix Asia, The Corner Store; Bäco Grill couldn't be
+  found anywhere and is flagged. UnCommons runs a Fri/Sat local-artist slot.
+- Guard test extended (3 more closed rooms, club emails, count ≥ 220).
+
+Verification: `npm test` → 283/283; Babel compile clean; headless drives — directory 8/8 (222
+rows, 9 regions, no dups, bulk add, 0 page errors), Prospector 5/5 (directory contacts still
+flow into map results), 0 page errors; no two directory names share a match key.
 
 ---
 
