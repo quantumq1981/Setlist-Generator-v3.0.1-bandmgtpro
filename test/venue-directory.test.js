@@ -8,7 +8,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { algorithm } = require('./helpers.js');
 
-const { VENUE_DIRECTORY, VENUE_TYPES, directoryEntryToVenue } = algorithm;
+const { VENUE_DIRECTORY, VENUE_TYPES, directoryEntryToVenue,
+  directoryNameKey, findDirectoryMatch, enrichProspectFromDirectory, prospectToVenue } = algorithm;
 const key = (s) => s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 test('no duplicate names (case- and accent-insensitive)', () => {
@@ -18,7 +19,7 @@ test('no duplicate names (case- and accent-insensitive)', () => {
     assert.ok(!seen.has(k), `duplicate directory name: "${d.name}" vs "${seen.get(k)}"`);
     seen.set(k, d.name);
   }
-  assert.ok(VENUE_DIRECTORY.length >= 230);
+  assert.ok(VENUE_DIRECTORY.length >= 225);
 });
 
 test('every entry is well-formed', () => {
@@ -33,7 +34,8 @@ test('every entry is well-formed', () => {
 
 test('closed and not-a-fit rooms are not listed', () => {
   const names = VENUE_DIRECTORY.map(d => key(d.name));
-  for (const dead of ['fat cat', 'mama rabbit', 'vino del lago', 'skyfall', 'double down', 'foundation room']) {
+  for (const dead of ['fat cat', 'mama rabbit', 'vino del lago', 'skyfall', 'double down', 'foundation room',
+    'e-string', "don't tell mama", 'pepper club', 'artifice', 'beauty bar', 'joseph james']) {
     assert.ok(!names.some(n => n.includes(dead)), `closed/unfit venue listed: ${dead}`);
   }
 });
@@ -46,6 +48,8 @@ test('the direct-booking leads carry their published channels', () => {
   assert.equal(byName['Maxan Jazz Club'].email, 'owner@maxanjazz.com');
   assert.equal(byName['Gold Mine Tavern'].email, 'sam@goldminetavern.com');
   assert.equal(byName['Category 10 (Flamingo)'].email, 'promotions@category10.com');
+  assert.equal(byName['Red Dwarf'].email, 'Natalie@reddwarflv.com');
+  assert.equal(byName['Taverna Costera'].email, 'booking@tavernacostera.com');
 });
 
 test('directoryEntryToVenue flags unverified entries and keeps contacts', () => {
@@ -57,4 +61,32 @@ test('directoryEntryToVenue flags unverified entries and keeps contacts', () => 
   assert.equal(gm.email, 'sam@goldminetavern.com');
   assert.doesNotMatch(gm.notes, /verify current booking contact/);
   assert.match(gm.notes, /23 S Water St/);
+});
+
+test('prospector results pick up directory contacts by name', () => {
+  // exact (case, accents, "The", punctuation, property suffix ignored)
+  assert.equal(findDirectoryMatch('the red dwarf').name, 'Red Dwarf');
+  assert.equal(findDirectoryMatch('Rí Rá Irish Pub').name, 'Rí Rá Irish Pub');
+  assert.equal(findDirectoryMatch('Ri Ra Irish Pub').name, 'Rí Rá Irish Pub');
+  // OSM name that extends a distinctive directory name
+  assert.equal(findDirectoryMatch('Mickie Finnz Fish House & Bar').name, 'Mickie Finnz');
+  assert.equal(findDirectoryMatch('Chinitas Tapas & Sushi').name, 'Chinitas');
+  // no match on short or generic names
+  assert.equal(findDirectoryMatch('Jing Fong'), null);
+  assert.equal(findDirectoryMatch('Bar'), null);
+  assert.equal(findDirectoryMatch('Some Unlisted Tavern'), null);
+  assert.equal(directoryNameKey("ARIA Lounges: Lift Bar, Lobby Bar, Easy's"), 'aria lounges');
+
+  const osm = { name: 'Red Dwarf', email: '', phone: '(702) 000-0000', website: '', signals: ['🎵 live music tagged'], type: 'Bar', city: 'Las Vegas', fit: null };
+  const e = enrichProspectFromDirectory(osm);
+  assert.equal(e.email, 'Natalie@reddwarflv.com');
+  assert.equal(e.phone, '(702) 000-0000', 'map data the place already has is kept');
+  assert.equal(e.website, 'reddwarflv.com');
+  assert.ok(e.signals.some(x => /booking contact on file/.test(x)));
+  const v = prospectToVenue(e);
+  assert.equal(v.email, 'Natalie@reddwarflv.com');
+  assert.equal(v.contactName, 'Natalie (Band Booking)');
+  assert.match(v.notes, /Vegas Directory entry "Red Dwarf"/);
+  const untouched = { name: 'Nowhere In Particular', signals: [] };
+  assert.equal(enrichProspectFromDirectory(untouched), untouched);
 });

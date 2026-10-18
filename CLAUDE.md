@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-10-18 (Vegas venue directory expanded 49 → 230 from the Oct 2026 booking-leads research, §9au).
+Last updated: 2026-10-18 (directory contact research + Prospector pulls contacts from the directory, §9av).
 
 ---
 
@@ -2108,6 +2108,44 @@ Verification: `npm test` → 282/282 (+5); Babel compile clean (index.html + 3 c
 headless Playwright drive → 8/8, 0 page errors (directory renders 230 rows in 9 regions with no
 duplicate names, "+ Add 230 venues" lands all of them in the pipeline with tracking tokens and the
 Sand Dollar booking email, re-opening shows every row "✓ in your list").
+
+---
+
+## 9av. Change log — 2026-10 directory contact research + Prospector ↔ directory contacts
+
+Follow-up to §9au. The 181 rooms added there carried only the report's few emails, so this
+pass researched published contacts for the **independent** rooms (bars, taverns, breweries,
+restaurants — the ones likely to publish an inbox; corporate casino lounges publish none) via
+the Firecrawl connector (search + scrape) with WebSearch as a fallback when Firecrawl
+rate-limited. Only contacts actually published by the venue (its site/contact page, its
+own social profile, or a listing quoting it) were recorded; every touched entry's `extra`
+ends with `Contact research (Oct 18 2026): <source>`. Nothing was guessed.
+
+- **Emails 20 → 37** (e.g. Red Dwarf `Natalie@reddwarflv.com` — its own band-booking page;
+  Taverna Costera `booking@tavernacostera.com`; Jazzy Blu, Frankie's Tiki Room, Glitter Gulch
+  Tiki, Mickie Finnz, Chinitas/Sonrisa, Lovelady, LVBC, Tenaya Creek, The Coffee Class, Jive
+  Turkey, The Speakeasy). Phones/addresses/websites filled for ~30 more. `verified` flipped to
+  true only for Taverna Costera (a stated booking inbox); general/events inboxes stay false and
+  say so in `contactName`.
+- **Removed 6 rooms confirmed closed:** E-String Grill, Don't Tell Mama, The Pepper Club,
+  Artifice, Beauty Bar, Joseph James Brewing (225 entries now). **Corrected:** Grey Witch is in
+  Henderson (722 W Sunset Rd), Luckley Tavern is inside the Rio, Wax Rabbit is a DJ room at
+  Durango, Tenaya Creek moved to W Bonanza Rd, La Casa is in Summerlin, Hogs & Heifers is at the
+  Plaza. **Added** Water Street District (Henderson), which has publicly asked for musicians.
+- **Prospector ↔ directory** (pure, tested): `directoryNameKey` / `findDirectoryMatch` /
+  `enrichProspectFromDirectory`. Each OpenStreetMap result is matched to a directory room
+  (exact normalized key, or a map name that extends a ≥6-char directory key, e.g. "Mickie
+  Finnz Fish House & Bar"); a match fills only the email/phone/website the map lacks, adds a
+  `📇 booking contact on file (Vegas Directory)` signal, and `prospectToVenue` carries the
+  `contactName` plus a provenance line into the venue's notes. Result rows now show the email.
+  Score is unchanged. No two directory names share a key (checked).
+
+Verification: `npm test` → 283/283 (directory guard extended: closed rooms, new booking
+emails; new matcher test incl. accent/"The"/suffix handling, prefix guard, no-match cases,
+map-data-wins, venue mapping); Babel compile clean; headless drives — directory 8/8 (225 rows,
+no dups, bulk add, 0 page errors) and Prospector 5/5 with a mocked Overpass response (Red Dwarf
+and "Mickie Finnz Fish House & Bar" rows show their directory emails, an unlisted place is
+untouched, the added venue keeps email + contact + provenance note, 0 page errors).
 
 ---
 
