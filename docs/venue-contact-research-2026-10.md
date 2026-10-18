@@ -1,0 +1,51 @@
+# Contact research findings (Firecrawl, 2026-10-18)
+
+- Velveteen Rabbit: info@velveteenrabbitlv.com (homepage mailto); live original music every Thursday on patio stage (visitlasvegas); events form velveteenrabbitlv.com/events
+- Grey Witch: 722 W. Sunset Road, Henderson NV 89011 (greywitchlv.com/contact); booking via contact form (no email published); IG greywitch_lv; tickets VDOtickets
+- Capo's: 5675 W Sahara Ave LV 89146; (702) 364-2276; live music nightly 6-10pm (FB); no email
+- Hideaway Tavern: 3369 Thom Blvd LV 89130; (702) 485-6200 (Yelp); hideawaylv.com; live 7:30-11:30; "partial to helping new country bands"
+- Wine on Water Street: 150 S Water St Ste 110 Henderson 89015; (725) 444-1172; part of The Pass Casino (passcasino.com/wine-on-water-street)
+- Water Street District musicians: info@justaddwaterstreet.com (FB group post); Water Street Plaza events: SpecialEvents@cityofhenderson.com (cityofhenderson.com)
+- Jazz at Lake Las Vegas: The Village at Lake Las Vegas; (877) 997-6667; concerts Sat 7-10pm; contact "Xander" (IG)
+- Triple George Grill: 201 N 3rd St Ste 120 LV 89101 (Downtown Grand); (702) 384-2761
+- Mickie Finnz: 425 Fremont St #120 LV 89101; (702) 382-4204; LVFinnz@hennesseystavern.com (contact page); live music calendar on site
+- The Griffin: 511 Fremont St LV 89101; (702) 382-0577
+- La Casa Cigars: 430 S Rampart Blvd Ste 170 LV 89145 (Summerlin); (702) 407-1171; live music 5 days/wk; IG lacasavegas
+- **Red Dwarf (existing entry, no email): BAND BOOKING Natalie@reddwarflv.com** (reddwarflv.com/contact — include artist name, genre, hometown, date range, lineup, music + live footage links)
+- Huntridge Tavern: 1116 E Charleston Blvd LV 89104; (702) 384-7377; live music Fri 9pm
+- Able Baker Brewing: 1510 S Main St Ste 120 LV 89104; contact form only
+- Tenaya Creek Brewery: 831 W Bonanza Rd LV 89106 (moved; report's 3101 N Tenaya Way is old); (702) 362-7335; info@tenayacreek.com (tenayacreek.com contact page); site tenayacreekbrewing.com
+- Frankie's Tiki Room: 1712 W Charleston Blvd LV 89102; 702-385-3110; ddtiki@gmail.com (frankiestikiroom.com homepage mailto); 24 hrs; surf/garage rock
+- Hogs & Heifers: now at Plaza Hotel, 1 S Main St LV 89101 (also "Outpost" at Plaza); (702) 676-1457 (Yelp); contact page: "Interested in playing? Contact Michael and include samples of music, social handles, pricing and dates" — email behind anti-bot button, not extractable
+- Dino's Lounge: dinoslv.com — karaoke-focused; no booking email (FB email is for a fundraiser) — skip
+- Servehzah: Arts District 1301 S Commerce St #130 + Deer Springs 640 E Deer Springs Way #110 NLV (702) 779-3176; servehzah.com
+- Cat's Meow: 450 Fremont St Ste 201 LV 89101; (702) 527-7555; karaoke w/ DJs — no booking email
+- Jazzy Blu Supper Club: 3528 S Maryland Pkwy LV 89169; 702-872-2444; admin@jazzyblu.com (jazzyblu.com); live music weekends 8pm; house band Jazzyblu Triads
+- House of Blues Restaurant & Bar: (702) 632-7607 (HOB locations page)
+- **E-String Grill & Poker Bar: PERMANENTLY CLOSED** (Yelp "CLOSED", MapQuest "Permanently closed") → remove
+- **Don't Tell Mama (LV): CLOSED** (Yelp CLOSED; IG "17 years... keeping the memories alive") → remove
+- Hogs & Heifers: band booking email not public (Michael, via anti-bot button) — leave email blank
+- Rustic Lounge: 1817 N Boulder Hwy Henderson 89011; (702) 566-3030; live music, karaoke, Thu open mic; FB only
+- Chinitas Tapas & Sushi: 147 S Water St Henderson 89015; (702) 405-8215; Austin.Chinitas@gmail.com (chinitastapas.com mailto)
+- Sonrisa Grill: sonrisagrill.com features live music; same owner email austin.chinitas@gmail.com (sonrisagrill.com mailto)
+- The Speakeasy (Lake Las Vegas): 10 Via Brianza Ste 110 Henderson 89011; (702) 564-0110; R.Baker@SpeakeasyLLV.com (events/reservations; site + IG "Book your next event"); thespeakeasyllv.com
+- Johnny Mac's: Water Street location 117 S Water St Henderson 89015 (725) 214-7317 — live bands Fri & Sat (everyday.vegas); Boulder Hwy location 842 S Boulder Hwy 702-564-2121; johnnymacswings.com; no email
+- **The Pepper Club: CLOSED Dec 20 2025** (midtownvegas.com; replaced by KJ's at The English Hotel) → remove
+- **Luckley Tavern & Grill is inside the Rio** (Las Vegas, not Henderson) — opened June 2024; general info@riolasvegas.com, (866) 746-7671 → move to Strip region
+- Wax Rabbit: inside Mijo Modern Mexican at Durango Casino, 6915 S Durango Dr (not Summerlin); all-vinyl DJ sets, no live bands found; mijomexican.com/waxrabbit → move to SW region, note DJ-only
+- Citrus Grill & Lounge: Mediterranean hookah lounge w/ DJ (Southwest/Enterprise); no live music confirmed → note DJ/hookah, poor fit
+- BLVD Grille (Vin 46): 46 S Water St Henderson 89015; local bands Thu-Sat 9pm; solo guitarist at meals; no email found
+- Petrol Head Bar & Grill: (702) 209-2517 (AAA listing); no email
+- TRES Social Tapas: 9440 W Sahara Ave #165 LV 89117; (702) 309-7872; no email
+- **Artifice: CLOSED** (Yelp CLOSED) → remove
+- **Beauty Bar: CLOSED** (liquor license revoked — Review-Journal; Yelp CLOSED) → remove
+- **Taverna Costera (existing, no email): booking@tavernacostera.com** (tavernacostera.com/…-roof "LIVE ENTERTAINMENT WITH A VIEW — E-mail booking@")
+- The Laundry Room: 22-person speakeasy inside Commonwealth; reservations via SevenRooms; laundryroomlv.com; no email
+- The Coffee Class: NOW OPEN (grand opening May 30) 37 S Water St Henderson 89015; (702) 330-0137; events@thecoffeeclass.com (thecoffeeclass.com/waterst-events-catering); rooftop = weekend brunch + private events
+- Hop Nuts Brewing: 1120 S Main St Ste 150 LV 89104; 702-816-5371; live music 7:30pm (IG); contact form only; hopnutsbrewing.com
+- **Lovelady Brewing (existing, no email): LoveladyBrewing@gmail.com, 702-564-3030** (loveladybrewing.com/home contact block; 20 S Water St). Yelp marks a *different* Lovelady location (725 number) closed — Water St taproom is the live one
+- **Las Vegas Brewing Co.: welcome@lvbrewco.com** (lvbrewco.com contact; events page is Summerlin location) — applies to both LVBC entries; private-party bookings accepted
+- **Joseph James Brewing: CLOSED** (Brewbound "Out of Business"; ceased operations) → remove
+- Glitter Gulch Tiki: 113 N 4th St LV 89101; 702-826-2475; info@glittergulchtiki.com (contact page); Event Request form
+- Jive Turkey: 608 S Maryland Pkwy Ste 160 LV 89101 (Huntridge area, not Fremont); shows events@jiveturkeydive.com (mailto actually goes to sam@jiveturkeydive.com cc aod@); jiveturkeydive.com; live music per RJ
+- Juan's Flaming Fajitas (NLV): 2660 W Centennial Pkwy NLV 89084; (702) 473-5529; Saturday live music 6-9pm (lvlocalmusicians FB group)
