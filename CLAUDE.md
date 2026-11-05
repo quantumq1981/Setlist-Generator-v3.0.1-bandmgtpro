@@ -2204,6 +2204,13 @@ multi-room property entries, and it listed Don't Tell Mama (dead-listed) as an a
   `data-testid="epk-solo-duo-url"`). Pure `epkBaseForFormat` / `SOLO_DUO_FORMATS`: `solo`/`duo` venues
   link to it, every other format to `epkUrl`. Both call sites pass `{ soloDuoUrl }`. The EPK's
   `/solo-duo/` page already captures `?act`/`?track`. Existing installs: click Sync (or type it).
+- **Per-venue EPK page (hand-picked)**: venue field `epkPage` (`''` = Auto | `main` | `solo_duo` |
+  `agent`; `VENUE_EPK_PAGES` / `VENUE_EPK_PAGE_LABELS`, "EPK page" select in the venue form,
+  `data-testid="venue-epk-page"`) and EPK setting `agentUrl` (demo profile `https://zembamusicco.com/agents/`,
+  synced from `epk.json` `agentsCut`, input `data-testid="epk-agent-url"`). Pure `epkBaseForVenue`
+  resolves it: a picked page wins when its URL is set, otherwise Auto (`epkBaseForFormat`). **Owner
+  decision 2026-11-05: the agent page is chosen by hand per venue — no automatic casino/corporate
+  routing.** The `/agents/` page captures `?act`/`?track` and stamps its mailto links (EPK repo).
 - **Data: 222 → 257 entries.** 35 adds; 54 in-place updates (25 same-name, 19 suffixed-name, 9 rooms
   inside property entries — Alexxa's, Cannery The Club, Aliante ETA, Pass Casino Silver Bar, GVR Hank's,
   Caesars Caspian's, Red Rock Rocks Lounge, House of Blues hall, Gold Coast lounge — plus Commonwealth).
@@ -2214,11 +2221,13 @@ multi-room property entries, and it listed Don't Tell Mama (dead-listed) as an a
   (dead list), Hawthorne (unopened), Blue Martini (relocating), SAHARA Theatre (touring only), Don't
   Tell Mama (closed — dead list). New-room regions follow the property's existing entry where one exists.
 
-Verification: `npm test` → 287/287 (+4: solo/duo routing incl. utm + blank-URL fallback; act-fit
+Verification: `npm test` → 288/288 (+5: hand-picked EPK page incl. no-URL fallback and legacy
+venues; solo/duo routing incl. utm + blank-URL fallback; act-fit
 validity, pipeline carry-through, no property duplicates, no `verified` downgrade; curated fit beats
 heuristic incl. `late_shift` note; matcher generic/wrong-town rejection with prefix behaviour kept);
-Babel compile clean; headless Playwright drive of the real app → 8/8, 0 page errors (Sync from the
-real `epk.json` fills + persists `soloDuoUrl`, directory shows 257 rows, ECHO/Dustland/Grey Witch add
+Babel compile clean; headless Playwright drive of the real app → 12/12, 0 page errors (Sync from
+`epk.json` fills + persists `soloDuoUrl` and `agentUrl`, Grey Witch set to Agent by hand links to
+`…/agents/?act=late_shift&track=…` while untouched venues stay on Auto, directory shows 257 rows, ECHO/Dustland/Grey Witch add
 with `duo`/`late_shift`/`late_shift`, ECHO previews `…/solo-duo/?act=duo&track=…`, Dustland
 `…/venues/?act=late_shift&track=…`).
 

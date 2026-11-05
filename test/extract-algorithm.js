@@ -209,7 +209,7 @@ for (const g of [
 
 // EPK link infrastructure (VENUE_FORMATS + slug before the link builder, which
 // consults both to decide between the ?act=&track= and legacy ?ref= schemes).
-for (const g of ['VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'SOLO_DUO_FORMATS', 'epkBaseForFormat', 'epkLinkForVenue']) pieces.push(extractDecl(g));
+for (const g of ['VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'SOLO_DUO_FORMATS', 'epkBaseForFormat', 'epkBaseForVenue', 'epkLinkForVenue']) pieces.push(extractDecl(g));
 
 // Gig Prospector (OpenStreetMap discovery) + the outreach compliance footer.
 for (const g of [
@@ -282,7 +282,7 @@ const EXPORTS = [
   'gmailBuildRfc2822', 'gmailThreadHasReply', 'gmailReplyCheckCandidates',
   'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
   'DAILY_OUTREACH_CAP', 'MAX_SEQUENCE_SENDS', 'SEQUENCE_STEP_DAYS', 'addDaysISO', 'sendsToday', 'nextActionFor',
-  'VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'SOLO_DUO_FORMATS', 'epkBaseForFormat', 'epkLinkForVenue',
+  'VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'SOLO_DUO_FORMATS', 'epkBaseForFormat', 'epkBaseForVenue', 'epkLinkForVenue',
   'BLANK_VENUE', 'PROSPECT_AREAS', 'PROSPECT_KINDS', 'OVERPASS_ENDPOINTS', 'PROSPECT_RESULT_CAP',
   'buildOverpassQuery', 'overpassResponseIssue', 'prospectsTruncated', 'distanceMi', 'opensLate',
   'scoreProspect', 'overpassToProspects', 'prospectToVenue',

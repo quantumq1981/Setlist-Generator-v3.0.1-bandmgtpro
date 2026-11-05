@@ -2554,6 +2554,10 @@
     // ?act= param — a quiet lounge tags differently than a high-energy casino room).
     const VENUE_FORMATS = ['solo', 'duo', 'trio', 'band', 'late_shift'];
     const VENUE_FORMAT_LABELS = { solo: 'Solo', duo: 'Duo', trio: 'Trio', band: 'Full Band', late_shift: 'Late-Night Band' };
+    // Which EPK page a venue's links open. '' = Auto (solo/duo acts → the Solo/Duo page when one is
+    // set, everything else → the main EPK). The others are picked by hand per venue.
+    const VENUE_EPK_PAGES = ['main', 'solo_duo', 'agent'];
+    const VENUE_EPK_PAGE_LABELS = { '': 'Auto (by act)', main: 'Main EPK', solo_duo: 'Solo/Duo page', agent: 'Agent / Ent. Director page' };
     // The band's shareable EPK link + sync manifest. BLANK by default so a fresh
     // install starts identity-neutral (a stranger has no hosted EPK yet); the user
     // sets their own in EPK & Templates, or one-click loads the demo profile below.
@@ -2693,7 +2697,7 @@
       credibility: '', techAdvance: '',
       // 5 — Contact & official links
       contactEmail: '', contactPhone: '', pressEmail: '', mailingAddress: '',
-      website: EPK_SITE_URL, linktree: '', socials: '', epkUrl: EPK_LIVE_URL, soloDuoUrl: '', syncUrl: EPK_SYNC_URL,
+      website: EPK_SITE_URL, linktree: '', socials: '', epkUrl: EPK_LIVE_URL, soloDuoUrl: '', agentUrl: '', syncUrl: EPK_SYNC_URL,
       templates: EMAIL_TEMPLATES_DEFAULT
     };
 
@@ -2727,7 +2731,7 @@
       contactEmail: 'booking@zembamusicco.com', contactPhone: '(702) 706-2145', pressEmail: '',
       website: 'https://zembamusicco.com',
       linktree: 'https://linktr.ee/chriszemba', socials: '',
-      epkUrl: 'https://zembamusicco.com/venues/', soloDuoUrl: 'https://zembamusicco.com/solo-duo/', syncUrl: 'https://zembamusicco.com/epk.json',
+      epkUrl: 'https://zembamusicco.com/venues/', soloDuoUrl: 'https://zembamusicco.com/solo-duo/', agentUrl: 'https://zembamusicco.com/agents/', syncUrl: 'https://zembamusicco.com/epk.json',
       templates: EMAIL_TEMPLATES_DEMO
     };
 
@@ -2748,7 +2752,7 @@
 "Pride and Joy","Stevie Ray Vaughan",3.62,shuffle,E,127,ALL,"","[Fill on Bar 8]","","","","[Hard Stop on 1]"
 "Fly Away","Lenny Kravitz",3.62,rock,A,138,ALL,"[CLOSER] Extended outro – end on visual cue from drummer.","","","","","[Trash-Can / Visual Cue]"`;
 
-    const BLANK_VENUE = { name: '', email: '', phone: '', contactName: '', type: 'Bar', city: '', state: '', website: '', notes: '', status: 'prospect', lastContactDate: '', preferredFormat: '', trackingToken: '' };
+    const BLANK_VENUE = { name: '', email: '', phone: '', contactName: '', type: 'Bar', city: '', state: '', website: '', notes: '', status: 'prospect', lastContactDate: '', preferredFormat: '', epkPage: '', trackingToken: '' };
 
     // ── Contact enrichment + phone-first outreach ─────────────────────────────
     // Prospector/OSM venues usually arrive phone-only; the outreach engine is
@@ -2913,11 +2917,23 @@
       const alt = String(soloDuoUrl || '').trim();
       return (alt && SOLO_DUO_FORMATS.includes(format)) ? alt : String(epkUrl || '').trim();
     };
+    // A hand-picked page wins when its URL is configured; otherwise fall back to Auto (by act).
+    const epkBaseForVenue = (epkUrl, venue, opts) => {
+      const o = opts || {};
+      const main = String(epkUrl || '').trim();
+      const page = venue && venue.epkPage;
+      const agent = String(o.agentUrl || '').trim();
+      const soloDuo = String(o.soloDuoUrl || '').trim();
+      if (page === 'agent' && agent) return agent;
+      if (page === 'solo_duo' && soloDuo) return soloDuo;
+      if (page === 'main') return main;
+      return epkBaseForFormat(main, venue && venue.preferredFormat, soloDuo);
+    };
     const epkLinkForVenue = (epkUrl, venue, opts) => {
       let url = String(epkUrl || '').trim();
       if (!url) return '';
       if (!venue) return url;
-      url = epkBaseForFormat(url, venue.preferredFormat, opts && opts.soloDuoUrl);
+      url = epkBaseForVenue(url, venue, opts);
       const sep = url.includes('?') ? '&' : '?';
       let tagged;
       if (venue.trackingToken) {
@@ -13234,7 +13250,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           '{{location}}': localEpk.location || '',
           '{{venue_name}}': venue?.name || '',
           '{{contact_name}}': (venue?.contactName || '').trim() || 'there',
-          '{{epk_link}}': localEpk.epkUrl ? epkLinkForVenue(localEpk.epkUrl, venue, { utm: true, campaign: templateKey, soloDuoUrl: localEpk.soloDuoUrl }) : '[EPK Link]',
+          '{{epk_link}}': localEpk.epkUrl ? epkLinkForVenue(localEpk.epkUrl, venue, { utm: true, campaign: templateKey, soloDuoUrl: localEpk.soloDuoUrl, agentUrl: localEpk.agentUrl }) : '[EPK Link]',
           '{{demo_link}}': localEpk.demoVideoUrl || '[Demo Link]',
           '{{one_sheet}}': localEpk.oneSheetUrl || '',
           '{{tech_rider}}': localEpk.techRiderUrl || '',
@@ -13616,6 +13632,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     {VENUE_FORMATS.map(f => <option key={f} value={f}>{VENUE_FORMAT_LABELS[f]}</option>)}
                   </select>
                 </div>
+                <div className="input-group"><label>EPK page</label>
+                  <select data-testid="venue-epk-page" value={venueForm.epkPage || ''} onChange={e => setVenueForm({...venueForm, epkPage: e.target.value})}>
+                    {['', ...VENUE_EPK_PAGES].map(k => <option key={k} value={k}>{VENUE_EPK_PAGE_LABELS[k]}</option>)}
+                  </select>
+                  {venueForm.epkPage === 'agent' && !(localEpk.agentUrl || '').trim() && <span style={{ fontSize: '.66rem', color: 'var(--warning, #f5a524)' }}>No Agent EPK URL set yet (Press Kit → Sync from EPK). Links use Auto until then.</span>}
+                  {venueForm.epkPage === 'solo_duo' && !(localEpk.soloDuoUrl || '').trim() && <span style={{ fontSize: '.66rem', color: 'var(--warning, #f5a524)' }}>No Solo/Duo EPK URL set yet. Links use Auto until then.</span>}
+                </div>
               </div>
               <div className="input-group"><label>Website</label><input value={venueForm.website} onChange={e => setVenueForm({...venueForm, website: e.target.value})} placeholder="https://venue.com" /></div>
               <div className="input-group"><label>Notes</label><textarea value={venueForm.notes} onChange={e => setVenueForm({...venueForm, notes: e.target.value})} rows={2} placeholder="Capacity, parking, preferred genres..." style={{ resize: 'vertical' }} /></div>
@@ -13892,12 +13915,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                     </button>
                   </div>
                   {previewLinkId === venue.id && (() => {
-                    const trackedLink = epkLinkForVenue(localEpk.epkUrl || EPK_LIVE_URL, venue, { soloDuoUrl: localEpk.soloDuoUrl });
+                    const trackedLink = epkLinkForVenue(localEpk.epkUrl || EPK_LIVE_URL, venue, { soloDuoUrl: localEpk.soloDuoUrl, agentUrl: localEpk.agentUrl });
                     const format = VENUE_FORMATS.includes(venue.preferredFormat) ? venue.preferredFormat : 'band';
                     return (
                       <div className="venue-enrich-panel">
                         <span style={{ fontSize: '.68rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                          {VENUE_FORMAT_LABELS[format]} · token <code>{venue.trackingToken || '—'}</code>
+                          {VENUE_FORMAT_LABELS[format]} · {VENUE_EPK_PAGE_LABELS[venue.epkPage || '']} · token <code>{venue.trackingToken || '—'}</code>
                         </span>
                         <code style={{ fontSize: '.7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 120 }} title={trackedLink}>{trackedLink}</code>
                         <button className="btn btn-small" onClick={() => {
@@ -14287,6 +14310,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             setLocalEpk(prev => ({ ...prev,
               epkUrl: d.venueCut || prev.epkUrl,
               soloDuoUrl: d.soloDuoCut || prev.soloDuoUrl,
+              agentUrl: d.agentsCut || prev.agentUrl,
               website: d.website || prev.website,
               linktree: d.linktree || prev.linktree,
               oneSheetUrl: dl.oneSheet || prev.oneSheetUrl,
@@ -14446,6 +14470,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <div className="input-group"><label>Linktree / Hub</label><input value={localEpk.linktree || ''} onChange={e => upd('linktree', e.target.value)} placeholder="linktr.ee/yourband" /></div>
                 <div className="input-group"><label>EPK URL (hosted)</label><input value={localEpk.epkUrl || ''} onChange={e => upd('epkUrl', e.target.value)} placeholder="https://your-epk.com" /></div>
                 <div className="input-group"><label>Solo/Duo EPK URL (optional)</label><input data-testid="epk-solo-duo-url" value={localEpk.soloDuoUrl || ''} onChange={e => upd('soloDuoUrl', e.target.value)} placeholder="https://your-epk.com/solo-duo/" /><span style={{ fontSize: '.66rem', color: 'var(--text-muted)' }}>Venues tagged Solo or Duo link here instead of the main EPK. Leave blank to use the main EPK for every act.</span></div>
+                <div className="input-group"><label>Agent EPK URL (optional)</label><input data-testid="epk-agent-url" value={localEpk.agentUrl || ''} onChange={e => upd('agentUrl', e.target.value)} placeholder="https://your-epk.com/agents/" /><span style={{ fontSize: '.66rem', color: 'var(--text-muted)' }}>For agents and entertainment directors. Used only by venues whose EPK page you set to Agent.</span></div>
               </div>
               <div className="set-config">
                 <div className="input-group"><label>EPK sync manifest (optional)</label><input value={localEpk.syncUrl || ''} onChange={e => upd('syncUrl', e.target.value)} placeholder="https://your-epk.com/epk.json" /><span style={{ fontSize: '.66rem', color: 'var(--text-muted)' }}>A published JSON of your EPK's links/contact — enables the 🔄 Sync button so the two never drift.</span></div>
