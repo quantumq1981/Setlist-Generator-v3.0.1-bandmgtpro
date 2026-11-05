@@ -209,7 +209,7 @@ for (const g of [
 
 // EPK link infrastructure (VENUE_FORMATS + slug before the link builder, which
 // consults both to decide between the ?act=&track= and legacy ?ref= schemes).
-for (const g of ['VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'epkLinkForVenue']) pieces.push(extractDecl(g));
+for (const g of ['VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'SOLO_DUO_FORMATS', 'epkBaseForFormat', 'epkLinkForVenue']) pieces.push(extractDecl(g));
 
 // Gig Prospector (OpenStreetMap discovery) + the outreach compliance footer.
 for (const g of [
@@ -219,7 +219,7 @@ for (const g of [
   'OUTREACH_FOOTER_EXEMPT', 'outreachNeedsFooter', 'appendOutreachFooter',
   // Built-in Vegas venue directory + its venue mapper.
   'VENUE_TYPES', 'VENUE_DIRECTORY', 'directoryEntryToVenue',
-  'directoryNameKey', 'findDirectoryMatch', 'enrichProspectFromDirectory',
+  'directoryNameKey', 'DIRECTORY_GENERIC_WORDS', 'DIRECTORY_PLACE_WORDS', 'directoryKeyIsGeneric', 'findDirectoryMatch', 'enrichProspectFromDirectory',
 ]) pieces.push(extractDecl(g));
 
 // Outreach sequences ("Today's Outreach") — constants before the brain that uses them.
@@ -282,13 +282,13 @@ const EXPORTS = [
   'gmailBuildRfc2822', 'gmailThreadHasReply', 'gmailReplyCheckCandidates',
   'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
   'DAILY_OUTREACH_CAP', 'MAX_SEQUENCE_SENDS', 'SEQUENCE_STEP_DAYS', 'addDaysISO', 'sendsToday', 'nextActionFor',
-  'VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'epkLinkForVenue',
+  'VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'SOLO_DUO_FORMATS', 'epkBaseForFormat', 'epkLinkForVenue',
   'BLANK_VENUE', 'PROSPECT_AREAS', 'PROSPECT_KINDS', 'OVERPASS_ENDPOINTS', 'PROSPECT_RESULT_CAP',
   'buildOverpassQuery', 'overpassResponseIssue', 'prospectsTruncated', 'distanceMi', 'opensLate',
   'scoreProspect', 'overpassToProspects', 'prospectToVenue',
   'outreachNeedsFooter', 'appendOutreachFooter',
   'VENUE_TYPES', 'VENUE_DIRECTORY', 'directoryEntryToVenue',
-  'directoryNameKey', 'findDirectoryMatch', 'enrichProspectFromDirectory',
+  'directoryNameKey', 'DIRECTORY_GENERIC_WORDS', 'DIRECTORY_PLACE_WORDS', 'directoryKeyIsGeneric', 'findDirectoryMatch', 'enrichProspectFromDirectory',
   'MIN_LEARN_SAMPLE', 'venueOutcome', 'collectOutreachStats', 'smoothedRate', 'typeScoreMultiplier', 'bestStatInsight',
   'ARR_ROLES', 'ARR_SECTIONS', 'ARR_SECTION_LABELS', 'ARR_FIELDS', 'ARR_ROLE_IMPORT_HEADERS',
   'ARR_SECTION_IMPORT_HEADERS', 'ARR_FIELD_IMPORT_HEADERS', 'ARR_FIELD_EXPORT_HEADERS',

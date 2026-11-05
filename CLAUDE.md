@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-10-18 (club + speculative-room research pass, §9aw).
+Last updated: 2026-11-05 (Nov 2026 venue list merge + act fit + solo/duo EPK routing, §9ax).
 
 ---
 
@@ -2178,6 +2178,49 @@ fallback. Log: `docs/venue-contact-research-2026-10.md` (pass 2 section).
 Verification: `npm test` → 283/283; Babel compile clean; headless drives — directory 8/8 (222
 rows, 9 regions, no dups, bulk add, 0 page errors), Prospector 5/5 (directory contacts still
 flow into map results), 0 page errors; no two directory names share a match key.
+
+---
+
+## 9ax. Change log — 2026-11 venue list merge, per-room act fit, solo/duo EPK routing
+
+Implements the owner-confirmed "ActFit" handoff (Nov 5 2026 list, 102 rows) with corrections found
+in review: the handoff's prospector edit was a no-op, its duplicate check missed rooms inside
+multi-room property entries, and it listed Don't Tell Mama (dead-listed) as an add.
+
+- **`preferredFormat` on directory entries** (`solo|duo|band|late_shift`, same values as the venue
+  field). Mapping: Solo/Duo → `duo`, Duo/Full Band → `band`, Full Band → `late_shift` (Late Shift Band),
+  Low Fit → none. `directoryEntryToVenue` carries it into the pipeline, so `epkLinkForVenue` tags the
+  right `?act=`. Commonwealth (Low Fit) has a note and **no** format. Do not fold act fit into
+  `styles`/`extra` text — nothing reads it there.
+- **Prospector**: `prospectToVenue` reads **`p.format`** (set by `scoreProspect`), not
+  `p.preferredFormat`. `enrichProspectFromDirectory` now sets `format` from the directory's curated fit
+  when present (curated beats heuristic), and the "Best fit" note names `late_shift`.
+- **Matcher tightened** (`findDirectoryMatch`): keys made only of `DIRECTORY_GENERIC_WORDS`
+  ("The Lounge (Excalibur)" → `lounge`, "Piano Bar (Harrah's)", "The Tavern (Summerlin)") never match;
+  a prefix match whose extra words are a `DIRECTORY_PLACE_WORDS` town not in the entry's name/city is
+  rejected ("Juan's … Cantina Henderson" no longer inherits the North Las Vegas entry).
+- **Solo/duo EPK routing**: new EPK setting `soloDuoUrl` (blank default; demo profile =
+  `https://zembamusicco.com/solo-duo/`; "Sync from EPK" fills it from `epk.json` `soloDuoCut`; input
+  `data-testid="epk-solo-duo-url"`). Pure `epkBaseForFormat` / `SOLO_DUO_FORMATS`: `solo`/`duo` venues
+  link to it, every other format to `epkUrl`. Both call sites pass `{ soloDuoUrl }`. The EPK's
+  `/solo-duo/` page already captures `?act`/`?track`. Existing installs: click Sync (or type it).
+- **Data: 222 → 257 entries.** 35 adds; 54 in-place updates (25 same-name, 19 suffixed-name, 9 rooms
+  inside property entries — Alexxa's, Cannery The Club, Aliante ETA, Pass Casino Silver Bar, GVR Hank's,
+  Caesars Caspian's, Red Rock Rocks Lounge, House of Blues hall, Gold Coast lounge — plus Commonwealth).
+  Updates fill **blank** email/phone/website only; conflicts keep the directory value and add a
+  "confirm which is current" note (Backstage, Atomic Liquors, Stoney's, Orleans, Red Rock). Existing
+  `verified: true` was never downgraded — the list's "prospect" is a pipeline status. Every touched
+  entry's `extra` ends `LastVerified: 2026-11-05.` Excluded per the list: 9 Low Fit rooms, Double Down
+  (dead list), Hawthorne (unopened), Blue Martini (relocating), SAHARA Theatre (touring only), Don't
+  Tell Mama (closed — dead list). New-room regions follow the property's existing entry where one exists.
+
+Verification: `npm test` → 287/287 (+4: solo/duo routing incl. utm + blank-URL fallback; act-fit
+validity, pipeline carry-through, no property duplicates, no `verified` downgrade; curated fit beats
+heuristic incl. `late_shift` note; matcher generic/wrong-town rejection with prefix behaviour kept);
+Babel compile clean; headless Playwright drive of the real app → 8/8, 0 page errors (Sync from the
+real `epk.json` fills + persists `soloDuoUrl`, directory shows 257 rows, ECHO/Dustland/Grey Witch add
+with `duo`/`late_shift`/`late_shift`, ECHO previews `…/solo-duo/?act=duo&track=…`, Dustland
+`…/venues/?act=late_shift&track=…`).
 
 ---
 
