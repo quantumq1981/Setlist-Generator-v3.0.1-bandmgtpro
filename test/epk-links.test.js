@@ -94,3 +94,38 @@ test('epkLinkForVenue appends utm_source/medium (+ optional utm_campaign) when o
   assert.equal(epkLinkForVenue('https://a.com', legacyVenue, { utm: true, campaign: 'follow up' }),
     'https://a.com?ref=test-tavern&utm_source=outreach&utm_medium=email&utm_campaign=follow%20up');
 });
+
+test('solo/duo venues link to the dedicated solo/duo EPK page when one is set', () => {
+  const main = 'https://zembamusicco.com/venues/';
+  const soloDuo = 'https://zembamusicco.com/solo-duo/';
+  const v = (preferredFormat) => ({ name: 'Room', preferredFormat, trackingToken: 'tok1' });
+  assert.equal(epkLinkForVenue(main, v('duo'), { soloDuoUrl: soloDuo }), soloDuo + '?act=duo&track=tok1');
+  assert.equal(epkLinkForVenue(main, v('solo'), { soloDuoUrl: soloDuo }), soloDuo + '?act=solo&track=tok1');
+  for (const f of ['band', 'late_shift', 'trio', '']) {
+    assert.ok(epkLinkForVenue(main, v(f), { soloDuoUrl: soloDuo }).startsWith(main + '?act='), `format "${f}" stays on the main EPK`);
+  }
+  // no solo/duo URL configured → everything on the main EPK, exactly as before
+  assert.equal(epkLinkForVenue(main, v('duo')), main + '?act=duo&track=tok1');
+  assert.equal(epkLinkForVenue(main, v('duo'), { soloDuoUrl: '  ' }), main + '?act=duo&track=tok1');
+  // utm tags still append on the alternate base
+  assert.equal(epkLinkForVenue(main, v('duo'), { soloDuoUrl: soloDuo, utm: true, campaign: 'outreach' }),
+    soloDuo + '?act=duo&track=tok1&utm_source=outreach&utm_medium=email&utm_campaign=outreach');
+});
+
+test('a hand-picked EPK page overrides Auto; unset URLs fall back to Auto', () => {
+  const main = 'https://zembamusicco.com/venues/';
+  const urls = { soloDuoUrl: 'https://zembamusicco.com/solo-duo/', agentUrl: 'https://zembamusicco.com/agents/' };
+  const v = (preferredFormat, epkPage) => ({ name: 'Room', preferredFormat, epkPage, trackingToken: 't9' });
+  // agent: only when picked, whatever the act
+  assert.equal(epkLinkForVenue(main, v('late_shift', 'agent'), urls), urls.agentUrl + '?act=late_shift&track=t9');
+  assert.equal(epkLinkForVenue(main, v('band', ''), urls), main + '?act=band&track=t9', 'no automatic agent routing');
+  // main overrides the solo/duo auto rule
+  assert.equal(epkLinkForVenue(main, v('duo', 'main'), urls), main + '?act=duo&track=t9');
+  // solo_duo picked for a band act
+  assert.equal(epkLinkForVenue(main, v('band', 'solo_duo'), urls), urls.soloDuoUrl + '?act=band&track=t9');
+  // picked page with no configured URL → Auto
+  assert.equal(epkLinkForVenue(main, v('band', 'agent'), { soloDuoUrl: urls.soloDuoUrl }), main + '?act=band&track=t9');
+  assert.equal(epkLinkForVenue(main, v('duo', 'agent'), { soloDuoUrl: urls.soloDuoUrl }), urls.soloDuoUrl + '?act=duo&track=t9');
+  // legacy venues with no epkPage field behave exactly as before
+  assert.equal(epkLinkForVenue(main, { name: 'Old', preferredFormat: 'duo', trackingToken: 't9' }, urls), urls.soloDuoUrl + '?act=duo&track=t9');
+});
