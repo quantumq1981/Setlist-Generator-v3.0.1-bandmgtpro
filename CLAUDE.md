@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-11-05 (Nov 2026 venue list merge + act fit + solo/duo EPK routing, §9ax).
+Last updated: 2026-11-13 (built-in default master library + stage-sheet `*` title fix, §9ay).
 
 ---
 
@@ -2230,6 +2230,72 @@ Babel compile clean; headless Playwright drive of the real app → 12/12, 0 page
 `…/agents/?act=late_shift&track=…` while untouched venues stay on Auto, directory shows 257 rows, ECHO/Dustland/Grey Witch add
 with `duo`/`late_shift`/`late_shift`, ECHO previews `…/solo-duo/?act=duo&track=…`, Dustland
 `…/venues/?act=late_shift&track=…`).
+
+---
+
+## 9ay. Change log — 2026-11 built-in default master library
+
+Owner request: merge the two working song lists into one de-duplicated library and ship it
+as the app's default, so testing never starts with a re-upload. Future rehearsal notes
+arrive as new work orders and are added to this list in place.
+
+- **Sources** (parsed with the app's own `pdfParseBandHelperSets` +
+  `pdfParseArrangementNotes`, so the merge sees exactly what an import would):
+  1. *Zemba Master List (QR code, Arrangement Notes)*: the Tropicana Laughlin Oct 30–31
+     stage sheet plus the Master Arrangement Guide. 61 songs and 15 notes, read losslessly
+     from the embedded `[[SLARR]]` block. **Newest source**: its key/BPM/style and notes
+     win on every overlap (e.g. I Know a Little 212 → 106 BPM, One Way Out 212 → 118).
+  2. *Zemba Master List July 2026*: the 114-song stage sheet. 58 rows duplicate (1); 56 are
+     appended. Its truncated `…` titles/styles were resolved by prefix (styles only to a
+     unique `ENERGY_MAP` key).
+  Result: **117 songs**, 15 with notes. Medleys stay separate from their single-song
+  versions (both sources list both). Artist spellings normalised (Black Crowes → The Black
+  Crowes, CCR → Creedence Clearwater Revival, …), titles stored in Title Case (every
+  renderer uppercases at draw time). Four rows with no artist in the July sheet got the
+  obvious one (Kool & the Gang, Garth Brooks, Luke Bryan, Rival Sons); *Sunday Morning*
+  and *Second Guessing* stay blank (ambiguous). Neither PDF has durations, so every song is
+  `DEFAULT_SONG_MINUTES` (4), the figure both exports' totals were computed from. Notes are
+  stored as authored; only the one with encoding damage (*Slow Blues for Z from the 5*,
+  NUL-interleaved per-glyph mojibake) went through `sanitizeNotation`.
+- **Data + pure helpers** (module scope after `DEMO_LIBRARY_CSV`; whitelisted in
+  `extract-algorithm.js`): `MASTER_LIBRARY` (one entry per song,
+  `{title, artist, key, bpm, style, arrangement?: {<ARR_FIELDS>}}`), `masterTitleKey`
+  (case/punctuation-blind, `Runnin'` = `Running`, words kept so a medley never matches its
+  single), `buildMasterLibrarySongs(idFn)` → full song objects (arrangement via
+  `serializeArrangement`), `mergeMasterLibrary(existing, idFn)` → `{songs, added, updated}`,
+  which appends missing songs and fills **only empty** artist/key/BPM/style and note fields
+  (`mergeArrangementFillEmpty`). Never overwrites, never mutates the input, idempotent.
+- **Fresh-install seed.** The first-run `Default Band` carries `seedMasterLibrary: true`;
+  the LOAD ACTIVE BAND DATA effect seeds `buildMasterLibrarySongs(genId)` when that band's
+  song store is `null` (never written). The save effect then writes it, so it never
+  re-seeds; deleting every song leaves `[]` and stays empty. Bands made later start empty.
+  No `localStorage` key added or renamed. This makes a fresh install show the owner's
+  repertoire. That reverses §9z's "identity-neutral" default **for the song library only**
+  (EPK/templates stay neutral); revisit if the public build needs a neutral library again.
+- **Existing installs**: a `📥 Master List` button in the Song Library toolbar
+  (`data-testid="load-master-btn"`) runs `mergeMasterLibrary` on the active band and toasts
+  the added/filled counts ("already loaded" when there is nothing to do).
+- **Importer fix found on the way:** the app's stage sheet marks a song that has a guide
+  entry with `*`, and `pdfParseBandHelperSets` kept it in the title (`* CISSY STRUT`,
+  `WHAT YOU WON'T DO FOR LOVE*`), which broke title matching on re-import. Leading/trailing
+  `*` runs are now stripped from every parsed title.
+
+**Adding notes from a later work order:** edit the matching `MASTER_LIBRARY` entry's
+`arrangement` (fields are `ARR_FIELDS`: the six roles + four sections). Add an entry for a
+new song. Fresh installs get it automatically; existing installs get missing songs and
+empty fields through 📥 Master List (it does not overwrite a note the user already has).
+Update the counts in `test/master-library.test.js`.
+
+Verification: `npm test` → 295/295 (+7 in `test/master-library.test.js`: 117 unique titles
+with valid styles/keys/BPM and no `*`/`…`/NUL damage; 15 notes on real fields incl. the
+repaired Slow Blues text and newest-wins BPM; key normalisation incl. `ain't` ≠ dropped-g;
+build; empty/curated/idempotent merge; the `*` strip on real row geometry from the owner's
+export, which **fails on the previous parser**). Babel compile clean (index.html + 3
+companions). Headless Playwright drive of the real app → 14/14, 0 page errors: fresh
+install seeds 117 songs (15 with notes) and survives a reload without duplicating; Generate
+builds sets and the guide button counts the noted songs; 📥 Master List is a no-op on a
+seeded library; an existing 2-song install is not auto-seeded, and the button merges to
+118 while keeping the user's key/note and filling the blank BPM + empty note fields.
 
 ---
 
