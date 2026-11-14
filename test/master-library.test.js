@@ -31,9 +31,9 @@ test('master library: 118 unique songs, valid styles/keys/BPM, clean text', () =
   }
 });
 
-test('master library: the 23 current rehearsal notes are present and use real fields', () => {
+test('master library: the 24 current rehearsal notes are present and use real fields', () => {
   const withNotes = MASTER_LIBRARY.filter(e => e.arrangement);
-  assert.equal(withNotes.length, 23);
+  assert.equal(withNotes.length, 24);
   for (const e of withNotes) {
     const fields = Object.keys(e.arrangement);
     assert.ok(fields.length > 0);
@@ -50,6 +50,30 @@ test('master library: the 23 current rehearsal notes are present and use real fi
   assert.equal(MASTER_LIBRARY.find(e => e.title === 'Street Corner Symphony').artist, 'Matchbox Twenty');
   // Newest source wins on overlaps (July list had I Know a Little at 212 BPM).
   assert.equal(MASTER_LIBRARY.find(e => e.title === 'I Know a Little').bpm, '106');
+});
+
+test('master library: Tropicana Oct 30-31 work order (§9bb) fills the gaps it covers', () => {
+  const hush = MASTER_LIBRARY.find(e => e.title === 'Hard to Handle / Hush');
+  // Stored in explicit sections so the guide prints it in playing order (the export's
+  // whole-band text was re-split by the line classifier, parting item 4 from its vocal cue).
+  assert.deepEqual(Object.keys(hush.arrangement), ['form_harmony', 'transition_outro']);
+  const g = hush.arrangement.form_harmony + '\n' + hush.arrangement.transition_outro;
+  // The export's first line was clipped ('Handle" / "Hush" Medley'); stored repaired.
+  assert.match(hush.arrangement.form_harmony, /^"Hard to Handle" \/ "Hush" Medley\n/);
+  assert.match(hush.arrangement.transition_outro, /^4 The Stop.*\nVocals alone on/);
+  for (const piece of ['Deep Purple', 'Final half-time section', 'hard stop on the I chord',
+    "I'm so hard to handle now", 'standard 3-tag ending']) assert.ok(g.includes(piece), piece);
+  // Item 6 was the generator's [CLOSER] tag reworded and contradicts the 3-tag ending.
+  assert.doesNotMatch(g, /Extended vamp|visual cue|\[CLOSER\]|\[OPENER\]/);
+  // dedupeArrangement leaves a clean note byte-identical.
+  assert.deepEqual(A.dedupeArrangement(hush.arrangement), hush.arrangement);
+  // Black Cat Bone gains the chord the export named for the IV (and loses the '|V' typo).
+  const bcb = MASTER_LIBRARY.find(e => e.title === 'Black Cat Bone');
+  assert.equal(bcb.arrangement.guitar2, 'Cold Guitar open band comes in on the IV (F7)');
+  // Opener-tag-only songs in that export stay note-free; owner's later edits win.
+  for (const t of ['Cissy Strut', 'Shaky Ground']) assert.equal(MASTER_LIBRARY.find(e => e.title === t).arrangement, undefined);
+  assert.equal(MASTER_LIBRARY.find(e => e.title === 'Tightrope').key, 'Bb');
+  assert.equal(MASTER_LIBRARY.find(e => e.title === "Rack 'Em Up").bpm, '119');
 });
 
 test('masterTitleKey: ignores case/punctuation/dropped g, keeps medleys distinct', () => {
