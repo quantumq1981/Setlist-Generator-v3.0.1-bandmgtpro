@@ -1013,6 +1013,16 @@
     /* Media / YouTube clips */
     .media-clips-section { margin-top: .55rem; border-top: 1px solid var(--border); padding-top: .45rem; }
     .media-clips-label { font-size: .6rem; font-weight: 800; letter-spacing: .06em; color: var(--text-muted); text-transform: uppercase; margin-bottom: .35rem; }
+    .workshop-card { display: flex; gap: .7rem; align-items: flex-start; padding: .55rem .6rem; margin: .5rem 0; border-radius: 8px; background: var(--primary); border: 1px solid var(--border); }
+    .workshop-card-qr { flex: none; display: block; width: 76px; height: 76px; padding: 3px; background: #fff; border-radius: 6px; }
+    .workshop-card-qr img { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+    .workshop-card-body { flex: 1; min-width: 0; font-size: .78rem; }
+    .workshop-card-title { font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin-bottom: .2rem; }
+    .workshop-card-url { font-family: 'Space Mono', monospace; font-size: .7rem; color: var(--text-secondary); word-break: break-all; }
+    .workshop-card-actions { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; }
+    .workshop-card-edit { display: flex; gap: .35rem; margin-top: .35rem; }
+    .workshop-card-edit .input { flex: 1; min-width: 0; }
+    .workshop-card-err { color: var(--error); font-size: .72rem; margin-top: .2rem; }
     .media-clip-row { display: flex; align-items: center; gap: .35rem; padding: .28rem .4rem; border-radius: 5px; background: var(--primary); border: 1px solid var(--border); margin-bottom: .25rem; font-size: .78rem; }
     .media-clip-row-label { flex: 1; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .media-clip-row-ts { font-family: 'Space Mono', monospace; font-size: .68rem; color: var(--accent); white-space: nowrap; }
@@ -2254,6 +2264,73 @@
 
     // Shared attach editor for both song forms — file picker + list + kind + remove, writing
     // blobs to IndexedDB and only metadata back to the form. Mirrors the Reference-Clips rows.
+    // The band's workshop playlist, provided by App: { playlist: {url, qr}|null, setUrl }.
+    // A context, not props, so every song form and the setlist view can show it without
+    // threading a prop through each component in between.
+    const WorkshopPlaylistContext = React.createContext(null);
+
+    // Band-wide "go here for reference audio + interactive charts" card. `editable` adds the
+    // change-link controls (song forms); the setlist banner is read-only.
+    function WorkshopPlaylistCard({ editable = false }) {
+      const ctx = React.useContext(WorkshopPlaylistContext);
+      const [editing, setEditing] = useState(false);
+      const [draft, setDraft] = useState('');
+      const [err, setErr] = useState('');
+      if (!ctx) return null;
+      const { playlist, setUrl } = ctx;
+      if (!playlist && !editable) return null;
+      const startEdit = () => { setDraft(playlist ? playlist.url : ''); setErr(''); setEditing(true); };
+      const save = () => {
+        const url = normalizePlaylistUrl(draft);
+        if (!url) { setErr('Enter a full web link, e.g. https://linktr.ee/…'); return; }
+        setUrl(url); setEditing(false);
+      };
+      return (
+        <div className="workshop-card" data-testid="workshop-playlist">
+          {playlist && playlist.qr && (
+            <a className="workshop-card-qr" href={playlist.url} target="_blank" rel="noopener noreferrer" title="Scan or tap to open the workshop playlist">
+              <img src={playlist.qr} alt="QR code for the workshop playlist" />
+            </a>
+          )}
+          <div className="workshop-card-body">
+            <div className="workshop-card-title">🎧 Workshop playlist</div>
+            {playlist ? (
+              <>
+                <div>Reference audio and interactive charts that back up the arrangement notes. Not every song is on it.</div>
+                <div className="workshop-card-url">{playlist.url}</div>
+              </>
+            ) : (
+              <div>No workshop playlist set for this band.</div>
+            )}
+            {!editing && (
+              <div className="workshop-card-actions">
+                {playlist && <a className="btn btn-small" href={playlist.url} target="_blank" rel="noopener noreferrer" data-testid="workshop-open">Open playlist ↗</a>}
+                {editable && <button type="button" className="btn btn-small" onClick={startEdit} data-testid="workshop-edit">{playlist ? 'Change link' : '+ Add link'}</button>}
+                {editable && playlist && <button type="button" className="btn btn-small" onClick={() => setUrl('')} data-testid="workshop-off">Turn off</button>}
+              </div>
+            )}
+            {editing && (
+              <>
+                <div className="workshop-card-edit">
+                  <input className="input" value={draft} autoFocus data-testid="workshop-url-input"
+                    onChange={e => { setDraft(e.target.value); if (err) setErr(''); }}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); save(); } if (e.key === 'Escape') setEditing(false); }}
+                    placeholder="https://…" />
+                  <button type="button" className="btn btn-small" onClick={save} data-testid="workshop-save">Save</button>
+                  <button type="button" className="btn btn-small" onClick={() => setEditing(false)}>Cancel</button>
+                </div>
+                <div className="workshop-card-actions">
+                  <button type="button" className="btn btn-small" onClick={() => { setUrl(null); setEditing(false); }}>Reset to default playlist</button>
+                </div>
+                {err && <div className="workshop-card-err">{err}</div>}
+              </>
+            )}
+            {editable && <div className="workshop-card-url" style={{ marginTop: '.3rem' }}>Shared by every song in this band.</div>}
+          </div>
+        </div>
+      );
+    }
+
     function SongAttachments({ attachments, onChange }) {
       const list = attachments || [];
       const [busy, setBusy] = React.useState(false);
@@ -2971,6 +3048,34 @@
         if (Object.keys(patch).length) { out[i] = { ...cur, ...patch }; updated++; }
       }
       return { songs: out, added, updated };
+    }
+
+    // ── Workshop playlist (band-wide reference link) ─────────────────────────────
+    // One link per band to the playlist hired musicians use for reference audio and
+    // interactive charts that back up the arrangement notes. Not every song is on it, so it
+    // is band-wide, not per song. Stored as settings.workshopPlaylistUrl: absent (never set)
+    // falls back to the built-in playlist below; '' means the band turned it off. The
+    // bundled QR image encodes exactly WORKSHOP_PLAYLIST_DEFAULT_URL, so it is shown only
+    // while the band uses that link (a QR for some other URL would send players elsewhere).
+    const WORKSHOP_PLAYLIST_DEFAULT_URL = 'https://tr.ee/vFPR90hvp169';
+    const WORKSHOP_PLAYLIST_QR_SRC = 'assets/workshop-playlist-qr.png';
+
+    // A typed link -> a safe http(s) URL, or '' when it is not one. Bare domains get https://. Pure.
+    function normalizePlaylistUrl(raw) {
+      let v = String(raw == null ? '' : raw).trim();
+      if (!v) return '';
+      if (!/^[a-z][a-z0-9+.-]*:/i.test(v)) v = 'https://' + v.replace(/^\/+/, '');
+      if (!/^https?:\/\/[^\s/$.?#][^\s]*$/i.test(v)) return '';
+      return v;
+    }
+
+    // The band's playlist as { url, qr } (qr = bundled image path or ''), or null when off. Pure.
+    function workshopPlaylistFor(settings) {
+      const stored = settings && Object.prototype.hasOwnProperty.call(settings, 'workshopPlaylistUrl')
+        ? settings.workshopPlaylistUrl : undefined;
+      const url = stored === undefined || stored === null ? WORKSHOP_PLAYLIST_DEFAULT_URL : normalizePlaylistUrl(stored);
+      if (!url) return null;
+      return { url, qr: url === WORKSHOP_PLAYLIST_DEFAULT_URL ? WORKSHOP_PLAYLIST_QR_SRC : '' };
     }
 
     const BLANK_VENUE = { name: '', email: '', phone: '', contactName: '', type: 'Bar', city: '', state: '', website: '', notes: '', status: 'prospect', lastContactDate: '', preferredFormat: '', epkPage: '', trackingToken: '' };
@@ -9712,6 +9817,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             {clipErr && <div className="media-clip-err" role="alert">{clipErr}</div>}
           </div>
           <SongAttachments attachments={form.attachments} onChange={a => setForm({ ...form, attachments: a })} />
+          <WorkshopPlaylistCard editable />
           <MidiPresetFields midi={form.midi} onChange={m => setForm({ ...form, midi: m })} />
         </div>
       );
@@ -10005,6 +10111,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           </div>
 
           <SongAttachments attachments={form.attachments} onChange={a => setForm({ ...form, attachments: a })} />
+          <WorkshopPlaylistCard editable />
           <MidiPresetFields midi={form.midi} onChange={m => setForm({ ...form, midi: m })} />
 
           {addErr && <div className="media-clip-err" role="alert" data-testid="add-song-err" style={{ marginBottom: '.4rem' }}>{addErr}</div>}
@@ -15861,6 +15968,33 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       let lastSetIdx = null;
       let zebra = 0;
 
+      // Workshop playlist strip (page 1 only): the band-wide reference playlist a hired
+      // player scans from the printed guide. QR when the band uses the built-in playlist,
+      // the link as text either way; both are clickable in the PDF.
+      const wp = ctx.workshopPlaylist;
+      if (wp && wp.url) {
+        const QR = wp.qrData ? 50 : 0;
+        const stripH = Math.max(QR + 8, 36);
+        doc.setFillColor(246, 248, 251);
+        doc.rect(tableX, y, tableW, stripH, 'F');
+        let textX = tableX + PAD;
+        if (QR) {
+          try {
+            doc.addImage(wp.qrData, 'PNG', tableX + PAD, y + 4, QR, QR);
+            if (typeof doc.link === 'function') doc.link(tableX + PAD, y + 4, QR, QR, { url: wp.url });
+            textX = tableX + PAD + QR + 10;
+          } catch (err) { /* a bad image must never take the document down */ }
+        }
+        doc.setFont(FONT, 'bold'); doc.setFontSize(F_LABEL); doc.setTextColor(...P.ACCENT);
+        doc.text('WORKSHOP PLAYLIST', textX, y + stripH / 2 - 6);
+        doc.setFont(FONT, 'normal'); doc.setFontSize(F_META); doc.setTextColor(...P.TEXT);
+        doc.text(pdfSafeText('Reference audio + interactive charts for these notes (not every song is on it).'), textX, y + stripH / 2 + 4);
+        doc.setTextColor(...P.ACCENT);
+        if (typeof doc.textWithLink === 'function') doc.textWithLink(wp.url, textX, y + stripH / 2 + 14, { url: wp.url });
+        else doc.text(wp.url, textX, y + stripH / 2 + 14);
+        y += stripH + 4;
+      }
+
       (entries || []).forEach(entry => {
         const { blocks, h: blocksH } = measureBlocks(entry);
         // Left column needs room for the number badge, wrapped title and artist.
@@ -17877,6 +18011,24 @@ ${headerHtml}
         showToast('Watermark removed', 'success');
       };
 
+      // ---- Workshop playlist (band-wide reference link) ---------------------
+      // null resets to the built-in playlist, '' turns it off, a URL replaces it.
+      const workshopPlaylist = useMemo(() => workshopPlaylistFor(settings), [settings]);
+      const setWorkshopPlaylistUrl = (url) => setSettings(prev => ({ ...prev, workshopPlaylistUrl: url }));
+      const workshopCtx = useMemo(() => ({ playlist: workshopPlaylist, setUrl: setWorkshopPlaylistUrl }), [workshopPlaylist]);
+      // The PDF needs the QR as a data URL at export time; export runs synchronously on the
+      // tap (iOS keeps the download on the gesture), so load it once ahead of time.
+      const [workshopQrData, setWorkshopQrData] = useState('');
+      useEffect(() => {
+        let alive = true;
+        fetch(WORKSHOP_PLAYLIST_QR_SRC)
+          .then(r => (r.ok ? r.blob() : Promise.reject(new Error('qr ' + r.status))))
+          .then(b => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(b); }))
+          .then(d => { if (alive) setWorkshopQrData(String(d)); })
+          .catch(() => { /* no QR in the PDF; the link still prints */ });
+        return () => { alive = false; };
+      }, []);
+
       // ---- PDF export: two decoupled pipelines -------------------------------
       // `kind` selects the document(s): the stage sheet that goes on the music stand,
       // the master arrangement guide that goes in the rehearsal folder, or both. The
@@ -17889,6 +18041,9 @@ ${headerHtml}
         eventLabel: (pdfSettings && pdfSettings.eventLabel) || '',
         setlistTitle: setlists.length === 1 ? (setlists[0].name || 'Set 1') : `${setlists.length} sets`,
         watermarkImg,
+        workshopPlaylist: workshopPlaylist
+          ? { url: workshopPlaylist.url, qrData: workshopPlaylist.qr ? workshopQrData : '' }
+          : null,
         includeCues: viewMode === 'advance',
         roleFilter: advanceRoleFilter,
       });
@@ -18811,7 +18966,7 @@ ${headerHtml}
       };
 
       return (
-        <>
+        <WorkshopPlaylistContext.Provider value={workshopCtx}>
           <IDEBackground>
             <div className={`app-container no-print ${FEATURE_FLAGS.phase2MobileCompatibility && touchDrag.active ? 'touch-fallback-active' : ''}`}>
             <ConfirmDialog
@@ -19052,6 +19207,7 @@ ${headerHtml}
                         </div>
                       )}
                       {viewMode === 'advance' && <GigNotesPanel />}
+                      {viewMode === 'advance' && <WorkshopPlaylistCard />}
                     </div>
                   </div>
                   <div className="toolbar">
@@ -19295,7 +19451,7 @@ ${headerHtml}
           )}
 
           <PrintView setlists={setlists} watermarkImg={watermarkImg} />
-        </>
+        </WorkshopPlaylistContext.Provider>
       );
     }
 

@@ -172,6 +172,7 @@ for (const f of [
   'pdfDataCopy',
   // Built-in default master library + its seed/merge helpers.
   'DEFAULT_SONG_MINUTES', 'MASTER_LIBRARY', 'masterTitleKey', 'buildMasterLibrarySongs', 'mergeMasterLibrary',
+  'WORKSHOP_PLAYLIST_DEFAULT_URL', 'WORKSHOP_PLAYLIST_QR_SRC', 'normalizePlaylistUrl', 'workshopPlaylistFor',
 ]) pieces.push(extractDecl(f));
 pieces.push(extractDecl('BH_SET_HEADER_RE'));
 pieces.push(extractDecl('BH_KEY_CELL_RE'));
@@ -311,6 +312,7 @@ const EXPORTS = [
   'structureNoteText', 'formatNoteText', 'condenseNoteText', 'noteCueTags', 'noteChordsIn',
   'noteSplitSentences', 'guideNoteRuns', 'GUIDE_NOTE_STYLES',
   'DEFAULT_SONG_MINUTES', 'MASTER_LIBRARY', 'masterTitleKey', 'buildMasterLibrarySongs', 'mergeMasterLibrary',
+  'WORKSHOP_PLAYLIST_DEFAULT_URL', 'WORKSHOP_PLAYLIST_QR_SRC', 'normalizePlaylistUrl', 'workshopPlaylistFor',
 ];
 
 // Minimal browser shims the algorithm touches (genId uses window.crypto).
