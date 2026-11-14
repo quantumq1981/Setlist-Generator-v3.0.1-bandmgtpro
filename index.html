@@ -2288,19 +2288,19 @@
       return (
         <div className="workshop-card" data-testid="workshop-playlist">
           {playlist && playlist.qr && (
-            <a className="workshop-card-qr" href={playlist.url} target="_blank" rel="noopener noreferrer" title="Scan or tap to open the workshop playlist">
-              <img src={playlist.qr} alt="QR code for the workshop playlist" />
+            <a className="workshop-card-qr" href={playlist.url} target="_blank" rel="noopener noreferrer" title="Scan or tap to open the Workshed playlist">
+              <img src={playlist.qr} alt="QR code for the Workshed playlist" />
             </a>
           )}
           <div className="workshop-card-body">
-            <div className="workshop-card-title">🎧 Workshop playlist</div>
+            <div className="workshop-card-title">🎧 Workshed playlist</div>
             {playlist ? (
               <>
-                <div>Reference audio and interactive charts that back up the arrangement notes. Not every song is on it.</div>
+                <div>Live recordings of our arrangements on YouTube, to check the notes against. Not every song is on it.</div>
                 <div className="workshop-card-url">{playlist.url}</div>
               </>
             ) : (
-              <div>No workshop playlist set for this band.</div>
+              <div>No Workshed playlist set for this band.</div>
             )}
             {!editing && (
               <div className="workshop-card-actions">
@@ -3057,7 +3057,7 @@
     // falls back to the built-in playlist below; '' means the band turned it off. The
     // bundled QR image encodes exactly WORKSHOP_PLAYLIST_DEFAULT_URL, so it is shown only
     // while the band uses that link (a QR for some other URL would send players elsewhere).
-    const WORKSHOP_PLAYLIST_DEFAULT_URL = 'https://tr.ee/vFPR90hvp169';
+    const WORKSHOP_PLAYLIST_DEFAULT_URL = 'https://tr.ee/zhH1AI'; // unlisted YouTube "Workshed" playlist
     const WORKSHOP_PLAYLIST_QR_SRC = 'assets/workshop-playlist-qr.png';
 
     // A typed link -> a safe http(s) URL, or '' when it is not one. Bare domains get https://. Pure.
@@ -15986,9 +15986,9 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           } catch (err) { /* a bad image must never take the document down */ }
         }
         doc.setFont(FONT, 'bold'); doc.setFontSize(F_LABEL); doc.setTextColor(...P.ACCENT);
-        doc.text('WORKSHOP PLAYLIST', textX, y + stripH / 2 - 6);
+        doc.text('WORKSHED PLAYLIST (YOUTUBE)', textX, y + stripH / 2 - 6);
         doc.setFont(FONT, 'normal'); doc.setFontSize(F_META); doc.setTextColor(...P.TEXT);
-        doc.text(pdfSafeText('Reference audio + interactive charts for these notes (not every song is on it).'), textX, y + stripH / 2 + 4);
+        doc.text(pdfSafeText('Live recordings of these arrangements - scan to check the notes (not every song is on it).'), textX, y + stripH / 2 + 4);
         doc.setTextColor(...P.ACCENT);
         if (typeof doc.textWithLink === 'function') doc.textWithLink(wp.url, textX, y + stripH / 2 + 14, { url: wp.url });
         else doc.text(wp.url, textX, y + stripH / 2 + 14);

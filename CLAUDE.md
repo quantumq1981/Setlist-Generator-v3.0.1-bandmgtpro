@@ -2309,22 +2309,24 @@ per song.
 
 - **Data:** `settings.workshopPlaylistUrl` (per band, persisted with the band settings; no
   new `localStorage` key). Absent/`null` → the built-in `WORKSHOP_PLAYLIST_DEFAULT_URL`
-  (`https://tr.ee/vFPR90hvp169`); `''` → turned off; any other value → that link.
-- **QR:** `assets/workshop-playlist-qr.png` (6 KB, the owner's black Linktree QR with a
-  3-module white margin added so it scans; verified by decoding it back). It encodes exactly
-  the default URL, so it is shown **only** while the band uses that link. A custom link shows
-  as text only, never under the wrong QR. The owner sent a second (white) QR that encodes a
-  different link (`tr.ee/zhH1AI`); it was not used.
+  (`https://tr.ee/zhH1AI`, the owner's unlisted YouTube "Workshed" playlist); `''` → turned
+  off; any other value → that link.
+- **QR:** `assets/workshop-playlist-qr.png` (2 KB, dark-on-white, generated for that URL with
+  the `qrcode` npm package, error correction M, 3-module margin; verified by decoding it back).
+  It encodes exactly the default URL, so it is shown **only** while the band uses that link. A
+  custom link shows as text only, never under the wrong QR. The owner sent two QR images: the
+  white one is this playlist; the black one (`tr.ee/vFPR90hvp169`) opens the owner's Charlie
+  Parker Songbook Trainer site and is not used. Both were checked by following the link.
 - **Pure helpers** (module scope before `BLANK_VENUE`; whitelisted + tested in
   `test/workshop-playlist.test.js`): `normalizePlaylistUrl` (https for bare links, rejects
   non-http(s) such as `javascript:`) and `workshopPlaylistFor(settings)` → `{url, qr}` or
   `null`.
 - **UI:** `WorkshopPlaylistContext` (provided by App; a context so no prop threading) feeds
-  `WorkshopPlaylistCard`: QR + "Open playlist ↗" + Change link / Turn off / Reset to default.
+  `WorkshopPlaylistCard` (labelled "Workshed playlist"): QR + "Open playlist ↗" + Change link / Turn off / Reset to default.
   It sits under "Charts & lead sheets" in the add-song form and in `SongEditFields` (the
   library inline editor and the in-setlist ✎ editor). The Advance view shows a read-only copy
   above the setlist.
-- **Arrangement Guide PDF:** page 1 gets a "WORKSHOP PLAYLIST" strip under the header with
+- **Arrangement Guide PDF:** page 1 gets a "WORKSHED PLAYLIST (YOUTUBE)" strip under the header with
   the QR (when the band uses the built-in link) and the link, both clickable. App preloads the
   QR as a data URL on mount, so the export stays synchronous on the tap (the iOS gesture
   rule, §9ah). The stage sheet is unchanged.

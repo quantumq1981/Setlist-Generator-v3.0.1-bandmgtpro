@@ -559,11 +559,11 @@ test('merging is stable across repeated imports of the same duplicate (idempoten
 test('the guide prints the workshop playlist strip on page 1 only (QR + link)', () => {
   const Doc = stubJsPDF();
   generateArrangementGuidePDF(buildArrangementGuideModel(SETS(), {}),
-    CTX(Doc, { workshopPlaylist: { url: 'https://tr.ee/vFPR90hvp169', qrData: 'data:image/png;base64,AA==' } }));
-  const strip = Doc.calls.text.filter(t => t.str === 'WORKSHOP PLAYLIST');
+    CTX(Doc, { workshopPlaylist: { url: 'https://tr.ee/zhH1AI', qrData: 'data:image/png;base64,AA==' } }));
+  const strip = Doc.calls.text.filter(t => t.str === 'WORKSHED PLAYLIST (YOUTUBE)');
   assert.equal(strip.length, 1);
   assert.equal(strip[0].page, 1);
-  assert.match(drawn(Doc), /tr\.ee\/vFPR90hvp169/);
+  assert.match(drawn(Doc), /tr\.ee\/zhH1AI/);
   assert.equal(Doc.calls.images, 1, 'the QR is drawn once');
 
   const Doc2 = stubJsPDF();
@@ -574,5 +574,5 @@ test('the guide prints the workshop playlist strip on page 1 only (QR + link)', 
 
   const Doc3 = stubJsPDF();
   generateArrangementGuidePDF(buildArrangementGuideModel(SETS(), {}), CTX(Doc3, { workshopPlaylist: null }));
-  assert.doesNotMatch(drawn(Doc3), /WORKSHOP PLAYLIST/);
+  assert.doesNotMatch(drawn(Doc3), /WORKSHED PLAYLIST/);
 });
