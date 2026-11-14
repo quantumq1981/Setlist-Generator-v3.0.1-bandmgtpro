@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-11-13 (built-in default master library + stage-sheet `*` title fix, §9ay).
+Last updated: 2026-11-14 (band-wide workshop playlist link + QR, §9az).
 
 ---
 
@@ -2297,6 +2297,46 @@ install seeds 117 songs (15 with notes) and survives a reload without duplicatin
 builds sets and the guide button counts the noted songs; 📥 Master List is a no-op on a
 seeded library; an existing 2-song install is not auto-seeded, and the button merges to
 118 while keeping the user's key/note and filling the blank BPM + empty note fields.
+
+---
+
+## 9az. Change log — 2026-11 band-wide workshop playlist (link + QR)
+
+Owner request: hired musicians use a "workshop" playlist (Linktree) of reference audio and
+interactive charts that back up the arrangement notes. Show it with each song's details
+alongside the chart uploads. Not every song is on it, so it is **one link per band**, not
+per song.
+
+- **Data:** `settings.workshopPlaylistUrl` (per band, persisted with the band settings; no
+  new `localStorage` key). Absent/`null` → the built-in `WORKSHOP_PLAYLIST_DEFAULT_URL`
+  (`https://tr.ee/zhH1AI`, the owner's unlisted YouTube "Workshed" playlist); `''` → turned
+  off; any other value → that link.
+- **QR:** `assets/workshop-playlist-qr.png` (2 KB, dark-on-white, generated for that URL with
+  the `qrcode` npm package, error correction M, 3-module margin; verified by decoding it back).
+  It encodes exactly the default URL, so it is shown **only** while the band uses that link. A
+  custom link shows as text only, never under the wrong QR. The owner sent two QR images: the
+  white one is this playlist; the black one (`tr.ee/vFPR90hvp169`) opens the owner's Charlie
+  Parker Songbook Trainer site and is not used. Both were checked by following the link.
+- **Pure helpers** (module scope before `BLANK_VENUE`; whitelisted + tested in
+  `test/workshop-playlist.test.js`): `normalizePlaylistUrl` (https for bare links, rejects
+  non-http(s) such as `javascript:`) and `workshopPlaylistFor(settings)` → `{url, qr}` or
+  `null`.
+- **UI:** `WorkshopPlaylistContext` (provided by App; a context so no prop threading) feeds
+  `WorkshopPlaylistCard` (labelled "Workshed playlist"): QR + "Open playlist ↗" + Change link / Turn off / Reset to default.
+  It sits under "Charts & lead sheets" in the add-song form and in `SongEditFields` (the
+  library inline editor and the in-setlist ✎ editor). The Advance view shows a read-only copy
+  above the setlist.
+- **Arrangement Guide PDF:** page 1 gets a "WORKSHED PLAYLIST (YOUTUBE)" strip under the header with
+  the QR (when the band uses the built-in link) and the link, both clickable. App preloads the
+  QR as a data URL on mount, so the export stays synchronous on the tap (the iOS gesture
+  rule, §9ah). The stage sheet is unchanged.
+
+Verification: `npm test` → 300/300 (+5: URL normalisation, default/custom/off resolution,
+and the guide strip with QR, without QR, and turned off via the stub jsPDF). Babel compile
+clean. Headless drive of the real app: the card and QR load in the add form, the library edit
+form and the ✎ editor; the Advance banner is read-only; the exported guide carries the strip,
+the link and an embedded image (page 1 reviewed visually); a custom link hides the QR,
+persists to band settings and survives a reload; Turn off removes it; 0 page errors.
 
 ---
 
