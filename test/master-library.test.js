@@ -45,6 +45,9 @@ test('master library: the 15 newest rehearsal notes are present and use real fie
   const slow = MASTER_LIBRARY.find(e => e.title === 'Slow Blues for Z from the 5');
   // The source note was stored as per-glyph mojibake; it must read as words.
   assert.match(slow.arrangement.global, /chromatic slide in bar 3 \(I9 - #I9 - I9\)/);
+  // Every song has an artist (owner confirmed the three the July sheet left blank/guessed).
+  assert.deepEqual(MASTER_LIBRARY.filter(e => !e.artist).map(e => e.title), []);
+  assert.equal(MASTER_LIBRARY.find(e => e.title === 'Street Corner Symphony').artist, 'Matchbox Twenty');
   // Newest source wins on overlaps (July list had I Know a Little at 212 BPM).
   assert.equal(MASTER_LIBRARY.find(e => e.title === 'I Know a Little').bpm, '106');
 });

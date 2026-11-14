@@ -2251,9 +2251,10 @@ arrive as new work orders and are added to this list in place.
   Result: **117 songs**, 15 with notes. Medleys stay separate from their single-song
   versions (both sources list both). Artist spellings normalised (Black Crowes → The Black
   Crowes, CCR → Creedence Clearwater Revival, …), titles stored in Title Case (every
-  renderer uppercases at draw time). Four rows with no artist in the July sheet got the
-  obvious one (Kool & the Gang, Garth Brooks, Luke Bryan, Rival Sons); *Sunday Morning*
-  and *Second Guessing* stay blank (ambiguous). Neither PDF has durations, so every song is
+  renderer uppercases at draw time). Six rows had no artist in the July sheet: three got the
+  obvious one (Kool & the Gang, Garth Brooks, Luke Bryan); the owner confirmed the rest
+  (Street Corner Symphony → Matchbox Twenty, Sunday Morning → Maroon 5, Second Guessing →
+  Jonny Lang). Neither PDF has durations, so every song is
   `DEFAULT_SONG_MINUTES` (4), the figure both exports' totals were computed from. Notes are
   stored as authored; only the one with encoding damage (*Slow Blues for Z from the 5*,
   NUL-interleaved per-glyph mojibake) went through `sanitizeNotation`.
