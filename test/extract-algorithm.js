@@ -170,6 +170,8 @@ for (const f of [
   'bhCleanVocalist', 'bhIsNoiseRow', 'bhStackedRowIsMeta', 'pdfParseBandHelperSets',
   // PDF.js input guard (PDF.js transfers + detaches the caller's buffer).
   'pdfDataCopy',
+  // Built-in default master library + its seed/merge helpers.
+  'DEFAULT_SONG_MINUTES', 'MASTER_LIBRARY', 'masterTitleKey', 'buildMasterLibrarySongs', 'mergeMasterLibrary',
 ]) pieces.push(extractDecl(f));
 pieces.push(extractDecl('BH_SET_HEADER_RE'));
 pieces.push(extractDecl('BH_KEY_CELL_RE'));
@@ -308,6 +310,7 @@ const EXPORTS = [
   'pdfParseBandHelperSets', 'guardCSVCell', 'bhStackedRowIsMeta', 'pdfDataCopy',
   'structureNoteText', 'formatNoteText', 'condenseNoteText', 'noteCueTags', 'noteChordsIn',
   'noteSplitSentences', 'guideNoteRuns', 'GUIDE_NOTE_STYLES',
+  'DEFAULT_SONG_MINUTES', 'MASTER_LIBRARY', 'masterTitleKey', 'buildMasterLibrarySongs', 'mergeMasterLibrary',
 ];
 
 // Minimal browser shims the algorithm touches (genId uses window.crypto).
