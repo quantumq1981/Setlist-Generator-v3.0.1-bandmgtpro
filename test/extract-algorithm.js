@@ -162,7 +162,7 @@ for (const f of [
   'pdfParseArrangementGuideVisible',
   'pdfParseArrangementNotes', 'pdfLooksLikeArrangementNotes',
   'arrTitleKey', 'arrNoteMatchesTitle', 'normalizeArtistKey', 'artistKeysMatch', 'bestNoteForSong',
-  'arrApplyNoteToArrangement', 'mergeArrangementFillEmpty',
+  'arrApplyNoteToArrangement', 'mergeArrangementFillEmpty', 'ARR_DEDUPE_DROP_ROLES', 'ARR_AUTO_ROLE_TAGS', 'arrDupKey', 'dedupeArrangement',
   // Setlist → library round-trip (flatten sets to songs + reattach notes; CSV arr reassembly).
   'stripFootnoteNum', 'flattenSetlistSongs', 'csvArrangementFromRow',
   // BandHelper/stacked setlist PDF parser (X-position column assignment).
@@ -295,7 +295,7 @@ const EXPORTS = [
   'MIN_LEARN_SAMPLE', 'venueOutcome', 'collectOutreachStats', 'smoothedRate', 'typeScoreMultiplier', 'bestStatInsight',
   'ARR_ROLES', 'ARR_SECTIONS', 'ARR_SECTION_LABELS', 'ARR_FIELDS', 'ARR_ROLE_IMPORT_HEADERS',
   'ARR_SECTION_IMPORT_HEADERS', 'ARR_FIELD_IMPORT_HEADERS', 'ARR_FIELD_EXPORT_HEADERS',
-  'parseArrangement', 'serializeArrangement', 'hasArrangementData',
+  'parseArrangement', 'serializeArrangement', 'hasArrangementData', 'getArrangementCue',
   'classifyArrLine', 'deriveArrangementSections',
   'repairNotationMojibake', 'repairRomanChain', 'sanitizeNotation',
   'buildStageSetlistModel', 'buildArrangementGuideModel', 'pdfSafeText',
@@ -306,7 +306,7 @@ const EXPORTS = [
   'arrRowText', 'pdfParseArrangementNotesVisible', 'pdfParseArrangementGuideVisible', 'pdfParseArrangementNotes',
   'pdfLooksLikeArrangementNotes',
   'arrTitleKey', 'arrNoteMatchesTitle', 'normalizeArtistKey', 'artistKeysMatch', 'bestNoteForSong',
-  'arrApplyNoteToArrangement', 'mergeArrangementFillEmpty',
+  'arrApplyNoteToArrangement', 'mergeArrangementFillEmpty', 'ARR_DEDUPE_DROP_ROLES', 'ARR_AUTO_ROLE_TAGS', 'arrDupKey', 'dedupeArrangement',
   'stripFootnoteNum', 'flattenSetlistSongs', 'csvArrangementFromRow',
   'pdfParseBandHelperSets', 'guardCSVCell', 'bhStackedRowIsMeta', 'pdfDataCopy',
   'structureNoteText', 'formatNoteText', 'condenseNoteText', 'noteCueTags', 'noteChordsIn',

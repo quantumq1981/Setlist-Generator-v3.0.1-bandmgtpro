@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-11-14 (band-wide workshop playlist link + QR, §9az).
+Last updated: 2026-11-14 (duplicate-note fix + master list refresh, §9ba).
 
 ---
 
@@ -2285,7 +2285,8 @@ arrive as new work orders and are added to this list in place.
 `arrangement` (fields are `ARR_FIELDS`: the six roles + four sections). Add an entry for a
 new song. Fresh installs get it automatically; existing installs get missing songs and
 empty fields through 📥 Master List (it does not overwrite a note the user already has).
-Update the counts in `test/master-library.test.js`.
+Update the counts in `test/master-library.test.js`. Run new notes through
+`dedupeArrangement` before pasting them in (§9ba).
 
 Verification: `npm test` → 295/295 (+7 in `test/master-library.test.js`: 117 unique titles
 with valid styles/keys/BPM and no `*`/`…`/NUL damage; 15 notes on real fields incl. the
@@ -2337,6 +2338,69 @@ clean. Headless drive of the real app: the card and QR load in the add form, the
 form and the ✎ editor; the Advance banner is read-only; the exported guide carries the strip,
 the link and an embedded image (page 1 reviewed visually); a custom link hides the QR,
 persists to band settings and survives a reload; Turn off removes it; 0 page errors.
+
+---
+
+## 9ba. Change log — 2026-11 duplicate rehearsal notes fixed + master list refreshed
+
+Owner report: every song's notes showed twice in the editor and the guide (screenshots: the
+same text under Form & Harmony and again under the role "General Notes").
+
+- **Root cause.** The Arrangement Guide prints sections *derived* from the role notes
+  ("Drums: …", "Ending Cue: …", the whole-band note under Form & Harmony). When a guide was
+  re-imported and its embedded `[[SLARR]]` block could not be decoded (clipped by iOS
+  printing), the visible text was parsed and `arrApplyNoteToArrangement` wrote those derived
+  sections as **real** fields, beside the role notes they came from. Once a song has real
+  sections the guide/editor print sections **and** roles, so every note appeared twice, and
+  each further export → re-import cycle compounded it. The setlist generator's
+  `[OPENER] Establish groove before vocal.` / `[CLOSER] Extended vamp – end on visual cue.`
+  tags (written onto a generated set's first/last song) leaked into stored notes the same way.
+- **`dedupeArrangement(arrangement)`** (pure, module scope beside
+  `mergeArrangementFillEmpty`; whitelisted + tested in `test/arrangement-dedupe.test.js`):
+  strips the two auto tags (`ARR_AUTO_ROLE_TAGS`); drops a whole-band (`global`) or
+  `endingCue` role note whose every line already sits in a section; keeps an instrument note
+  (drums/keys/bass/guitar2) on its role and cuts its `"<Label>: …"` echo from the sections;
+  strips the redundant `Ending Cue:` label inside Transition / Outro. Lines compare after
+  `sanitizeNotation`, case, punctuation and bullets (`arrDupKey`); a long line whose words are
+  95%+ inside one section line also matches (a garbled-encoding copy loses a few symbols).
+  Only repeats are removed; distinct notes are never merged; unchanged input is returned
+  byte-identical; idempotent.
+- **Wired in:** `arrApplyNoteToArrangement` and `mergeArrangementFillEmpty` (every import
+  door), and a one-time clean-up in the LOAD ACTIVE BAND DATA effect over the band's songs and
+  saved Gig Profiles setlists (persisted by the existing save effect / a direct
+  `LS.set(bandGigs)`). No `localStorage` key added.
+- **Editor:** the role field formerly labelled "General Notes" is now **"Whole band"**, so it
+  no longer reads as a second copy of the General Notes section.
+- **Stage cue line** (`getArrangementCue`): one clean line from the ending cue → whole-band
+  note → sections, skipping bullets, numbering and heading-only lines ("Song Structure:",
+  "Outro:•::"), passed through `sanitizeNotation`. A multi-line cue used to spill into the next
+  song's row on the stage sheet.
+- **Master list refresh** (`MASTER_LIBRARY`, §9ay): rebuilt from the owner's live library as
+  printed from the app (113 songs; notes from its embedded block, 29 of 31 recovered exactly,
+  the two clipped ones — Crossroads, Help the Poor — from its visible guide). Changes vs the
+  §9ay list: the owner's own edits carried over (Hotel California Bm, Tightrope Bb, Rack 'Em
+  Up 119, Don't Change Horses F); the two Superstition entries merged into one
+  "Superstition / Living for the City" (the owner's newer Em / up-tempo funk entry and its
+  concise notes; the long auto-generated medley map dropped); single songs a medley already
+  covers left out (Ain't Too Proud to Beg, My Girl, Superstition, Living for the City,
+  Roadhouse Blues — the owner had removed them; the medley "Ain't Too Proud to Beg / My Girl"
+  stays); Rack 'Em Up's stray "GENERAL NOTES" heading and `[1]…[5]` citation markers removed;
+  6 songs added from the July 2026 list (Trouble No More, Soul Medley, and four with no artist
+  in the sheet: Heartbreaker → Led Zeppelin, Let's Stay Together → Al Green, Gravity → John
+  Mayer, Susie Q → Creedence Clearwater Revival, each matching the listed key). Result: **118
+  songs, 23 with real notes** (7 songs' only "note" was an auto opener/closer tag).
+
+Verification: `npm test` → 312/312 (+12 in `test/arrangement-dedupe.test.js`, from the
+owner's real duplicated notes: whole-band/section repeat, dash/bullet/case variants, ending-cue
+echo + label strip, instrument echo cut (Do It Again), short labelled echo, note split across
+sections (Black Cat Bone), garbled-vs-repaired near repeat (Red House), distinct notes and
+byte-identity, guide re-import onto role notes, auto-tag strip, single-line cue, and a master
+list with no duplicated notes / medley components / one Superstition / the 6 additions).
+Babel compile clean. Headless drives of the real app, 0 page errors: an existing library
+seeded with the owner's duplicated notes is cleaned on load and saved (songs and a saved gig);
+the editor shows each note once with the "Whole band" label; the exported guide prints each
+note once; a fresh install seeds 118 songs (23 with notes) and 📥 Master List still merges
+without overwriting.
 
 ---
 
