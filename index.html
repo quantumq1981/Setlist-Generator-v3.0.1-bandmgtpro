@@ -1614,11 +1614,30 @@
       };
     }
 
+    // One short, single-line cue for the stage sheet / Stage view. Looks in the ending cue,
+    // the whole-band note, then the sections, and takes the first line that says something:
+    // bullets and numbering are dropped, and heading-only lines ("Song Structure:",
+    // "Outro:•::") are skipped. A multi-line cue used to spill into the next song's row.
     function getArrangementCue(arrangement) {
       if (!arrangement) return '';
-      const { endingCue, global: g } = parseArrangement(arrangement);
-      const cue = (endingCue || g || '').replace(/^\[OPENER\]\s*/,'').replace(/\n\[CLOSER\][^\n]*$/,'').trim();
-      return cue.slice(0, 40) + (cue.length > 40 ? '…' : '');
+      const a = parseArrangement(arrangement);
+      const sources = [a.endingCue, a.global, a.transition_outro, a.intro_cue, a.form_harmony, a.general_notes];
+      for (const src of sources) {
+        for (const raw of sanitizeNotation(String(src || '')).split('\n')) {
+          const line = raw
+            .replace(/^[\s\u2022\u00b7*-]*(\d+\s*[.)][\s\u2022\u00b7*-]*)?/, '')
+            .replace(/^\[(OPENER|CLOSER)\]\s*/i, '')
+            .replace(/[\s\u2022\u00b7:*-]+$/, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (!line) continue;
+          const words = (line.match(/[A-Za-z0-9#]+/g) || []);
+          if (/:$/.test(raw.trim().replace(/[\s\u2022\u00b7*]+$/, '')) && words.length <= 3) continue; // a heading
+          if (words.join('').length < 3) continue;
+          return line.length > 40 ? line.slice(0, 40).trimEnd() + '…' : line;
+        }
+      }
+      return '';
     }
 
     function hasArrangementData(arrangement) {
@@ -2830,177 +2849,202 @@
 "Fly Away","Lenny Kravitz",3.62,rock,A,138,ALL,"[CLOSER] Extended outro – end on visual cue from drummer.","","","","","[Trash-Can / Visual Cue]"`;
 
     // ── Default master library (Zemba Music / The Late Shift Band) ────────────────
-    // The owner's working repertoire, installed on a fresh install so testing never
-    // starts with a re-upload. Built 2026-11-13 by merging two PDFs and removing duplicates:
-    //   1) "Zemba Master List (QR code, Arrangement Notes)" — the Tropicana Laughlin
-    //      Oct 30–31 2026 setlist + Master Arrangement Guide (61 songs, 15 rehearsal
-    //      notes, read losslessly from the embedded [[SLARR]] block). NEWEST source:
-    //      its key/BPM/style and notes win on every overlap.
-    //   2) "Zemba Master List July 2026" — the 114-song stage sheet. 58 rows duplicate
-    //      (1); the other 56 are appended (truncated "…" titles/styles resolved).
-    // Medleys stay separate from their single-song versions (e.g. "Superstition /
-    // Living for the City" and "Superstition"), as both sources list them. Neither PDF
-    // carries durations, so every song uses DEFAULT_SONG_MINUTES — the same 4 min/song
-    // both exports' totals were computed from. To add notes from a later work order,
-    // edit the matching entry's `arrangement` (fields: ARR_FIELDS) — see CLAUDE.md §9ay.
+    // The owner's working repertoire, installed on a fresh install so testing never starts
+    // with a re-upload. Current version (2026-11-14, CLAUDE.md §9ba): the owner's live
+    // library as printed from the app (113 songs + 31 notes, notes read from the embedded
+    // [[SLARR]] block), with the two Superstition / Living for the City entries merged into
+    // one, notes de-duplicated and the generator's auto [OPENER]/[CLOSER] tags removed
+    // (dedupeArrangement; 23 songs keep real notes), and 6 songs added from the July 2026 list
+    // (Trouble No More, Soul Medley, Heartbreaker, Let's Stay Together, Gravity, Susie Q).
+    // Single songs that a medley already covers (Ain't Too Proud to Beg, My Girl,
+    // Superstition, Living for the City, Roadhouse Blues) are deliberately left out.
+    // Medleys stay separate entries. Neither source carries durations, so every song uses
+    // DEFAULT_SONG_MINUTES. To add notes from a later work order, edit the matching entry's
+    // `arrangement` (fields: ARR_FIELDS) -- see CLAUDE.md §9ay.
     const DEFAULT_SONG_MINUTES = 4;
     const MASTER_LIBRARY = [
-      { title: "Cissy Strut", artist: "The Meters", key: "C", bpm: "93", style: "funk", arrangement: {
-          global: "[OPENER] Establish groove before vocal.",
+      { title: "Soulshine", artist: "Warren Haynes", key: "Bb", bpm: "65", style: "soul ballad" },
+      { title: "Slow Blues for Z from the 5", artist: "Chris Zemba", key: "G", bpm: "60", style: "slow blues", arrangement: {
+          form_harmony: "So slow blues in the key of G Starts the V7 and follows a standard 12 bar I- IV -V Pattern with a Chromatic slide in Bar 3 (I9 - #I9 - I9 ) during solo sections rhythm parts deviate from the conventional I IV V blues pattern adding stormy Monday chord substitutions in: bars 7 to 8 (I-iim7-iiim7 -biiim7) Followed by a chromatic slide in bar 10 (V9 - #V9 - V9 ) and then a (I -VI7- II7-V7 ) All Dominant Turn around in bars 11 - 12 Returning to conventional I-IV-V form after the solo Sections",
         } },
-      { title: "Born Under a Bad Sign", artist: "Robben Ford", key: "D", bpm: "94", style: "blues-rock" },
-      { title: "Keep Your Hands to Yourself", artist: "Georgia Satellites", key: "A", bpm: "132", style: "swamp rock" },
-      { title: "Isn't She Lovely", artist: "Stevie Wonder", key: "E", bpm: "121", style: "jazz" },
-      { title: "One Way Out", artist: "The Allman Brothers Band", key: "A", bpm: "118", style: "blues-rock" },
-      { title: "Mary Jane's Last Dance", artist: "Tom Petty", key: "Am", bpm: "85", style: "roots americana" },
-      { title: "Pride & Joy - Little Wing", artist: "Stevie Ray Vaughan / Jimi Hendrix", key: "Em", bpm: "128", style: "blues-rock", arrangement: {
-          global: "[Cold Open]",
+      { title: "She Talks to Angels", artist: "The Black Crowes", key: "E", bpm: "75", style: "acoustic folk" },
+      { title: "Red House", artist: "Jimi Hendrix", key: "A", bpm: "60", style: "slow blues", arrangement: {
+          form_harmony: "Slow blues, in the key of A ~ Cold guitar open band comes in on the IV during solo sections rhythm parts deviate from the conventional I IV V blues pattern adding stormy Monday chord substitutions in: bars 7 to 8 (I-iim7-iiim7 -biiim7) Followed by a chromatic slide in bar 10 (V9 - #V9 - V9 ) and then a (I -VI7- II7-V7 ) All Dominant Turn around in bars 11 - 12 Returning to conventional I-IV-V form after the solo Sections",
         } },
-      { title: "Superstition / Living for the City", artist: "Stevie Wonder", key: "E", bpm: "100", style: "funk", arrangement: {
-          global: "• Medley Arrangement Map: \"Superstition\" / \"Living for the City\":\n• Core Transition Note: Keep the key of\nE constant when transitioning between songs.\nSection-by-Section Roadmap:\n• 1.\nIntro / Cue:\n• Drums: Starts with the signature drum intro.\n• 2.\n\"Superstition\" (First Half):\n• Standard verses and choruses.\n• 3.\nMedley Transition (Before 3rd Verse):\n• Seamless key-maintaining transition from \"Superstition\" directly into\n\"Living for the City\":\n• in E.\n• 4.\n\"Living for the City\" Section:\n• Successfully cycles through all verses.\n• Solo Section: Navigates through the verse and chorus changes.\n• Build-Up: Build intensity straight into the \"Living for the City\" tagline.\n• 5.\nReturn to \"Superstition\":\n• Transition back for the final verse of \"Superstition.\"",
+      { title: "Tennessee Whiskey", artist: "Chris Stapleton", key: "G", bpm: "49", style: "country" },
+      { title: "Free Bird", artist: "Lynyrd Skynyrd", key: "G", bpm: "60", style: "soft rock" },
+      { title: "Cold Shot", artist: "Stevie Ray Vaughan", key: "A", bpm: "94", style: "blues", arrangement: {
+          transition_outro: "[Ending is Direct Segue] Into red House intro",
+        } },
+      { title: "Superstition / Living for the City", artist: "Stevie Wonder", key: "Em", bpm: "100", style: "up-tempo funk", arrangement: {
+          global: "before third verse transitions into living for the city remains in the same key ( E ) successfully cycles through all versus of living for the city then solo section through verse and chorus changes — build up to live for the city tagline before going into La verse of superstition",
           drums: "[Drum Intro]",
-          endingCue: "Outro:•::\n• Ending Cue: Tag the pre-chorus\n• 4 times:• punching out cleanly on last beat",
+          transition_outro: "Tag the pre-chorus 4X punching out on the 4th",
         } },
       { title: "What You Won't Do for Love", artist: "Bobby Caldwell", key: "Em", bpm: "85", style: "smooth jazz", arrangement: {
+          global: "ending tags the opening line 3 times and punches out",
           endingCue: "[Tag×3] The intro line",
         } },
+      { title: "Hotel California", artist: "Eagles", key: "Bm", bpm: "74", style: "soft rock" },
+      { title: "I Shot the Sheriff", artist: "Eric Clapton", key: "Gm", bpm: "90", style: "reggae", arrangement: {
+          form_harmony: "After the Last chorus [Breakdown] Half volume - Vamp verse Chords -Build up gradually In the Final four bars, begin with two accented hits on the first two beats of each measure. end with the opening riff",
+        } },
+      { title: "Black Cat Bone", artist: "Albert Collins", key: "C", bpm: "110", style: "blues", arrangement: {
+          drums: "this is your typical funk shuffle no ride symbol, mostly kick drum, high hat and snare backbeat on 2 and 4",
+          guitar2: "Cold Guitar open band comes in on the |V",
+          intro_cue: "My arrangement is as follows, I kick off the intro on the I , band comes in on the IV and then the song takes form. Chorus has hits on the I (pushed) Then break , Band is back in on the IV [Cold Open]",
+          form_harmony: "This has it quick IV change ( like crossroads) in the key of C",
+        } },
+      { title: "Drive", artist: "Incubus", key: "Em", bpm: "92", style: "soft rock" },
+      { title: "Isn't She Lovely", artist: "Stevie Wonder", key: "E", bpm: "121", style: "jazz" },
+      { title: "Me & Mrs. Jones", artist: "Billy Paul", key: "Cm", bpm: "80", style: "rnb" },
+      { title: "My Mama Told Me So", artist: "The Crusaders", key: "Bb", bpm: "94", style: "traditional blues" },
+      { title: "Ramblin' Man", artist: "The Allman Brothers Band", key: "G", bpm: "90", style: "country", arrangement: {
+          transition_outro: "look for visual cue from soloist then ending the same as the intro",
+        } },
+      { title: "Affirmation", artist: "George Benson", key: "Bm", bpm: "96", style: "smooth jazz" },
+      { title: "Tightrope", artist: "Stevie Ray Vaughan", key: "Bb", bpm: "112", style: "blues", arrangement: {
+          form_harmony: "signature hit by Stevie Ray Vaughan.\nThis is a tricky arrangement that must be followed exactly like the studio recording.\nPlease reference the original version as well as what is on the work shed playlist.\nTo avoid train wrecks and embarrassment.",
+        } },
+      { title: "Santeria", artist: "Sublime", key: "E", bpm: "91", style: "reggae" },
+      { title: "Mary Jane's Last Dance", artist: "Tom Petty", key: "Am", bpm: "85", style: "roots americana" },
+      { title: "Rack 'Em Up", artist: "Jonny Lang", key: "C", bpm: "119", style: "swing", arrangement: {
+          intro_cue: "bass cold open for 2 bars then Drums come in",
+          form_harmony: "* Tempo / Feel: 119 BPM, 4/4 time\n* Rehearsal Mark A - Main Groove\n* Rehearsal Mark B - Kick Placement\nPlay a steady, laid-back 119 BPM blues-rock groove in 4/4 time without rushing.\nDrive the beat with a strong snare on 2 and 4 and straight 8th notes on the hi-hat, while keeping the kick simple to leave room for the bass and guitars.\nKeep fills minimal and clean. Focus on locking in with the rest of the band with a relaxed feel.",
+        } },
+      { title: "Call Me the Breeze", artist: "Lynyrd Skynyrd", key: "A", bpm: "92", style: "country" },
+      { title: "Cripple Creek", artist: "The Band", key: "A", bpm: "78", style: "roots americana" },
+      { title: "Black Magic Woman", artist: "Santana", key: "Dm", bpm: "118", style: "latin" },
+      { title: "Dixie Chicken", artist: "Little Feat", key: "A", bpm: "78", style: "roots americana" },
+      { title: "This Masquerade", artist: "George Benson", key: "F", bpm: "90", style: "yacht rock" },
+      { title: "Friends in Low Places", artist: "Garth Brooks", key: "A", bpm: "", style: "midtempo" },
+      { title: "All Blues", artist: "Miles Davis", key: "G", bpm: "128", style: "modal jazz" },
+      { title: "Every Day I Have the Blues", artist: "B.B. King", key: "Bb", bpm: "126", style: "traditional blues" },
+      { title: "Second Guessing", artist: "Jonny Lang", key: "C", bpm: "", style: "midtempo" },
+      { title: "Use Me", artist: "Bill Withers", key: "E", bpm: "78", style: "funk" },
+      { title: "Deal", artist: "Grateful Dead", key: "A", bpm: "104", style: "roots americana" },
+      { title: "Get Down on It / Celebration", artist: "Kool & the Gang", key: "Em", bpm: "", style: "midtempo" },
+      { title: "So Very Hard to Go", artist: "Tower of Power", key: "Bb", bpm: "86", style: "classic soul" },
+      { title: "Street Corner Symphony", artist: "Matchbox Twenty", key: "A", bpm: "", style: "midtempo" },
+      { title: "Mr. Magic", artist: "Grover Washington Jr.", key: "Cm", bpm: "92", style: "funk" },
+      { title: "Country Girl (Shake It for Me)", artist: "Luke Bryan", key: "E", bpm: "", style: "midtempo" },
+      { title: "Ophelia", artist: "The Band", key: "C", bpm: "116", style: "roots americana" },
+      { title: "Cissy Strut", artist: "The Meters", key: "C", bpm: "93", style: "funk" },
+      { title: "Statesboro Blues", artist: "The Allman Brothers Band", key: "D", bpm: "108", style: "shuffle", arrangement: {
+          general_notes: "Chicago blues Shuffle with a quick IV brakes, three times coming out of first solo",
+        } },
+      { title: "My Old School", artist: "Steely Dan", key: "G", bpm: "125", style: "jazz rock", arrangement: {
+          global: "The arrangement is exactly like the record",
+          keys: "[Keys Lead-In]",
+        } },
+      { title: "Put It Where You Want It", artist: "The Crusaders", key: "C", bpm: "110", style: "groove" },
+      { title: "Peg", artist: "Steely Dan", key: "G", bpm: "117", style: "jazz rock" },
+      { title: "Keep Your Hands to Yourself", artist: "Georgia Satellites", key: "A", bpm: "132", style: "swamp rock" },
+      { title: "Do It Again", artist: "Steely Dan", key: "Gm", bpm: "125", style: "jazz rock", arrangement: {
+          drums: "drum intro pocket groove",
+          intro_cue: "this tradition is done as a instrumental, smooth jazz style guitar covers all the melodies verse and chorus",
+          transition_outro: "ends on the V Chord ( D7#9) and then immediately transitions into peg with 4 beat count in",
+        } },
+      { title: "Vehicle", artist: "The Ides of March", key: "Ebm", bpm: "102", style: "classic soul" },
+      { title: "Shaky Ground", artist: "Delbert McClinton", key: "E", bpm: "105", style: "funk" },
+      { title: "Whipping Post", artist: "The Allman Brothers Band", key: "A", bpm: "100", style: "rock" },
+      { title: "What I Got", artist: "Sublime", key: "D", bpm: "96", style: "ska" },
+      { title: "Sweet Home Alabama", artist: "Lynyrd Skynyrd", key: "D", bpm: "98", style: "southern rock" },
+      { title: "Hard to Handle / Hush", artist: "The Black Crowes", key: "B", bpm: "103", style: "rock" },
+      { title: "Hey Hey What Can I Do", artist: "Led Zeppelin", key: "A", bpm: "114", style: "classic soul" },
+      { title: "Take Five", artist: "Dave Brubeck", key: "Ebm", bpm: "174", style: "cool jazz" },
+      { title: "The Letter", artist: "Joe Cocker", key: "Bbm", bpm: "92", style: "rock" },
+      { title: "Killing Floor", artist: "Jimi Hendrix", key: "A", bpm: "114", style: "shuffle", arrangement: {
+          intro_cue: "• Opening: fast, syncopated riff establishes the rhythmic hook.",
+          form_harmony: "• Hendrix’s Monterey performance of “Killing Floor\" is an aggressive, fast 12-bar blues in A.\n• Form: A7–D7–E7 blues, alternating between brief verses and extended solos.\n• Feel: At 160 BPM, straight-eighth rock replaces the blues shuffle.\n• Rhythm section: Monterey pop recording reviews a fairly over the top busy drum part however the groove itself is still fairly anchored.\n• That’s the main focus here it’s gonna be a very fast of tempo Chicago blues rock groove in 12 /8 make that your focus in locking in with the rest of the band.\n• Same goes for the Bass part -/anchor the groove Playing an up-tempo Chicago blues 12 /8 feel",
+          transition_outro: "at the end of the song, rest of the band drops out leaving Guitar only. Guitar transitions into opening of the lemon song in the key of E.",
+        } },
+      { title: "Interstate Love Song", artist: "Stone Temple Pilots", key: "C#m", bpm: "85", style: "rock", arrangement: {
+          global: "• 1.• Intro (8 Bars): Clean strumming and slide melody,\nDrums 4 heavy 1/4 note hits on Bar 5.\n• 2.• Verse 1 (8 Bars): Dynamic drop ().\n• 3.• Chorus (8 Bars): Explosive feel with heavy rhythm guitars and\n• 4.• Riff Break (4 Bars): Restate heavy intro riff with a tight stop.\n• 5.• Verse 2 (8 Bars): Same as Verse 1.\n• 6.• Chorus (8 Bars): Repeat of the first Chorus.\n• 7.• Outro (8+ Bars): Tag opening riff and fade out.",
+        } },
+      { title: "La Grange", artist: "ZZ Top", key: "A", bpm: "162", style: "shuffle" },
+      { title: "Midnight Rider", artist: "The Allman Brothers Band", key: "D", bpm: "94", style: "rock", arrangement: {
+          general_notes: "Solo section extended - don't go to Bridge change until cued",
+        } },
+      { title: "Mustang Sally", artist: "Wilson Pickett", key: "C", bpm: "115", style: "classic soul" },
       { title: "What's Going On / Mercy Mercy Me", artist: "Marvin Gaye", key: "E", bpm: "101", style: "motown", arrangement: {
           global: "Song Structure:\n• Intro: Guitar pickup octave line; full band enters on Emaj7 with a steady groove.\n• Verse (12-Bar Cycle): Emaj7 – C#m7 – F#m7 – A/B.\n• Pre-Chorus: F#m7 – A/B (build momentum).\n• Chorus: Emaj7 – C#m7 (fast chord changes, 1 bar each).\n• Vamp/Interlude: Am9 groove, repeats twice; transitions to \"Mercy\" loop.\n• \"Mercy\" Loop: Emaj7 – C#m7 – F#m7 – B7 or A/B (2 bars per chord).\n• Outro: Return to \"What's Going On\" interlude, ending on Emaj7.\nChord Chart Reference:\n• Intro/Groove: Emaj7\nVerse:\n• Emaj7 (4 bars) → C#m7 (4 bars) → F#m7 (2 bars) → A/B (2 bars)\nPre-Chorus:\n• F#m7 (2 bars) → A/B (2 bars)\nChorus:\n• Emaj7 (1 bar) → C#m7 (1 bar)\n• Vamp/Solo: Am9 groove (2x)\n\"Mercy\" Loop:\n• Emaj7 (2 bars) → C#m7 (2 bars) → F#m7 (2 bars) → B7 or A/B (2 bars)",
         } },
+      { title: "Born on the Bayou", artist: "Creedence Clearwater Revival", key: "E", bpm: "110", style: "rock" },
+      { title: "Yellow Ledbetter", artist: "Pearl Jam", key: "E", bpm: "74", style: "blues-rock" },
+      { title: "Jealous Again", artist: "The Black Crowes", key: "D", bpm: "116", style: "rock" },
+      { title: "Tush", artist: "ZZ Top", key: "G", bpm: "144", style: "blues-rock" },
+      { title: "I Know a Little", artist: "Lynyrd Skynyrd", key: "A", bpm: "106", style: "southern rock" },
+      { title: "One Way Out", artist: "The Allman Brothers Band", key: "A", bpm: "118", style: "blues-rock", arrangement: {
+          drums: "Heavy, mid-tempo train groove—locked to the mainriff.\" break on the IV chord only during Vocals and solo section",
+          intro_cue: "Cold open Guitar for his main riff",
+          form_harmony: "song follows a 12 bar blues form But Band simmers on the I for 4 to 8 bars determined at leaders discretion— what’s cute Ben goes to the IV ( D7) and the song takes for him, resuming the 12 bar structure.",
+        } },
+      { title: "Room 335", artist: "Larry Carlton", key: "D", bpm: "114", style: "jazz fusion" },
+      { title: "Pride & Joy - Little Wing", artist: "Stevie Ray Vaughan / Jimi Hendrix", key: "Em", bpm: "128", style: "blues-rock", arrangement: {
+          global: "[Cold Open]",
+        } },
+      { title: "Before You Hit the Ground", artist: "Jonny Lang", key: "E", bpm: "110", style: "up-tempo funk" },
+      { title: "Voodoo Child", artist: "Jimi Hendrix", key: "E", bpm: "176", style: "blues-rock" },
+      { title: "Come Together", artist: "The Beatles", key: "D", bpm: "85", style: "rock" },
+      { title: "The Lemon Song", artist: "Led Zeppelin", key: "E", bpm: "83", style: "blues-rock" },
+      { title: "Domino", artist: "Van Morrison", key: "A", bpm: "132", style: "classic soul" },
+      { title: "Love Me Two Times / Roadhouse Blues", artist: "The Doors", key: "E", bpm: "128", style: "rock" },
+      { title: "On Broadway", artist: "George Benson", key: "Bb", bpm: "112", style: "rnb" },
+      { title: "Long Train Runnin'", artist: "The Doobie Brothers", key: "Gm", bpm: "108", style: "rock" },
+      { title: "Sunday Morning", artist: "Maroon 5", key: "C", bpm: "", style: "midtempo" },
+      { title: "Hey Joe", artist: "Jimi Hendrix", key: "E", bpm: "86", style: "blues-rock" },
+      { title: "Brown Eyed Girl", artist: "Van Morrison", key: "G", bpm: "150", style: "classic soul" },
+      { title: "Hoochie Coochie Man", artist: "Eric Clapton", key: "A", bpm: "85", style: "traditional blues" },
+      { title: "Let's Get It On", artist: "Marvin Gaye", key: "C", bpm: "84", style: "motown" },
       { title: "The Weight", artist: "The Band", key: "A", bpm: "100", style: "midtempo", arrangement: {
           global: "• Verses (1-4): Warm, acoustic-driven with relaxed, swinging gospel feel and shared lead vocals.\n• Choruses: Expansive three-part vocal harmonies with a driving piano and drum groove.\n• Solo Section: Fluid organ or guitar solo that maintains laid-back Americana rhythm.\n• Walk-Down Section: Harmonic descent that builds tension, tagged twice.",
           endingCue: "• Outro: Final choruses with double-tag cadence, resolving into a warm, fading acoustic and vocal hum.",
           intro_cue: "Descending Walk-Down (Tagged 2x)",
           form_harmony: "• Structure: Verse → Chorus → Verse → Chorus → Verse → Chorus → Solo → Chorus → Verse → Chorus → Walk-Down (Tagged 2x) → Verse → Chorus (Tagged 2x) → Outro.",
         } },
-      { title: "Slow Blues for Z from the 5", artist: "Chris Zemba", key: "G", bpm: "60", style: "slow blues", arrangement: {
-          global: "Slow blues in the key of G starts with the V chord followed by the IV, then the I, adhering to a standard 12-bar I-IV-V pattern. There's a chromatic slide in bar 3 (I9 - #I9 - I9) during the solo sections, and I-IV-V blues pattern by incorporating Stormy Monday chord substitutions in bars followed by another chromatic slide in bar 10 (V9 - #V9 - V9), leading into a dominant turnaround in bars 11-12 (I - VI7 - II7 - V7). After the solo sections, the piece returns to the traditional I-IV-V form.",
-        } },
-      { title: "Sweet Home Alabama", artist: "Lynyrd Skynyrd", key: "D", bpm: "98", style: "southern rock" },
-      { title: "Black Magic Woman", artist: "Santana", key: "Dm", bpm: "118", style: "latin" },
-      { title: "Cold Shot", artist: "Stevie Ray Vaughan", key: "A", bpm: "94", style: "blues" },
-      { title: "Red House", artist: "Jimi Hendrix", key: "A", bpm: "60", style: "slow blues" },
-      { title: "Breezin'", artist: "George Benson", key: "D", bpm: "94", style: "jazz" },
-      { title: "I Know a Little", artist: "Lynyrd Skynyrd", key: "A", bpm: "106", style: "southern rock" },
-      { title: "Jealous Again", artist: "The Black Crowes", key: "D", bpm: "116", style: "rock" },
-      { title: "Tightrope", artist: "Stevie Ray Vaughan", key: "E", bpm: "112", style: "blues" },
-      { title: "Hard to Handle / Hush", artist: "The Black Crowes", key: "B", bpm: "103", style: "rock", arrangement: {
-          global: "Handle\" / \"Hush\" Medley\n1 Transition: After the \"Hard to Handle\" guitar solo, smoothly transition directly into the intro of Deep Purple’s \"Hush\" (keeping the same key).\n2 \"Hush\" Structure: Intro → Verse → Chorus → Verse → Chorus → Solo → Final half-time section.\n3 Hook: Vocal hook: \"Na-Na Na...\"\n4 The Stop: Band hits a hard stop on the I chord.\nVocals alone on: \"Hey little thing, let me light your candle 'cause... I'm so hard to handle now...\"\n5 Outro: Band re-joins for the standard 3-tag ending of \"Hard to Handle.\"\n6 Closer: Extended vamp; end on a visual cue.",
-        } },
-      { title: "Killing Floor", artist: "Jimi Hendrix", key: "A", bpm: "114", style: "shuffle" },
-      { title: "Ain't No Sunshine", artist: "Bill Withers", key: "Am", bpm: "78", style: "soul ballad" },
-      { title: "Come Together", artist: "The Beatles", key: "D", bpm: "85", style: "rock" },
-      { title: "Sittin' on the Dock of the Bay", artist: "Otis Redding", key: "G", bpm: "104", style: "soul ballad" },
-      { title: "Do It Again", artist: "Steely Dan", key: "Gm", bpm: "125", style: "jazz rock" },
-      { title: "Peg", artist: "Steely Dan", key: "G", bpm: "117", style: "jazz rock" },
-      { title: "Mr. Magic", artist: "Grover Washington Jr.", key: "Cm", bpm: "92", style: "funk" },
-      { title: "Let's Get It On", artist: "Marvin Gaye", key: "C", bpm: "84", style: "motown" },
-      { title: "The Thrill Is Gone", artist: "B.B. King", key: "Cm", bpm: "70", style: "slow blues" },
-      { title: "I Shot the Sheriff", artist: "Eric Clapton", key: "Gm", bpm: "90", style: "reggae", arrangement: {
-          global: "After the last chorus, transition into a breakdown section where the volume is set to half of the previous intensity. For this part, maintain the verse chords, creating a vamp that allows for gradual build-up in both dynamics and energy. As you approach the final four bars of this section, emphasize the rhythm by incorporating two accented hits on the first two beats of each measure, ensuring they are powerful and pronounced. Finally, conclude this segment by returning to the opening riff, creating a cohesive link back to the earlier parts of the song.",
-        } },
-      { title: "My Old School", artist: "Steely Dan", key: "G", bpm: "125", style: "jazz rock", arrangement: {
-          global: "The arrangement is exactly like the record",
-          keys: "[Keys Lead-In]",
-        } },
+      { title: "There's Got to Be a Change", artist: "Jonny Lang", key: "C", bpm: "112", style: "traditional blues" },
+      { title: "Born Under a Bad Sign", artist: "Robben Ford", key: "D", bpm: "94", style: "blues-rock" },
+      { title: "Boogie on Reggae Woman", artist: "Stevie Wonder", key: "A", bpm: "97", style: "up-tempo funk" },
+      { title: "Slightly Dirty", artist: "Larry Carlton", key: "D", bpm: "97", style: "jazz fusion" },
       { title: "Ain't Too Proud to Beg / My Girl", artist: "The Temptations", key: "C", bpm: "120", style: "motown" },
       { title: "Foxy Lady", artist: "Jimi Hendrix", key: "F#", bpm: "100", style: "blues-rock" },
-      { title: "Interstate Love Song", artist: "Stone Temple Pilots", key: "C#m", bpm: "85", style: "rock", arrangement: {
-          global: "• 1.• Intro (8 Bars): Clean strumming and slide melody,\nDrums  4 heavy 1/4 note hits on Bar 5.\n• 2.• Verse 1 (8 Bars): Dynamic drop  ().\n• 3.• Chorus (8 Bars): Explosive feel with heavy rhythm guitars and\n• 4.• Riff Break (4 Bars): Restate heavy intro riff with a tight stop.\n• 5.• Verse 2 (8 Bars): Same as Verse 1.\n• 6.• Chorus (8 Bars): Repeat of the first Chorus.\n• 7.• Outro (8+ Bars): Tag opening riff and fade out.",
-        } },
-      { title: "Voodoo Child", artist: "Jimi Hendrix", key: "E", bpm: "176", style: "blues-rock" },
-      { title: "Long Train Runnin'", artist: "The Doobie Brothers", key: "Gm", bpm: "108", style: "rock" },
-      { title: "Help the Poor", artist: "Robben Ford", key: "Dm", bpm: "88", style: "blues-rock", arrangement: {
-          global: "16-bar minor blues: i – iv – i – i | iv – iv – i – i | V – iv – i – i | iv – V – i – i Bass pattern is very close to Billie Jean almost the same.",
-        } },
-      { title: "Purple Haze", artist: "Jimi Hendrix", key: "E", bpm: "108", style: "blues-rock" },
-      { title: "Use Me", artist: "Bill Withers", key: "E", bpm: "78", style: "funk" },
-      { title: "Whipping Post", artist: "The Allman Brothers Band", key: "A", bpm: "100", style: "rock" },
-      { title: "Knock on Wood", artist: "Eddie Floyd", key: "E", bpm: "107", style: "motown" },
-      { title: "Call Me the Breeze", artist: "Lynyrd Skynyrd", key: "A", bpm: "92", style: "country" },
-      { title: "Love Me Two Times / Roadhouse Blues", artist: "The Doors", key: "E", bpm: "128", style: "rock" },
-      { title: "La Grange", artist: "ZZ Top", key: "A", bpm: "162", style: "shuffle" },
-      { title: "Born on the Bayou", artist: "Creedence Clearwater Revival", key: "E", bpm: "110", style: "rock" },
-      { title: "Crossroads", artist: "Eric Clapton", key: "A", bpm: "112", style: "blues-rock", arrangement: {
-          global: "Arrangement Note: This composition adheres to a 12-bar blues structure in the key of A, incorporating a quick change to the IV7 chord (D7) in the second bar (fast IV change), followed by a return to the I7 chord (A7). For the turnaround, replace the conventional V7–IV7–I progression (E7–D7–A7) with a vi7–IV7–I progression (F#m7–D7–A7) to introduce additional tension prior to the standard resolution.",
-          drums: "syncopated backbeat on 2 & 4 on snare, 4-on-the-floor kick, tight groove",
-        } },
-      { title: "Santeria", artist: "Sublime", key: "E", bpm: "91", style: "reggae" },
-      { title: "Cripple Creek", artist: "The Band", key: "A", bpm: "78", style: "roots americana" },
-      { title: "Shaky Ground", artist: "Delbert McClinton", key: "E", bpm: "105", style: "funk", arrangement: {
-          global: "[OPENER] Establish groove before vocal.",
-        } },
-      { title: "Statesboro Blues", artist: "The Allman Brothers Band", key: "D", bpm: "108", style: "shuffle" },
-      { title: "Ophelia", artist: "The Band", key: "C", bpm: "116", style: "roots americana" },
-      { title: "Put It Where You Want It", artist: "The Crusaders", key: "C", bpm: "110", style: "groove" },
-      { title: "The Letter", artist: "Joe Cocker", key: "Bbm", bpm: "92", style: "rock" },
-      { title: "Soulshine", artist: "Warren Haynes", key: "Bb", bpm: "65", style: "soul ballad" },
-      { title: "All Along the Watchtower", artist: "Jimi Hendrix", key: "C", bpm: "113", style: "blues-rock" },
-      { title: "Rack 'Em Up", artist: "Jonny Lang", key: "C", bpm: "112", style: "swing" },
-      { title: "Tennessee Whiskey", artist: "Chris Stapleton", key: "G", bpm: "49", style: "country" },
-      { title: "Black Cat Bone", artist: "Albert Collins", key: "C", bpm: "110", style: "blues", arrangement: {
-          global: "Cold Guitar open band comes in on the |V (F7)",
-          drums: "typical funk shuffle no ride symbol, mostly kick drum, high hat and snare backbeat on 2 and 4",
-          bass: "This has it quick IV change ( like crossroads) in the key of C",
-        } },
-      { title: "Ramblin' Man", artist: "The Allman Brothers Band", key: "G", bpm: "90", style: "country" },
-      { title: "Midnight Rider", artist: "The Allman Brothers Band", key: "D", bpm: "94", style: "rock" },
-      { title: "Drive", artist: "Incubus", key: "Em", bpm: "92", style: "soft rock" },
-      { title: "Deal", artist: "Grateful Dead", key: "A", bpm: "104", style: "roots americana" },
-      { title: "25 or 6 to 4", artist: "Chicago", key: "Am", bpm: "147", style: "straight-ahead rock" },
-      { title: "Higher Ground", artist: "Stevie Wonder", key: "E", bpm: "125", style: "up-tempo funk" },
-      { title: "Never Been to Spain", artist: "Three Dog Night", key: "E", bpm: "97", style: "blues-rock" },
-      { title: "Get Down on It / Celebration", artist: "Kool & the Gang", key: "Em", bpm: "", style: "midtempo" },
-      { title: "Affirmation", artist: "George Benson", key: "Bm", bpm: "96", style: "smooth jazz" },
-      { title: "Friends in Low Places", artist: "Garth Brooks", key: "A", bpm: "", style: "midtempo" },
-      { title: "Hey Joe", artist: "Jimi Hendrix", key: "E", bpm: "86", style: "blues-rock" },
-      { title: "Hotel California", artist: "Eagles", key: "Am", bpm: "74", style: "soft rock" },
-      { title: "Street Corner Symphony", artist: "Matchbox Twenty", key: "A", bpm: "", style: "midtempo" },
-      { title: "Yellow Ledbetter", artist: "Pearl Jam", key: "E", bpm: "74", style: "blues-rock" },
-      { title: "Crossfire", artist: "Stevie Ray Vaughan", key: "E", bpm: "116", style: "blues-rock" },
-      { title: "Before You Hit the Ground", artist: "Jonny Lang", key: "E", bpm: "110", style: "up-tempo funk" },
-      { title: "Dixie Chicken", artist: "Little Feat", key: "A", bpm: "78", style: "roots americana" },
-      { title: "Country Girl (Shake It for Me)", artist: "Luke Bryan", key: "E", bpm: "", style: "midtempo" },
-      { title: "Domino", artist: "Van Morrison", key: "A", bpm: "132", style: "classic soul" },
-      { title: "Superstition", artist: "Stevie Wonder", key: "E", bpm: "100", style: "up-tempo funk" },
-      { title: "Boogie on Reggae Woman", artist: "Stevie Wonder", key: "A", bpm: "97", style: "up-tempo funk" },
-      { title: "All Blues", artist: "Miles Davis", key: "G", bpm: "128", style: "modal jazz" },
-      { title: "There's Got to Be a Change", artist: "Jonny Lang", key: "C", bpm: "112", style: "traditional blues" },
-      { title: "Take Five", artist: "Dave Brubeck", key: "Ebm", bpm: "174", style: "cool jazz" },
-      { title: "This Masquerade", artist: "George Benson", key: "F", bpm: "90", style: "yacht rock" },
-      { title: "Remedy", artist: "The Black Crowes", key: "C", bpm: "80", style: "blues-rock" },
-      { title: "Tune 88", artist: "Jeff Lorber", key: "G", bpm: "102", style: "jazz fusion" },
       { title: "Comin' Home Baby", artist: "Danny Gatton", key: "Gm", bpm: "132", style: "hard bop" },
-      { title: "Plush", artist: "Stone Temple Pilots", key: "G", bpm: "144", style: "pop-rock" },
-      { title: "Tush", artist: "ZZ Top", key: "G", bpm: "144", style: "blues-rock" },
-      { title: "Ain't Too Proud to Beg", artist: "The Temptations", key: "C", bpm: "119", style: "motown" },
-      { title: "Me & Mrs. Jones", artist: "Billy Paul", key: "Cm", bpm: "80", style: "rnb" },
-      { title: "Honky Tonk Women", artist: "The Rolling Stones", key: "G", bpm: "120", style: "straight-ahead rock" },
-      { title: "Sunday Morning", artist: "Maroon 5", key: "C", bpm: "", style: "midtempo" },
-      { title: "Brown Eyed Girl", artist: "Van Morrison", key: "G", bpm: "150", style: "classic soul" },
-      { title: "Don't Change Horses", artist: "Tower of Power", key: "G", bpm: "98", style: "up-tempo funk" },
-      { title: "Slightly Dirty", artist: "Larry Carlton", key: "D", bpm: "97", style: "jazz fusion" },
-      { title: "What I Got", artist: "Sublime", key: "D", bpm: "96", style: "ska" },
-      { title: "Mustang Sally", artist: "Wilson Pickett", key: "C", bpm: "115", style: "classic soul" },
       { title: "Revelation", artist: "Robben Ford", key: "G", bpm: "92", style: "blues-rock" },
-      { title: "My Girl", artist: "The Temptations", key: "C", bpm: "105", style: "motown" },
+      { title: "Don't Change Horses", artist: "Tower of Power", key: "F", bpm: "98", style: "up-tempo funk", arrangement: {
+          form_harmony: "song is originally in the key of G. This is transposed down a whole step to F.",
+        } },
+      { title: "Breezin'", artist: "George Benson", key: "D", bpm: "94", style: "jazz" },
+      { title: "Remedy", artist: "The Black Crowes", key: "C", bpm: "80", style: "blues-rock" },
+      { title: "Plush", artist: "Stone Temple Pilots", key: "G", bpm: "144", style: "pop-rock" },
+      { title: "Honky Tonk Women", artist: "The Rolling Stones", key: "G", bpm: "120", style: "straight-ahead rock" },
+      { title: "Crossroads", artist: "Eric Clapton", key: "A", bpm: "112", style: "blues-rock", arrangement: {
+          drums: "syncopated backbeat on 2 & 4 on snare, 4-on-the-floor kick, tight groove",
+          form_harmony: "Arrangement note: 12-bar blues in A with a quick-change to IV7 (D7) in bar 2, then back to I7 (A7). For the turnaround, sub the usual V7-IV7-I (E7-D7-A7) with vi7-IV7-I (F#m7-D7-A7) to add tension before the standard resolve",
+        } },
       { title: "Talk to Your Daughter", artist: "Robben Ford", key: "G", bpm: "133", style: "pop-rock" },
-      { title: "Second Guessing", artist: "Jonny Lang", key: "C", bpm: "", style: "midtempo" },
-      { title: "Free Bird", artist: "Lynyrd Skynyrd", key: "G", bpm: "60", style: "soft rock" },
-      { title: "So Very Hard to Go", artist: "Tower of Power", key: "Bb", bpm: "86", style: "classic soul" },
-      { title: "Every Day I Have the Blues", artist: "B.B. King", key: "Bb", bpm: "126", style: "traditional blues" },
-      { title: "Vehicle", artist: "The Ides of March", key: "Ebm", bpm: "102", style: "classic soul" },
-      { title: "On Broadway", artist: "George Benson", key: "Bb", bpm: "112", style: "rnb" },
-      { title: "Sledgehammer", artist: "Peter Gabriel", key: "Ebm", bpm: "96", style: "up-tempo funk" },
-      { title: "Room 335", artist: "Larry Carlton", key: "D", bpm: "114", style: "jazz fusion" },
-      { title: "Roadhouse Blues", artist: "The Doors", key: "E", bpm: "122", style: "blues-rock" },
-      { title: "She Talks to Angels", artist: "The Black Crowes", key: "E", bpm: "75", style: "acoustic folk" },
-      { title: "Hey Hey What Can I Do", artist: "Led Zeppelin", key: "A", bpm: "114", style: "classic soul" },
-      { title: "The Lemon Song", artist: "Led Zeppelin", key: "E", bpm: "83", style: "blues-rock" },
-      { title: "Hoochie Coochie Man", artist: "Eric Clapton", key: "A", bpm: "85", style: "traditional blues" },
-      { title: "Living for the City", artist: "Stevie Wonder", key: "E", bpm: "102", style: "classic soul" },
       { title: "The Sky Is Crying", artist: "Elmore James", key: "Bb", bpm: "60", style: "traditional blues" },
-      { title: "My Mama Told Me So", artist: "The Crusaders", key: "Bb", bpm: "94", style: "traditional blues" },
+      { title: "Help the Poor", artist: "Robben Ford", key: "Dm", bpm: "88", style: "blues-rock", arrangement: {
+          form_harmony: "16-bar minor blues: i - iv - i - i | iv - iv - i - i | V - iv - i - i | iv - V - i - i Bass pattern is very close to Billie Jean almost the same.",
+        } },
+      { title: "Tune 88", artist: "Jeff Lorber", key: "G", bpm: "102", style: "jazz fusion" },
+      { title: "Crossfire", artist: "Stevie Ray Vaughan", key: "E", bpm: "116", style: "blues-rock" },
+      { title: "Higher Ground", artist: "Stevie Wonder", key: "E", bpm: "125", style: "up-tempo funk" },
+      { title: "25 or 6 to 4", artist: "Chicago", key: "Am", bpm: "147", style: "straight-ahead rock" },
+      { title: "Purple Haze", artist: "Jimi Hendrix", key: "E", bpm: "108", style: "blues-rock" },
+      { title: "Sledgehammer", artist: "Peter Gabriel", key: "Ebm", bpm: "96", style: "up-tempo funk" },
+      { title: "The Thrill Is Gone", artist: "B.B. King", key: "Cm", bpm: "70", style: "slow blues" },
+      { title: "Ain't No Sunshine", artist: "Bill Withers", key: "Am", bpm: "78", style: "soul ballad" },
+      { title: "Never Been to Spain", artist: "Three Dog Night", key: "E", bpm: "97", style: "blues-rock" },
+      { title: "Sittin' on the Dock of the Bay", artist: "Otis Redding", key: "G", bpm: "104", style: "soul ballad" },
+      { title: "All Along the Watchtower", artist: "Jimi Hendrix", key: "C", bpm: "113", style: "blues-rock" },
+      { title: "Knock on Wood", artist: "Eddie Floyd", key: "E", bpm: "107", style: "motown" },
+      { title: "Trouble No More", artist: "The Allman Brothers Band", key: "Am", bpm: "136", style: "uptempo" },
+      { title: "Soul Medley", artist: "Various", key: "C", bpm: "104", style: "groove" },
+      { title: "Heartbreaker", artist: "Led Zeppelin", key: "A", bpm: "", style: "midtempo" },
+      { title: "Let's Stay Together", artist: "Al Green", key: "F", bpm: "", style: "midtempo" },
+      { title: "Gravity", artist: "John Mayer", key: "G", bpm: "", style: "midtempo" },
+      { title: "Susie Q", artist: "Creedence Clearwater Revival", key: "E", bpm: "", style: "midtempo" },
     ];
 
     // Title identity for the master list: case, punctuation and a dropped final "g"
@@ -7759,7 +7803,112 @@
       if (!note || !note.arr || !Object.keys(note.arr).length) return null;
       const merged = { ...parseArrangement(existingArrangement) };
       for (const r of ARR_FIELDS) if (note.arr[r]) merged[r] = note.arr[r];
-      return serializeArrangement(merged);
+      // Applying a guide's sections onto a song that still has the role notes they were
+      // derived from would store every note twice; keep one copy.
+      return dedupeArrangement(serializeArrangement(merged));
+    }
+
+    // ── Duplicate-note clean-up ────────────────────────────────────────────────
+    // A guide PDF prints sections DERIVED from the role notes ("Drums: …", "Ending Cue: …",
+    // the general note again under Form & Harmony). Re-importing that visible text wrote
+    // those sections as real fields while the original role notes stayed, so every note
+    // was stored -- and then shown and printed -- twice. This keeps one copy:
+    //   * a whole-band note (global) or ending cue whose every line already sits in a
+    //     section is dropped; the section copy (placed + repaired) stays;
+    //   * an instrument note (drums/keys/bass/guitar2) stays on its role, and its
+    //     "Drums: …" echo is cut out of the sections;
+    //   * the redundant "Ending Cue:" label is stripped inside Transition / Outro once the
+    //     ending-cue role is gone.
+    // Only exact repeats are removed (compared after sanitizeNotation, case, punctuation
+    // and bullet marks are ignored). Idempotent; unchanged input is returned byte-identical.
+    const ARR_DEDUPE_DROP_ROLES = ['global', 'endingCue'];
+    // The two tags generate() writes onto a set's first/last song. They describe that one
+    // generated set, not the song, but a guide export -> re-import used to bake them into
+    // the library for good ("[CLOSER] Extended vamp" on songs that close nothing). Stored
+    // notes never keep them; generated setlists still get them. Dash variants included.
+    const ARR_AUTO_ROLE_TAGS = [
+      /\[OPENER\] Establish groove before vocal\.\s*/g,
+      /\s*\[CLOSER\] Extended vamp [\u2013\u2014-] end on visual cue\./g,
+    ];
+    function arrDupKey(text) {
+      return sanitizeNotation(String(text || '')).toLowerCase()
+        .replace(/[•·*]/g, ' ').replace(/[^a-z0-9#]+/g, ' ').trim();
+    }
+    function dedupeArrangement(arrangement) {
+      if (!arrangement || !String(arrangement).trim()) return arrangement || '';
+      const o = { ...parseArrangement(arrangement) };
+      const has = (f) => !!(o[f] && String(o[f]).trim());
+      let changed = false;
+      for (const f of ARR_FIELDS) {
+        if (!has(f)) continue;
+        let v = String(o[f]);
+        for (const re of ARR_AUTO_ROLE_TAGS) v = v.replace(re, ' ');
+        v = v.replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/[ \t]{2,}/g, ' ').trim();
+        if (v !== String(o[f]).trim()) { changed = true; if (v) o[f] = v; else delete o[f]; }
+      }
+      if (!ARR_SECTIONS.some(has)) return changed ? serializeArrangement(o) : arrangement;
+      const sectionKeys = () => ' ' + ARR_SECTIONS.filter(has).map(f => arrDupKey(o[f])).join(' | ') + ' ';
+      const sectionLines = () => new Set(ARR_SECTIONS.filter(has)
+        .flatMap(f => String(o[f]).split('\n').map(arrDupKey)).filter(Boolean));
+      const roleLines = (r) => String(o[r]).split('\n').map(arrDupKey).filter(Boolean);
+      // A role line counts as repeated when it is a whole section line, or (12+ chars, so a
+      // stray word never matches) appears inside the section text.
+      // A long line (8+ words) whose words are 95%+ inside one section line also counts:
+      // the garbled-encoding copy of a note can lose a few symbols (e.g. "I-IV-V") that the
+      // repaired section copy kept, and is still the same note.
+      const nearRepeat = (line, lines) => {
+        const words = line.split(' ');
+        if (words.length < 8) return false;
+        for (const sl of lines) {
+          const have = new Set(sl.split(' '));
+          if (words.filter(w => have.has(w)).length / words.length >= 0.95) return true;
+        }
+        return false;
+      };
+      const repeated = (line, all, lines) => lines.has(line) ||
+        (line.length >= 12 && all.indexOf(' ' + line + ' ') !== -1) || nearRepeat(line, lines);
+
+      for (const r of ARR_ROLES) {
+        if (!has(r)) continue;
+        const all = sectionKeys();
+        const lines = sectionLines();
+        const rl = roleLines(r);
+        if (!rl.length) continue;
+        const label = ARR_ROLE_LABELS[r].toLowerCase();
+        const labelKey = arrDupKey(label);
+        // Plain repeat (the note's own words sit in a section) vs a labelled echo
+        // ("Drums: <note>", which is how the guide prints a role inside a section).
+        const plain = rl.every(l => repeated(l, all, lines));
+        const echoed = !plain && rl.every(l => repeated(labelKey + ' ' + l, all, lines) || repeated(l, all, lines));
+        if (!plain && !echoed) continue;
+        if (plain && (ARR_DEDUPE_DROP_ROLES.indexOf(r) !== -1 ||
+            rl.every(l => lines.has(l)))) { delete o[r]; changed = true; continue; }
+        if (ARR_DEDUPE_DROP_ROLES.indexOf(r) !== -1) { delete o[r]; changed = true; continue; }
+        // Instrument note: keep it on the role, cut its "<Label>: <text>" echo from sections.
+        const want = arrDupKey(label + ' ' + o[r]);
+        for (const sec of ARR_SECTIONS) {
+          if (!has(sec)) continue;
+          const kept = [];
+          for (const raw of String(o[sec]).split('\n')) {
+            const at = raw.toLowerCase().indexOf(label + ':');
+            if (at !== -1 && arrDupKey(raw.slice(at)) === want) {
+              const head = raw.slice(0, at).replace(/[\s•·*-]+$/, '');
+              changed = true;
+              if (arrDupKey(head)) kept.push(head);
+              continue;
+            }
+            kept.push(raw);
+          }
+          const next = kept.join('\n').trim();
+          if (next !== String(o[sec]).trim()) { if (next) o[sec] = next; else delete o[sec]; }
+        }
+      }
+      if (!has('endingCue') && has('transition_outro')) {
+        const stripped = String(o.transition_outro).split('\n')
+          .map(l => l.replace(/^(\s*[•·*-]?\s*)ending cue:\s*/i, '$1')).join('\n');
+        if (stripped !== o.transition_outro) { o.transition_outro = stripped; changed = true; }
+      }
+      return changed ? serializeArrangement(o) : arrangement;
     }
 
     // Fill-empty union of two arrangement strings across ARR_FIELDS (the six roles +
@@ -7783,7 +7932,7 @@
         if (!have && add) { out[f] = inc[f]; filled++; }
       }
       return {
-        arrangement: filled ? serializeArrangement(out) : (existingArrangement || ''),
+        arrangement: filled ? dedupeArrangement(serializeArrangement(out)) : (existingArrangement || ''),
         filled,
       };
     }
@@ -9765,7 +9914,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
             <ArrSectionFields arr={arrObj} onChange={upd} onReplace={obj => setForm({ ...form, arrangement: serializeArrangement(obj) })} />
             <div className="arr-roles-grid">
               <div className="arr-role-item arr-role-full">
-                <div className="arr-role-item-label">General Notes</div>
+                <div className="arr-role-item-label">Whole band</div>
                 <textarea className="arr-role-input" rows="2" value={arrObj.global} onChange={e => upd('global', e.target.value)} placeholder="General cues, form notes, count-in…" />
               </div>
               <div className="arr-role-item">
@@ -10054,7 +10203,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                 <ArrSectionFields arr={arrObj} onChange={upd} onReplace={obj => setForm({ ...form, arrangement: serializeArrangement(obj) })} />
                 <div className="arr-roles-grid">
                   <div className="arr-role-item arr-role-full">
-                    <div className="arr-role-item-label">General Notes</div>
+                    <div className="arr-role-item-label">Whole band</div>
                     <textarea className="arr-role-input" rows="2" value={arrObj.global} onChange={e => upd('global', e.target.value)} placeholder="General cues, form notes, count-in…" />
                   </div>
                   <div className="arr-role-item">
@@ -16658,7 +16807,13 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           ? buildMasterLibrarySongs(genId)
           : (storedSongsStore || []);
         // PHASE 3A: normalize status for older data
-        const normalizedSongs = storedSongsRaw.map(s => ({ ...s, status: (s.status || 'active') }));
+        // Also folds away notes stored twice (role + section copy, §9ba) -- idempotent, and a
+        // song with nothing to fold keeps its exact arrangement string.
+        const normalizedSongs = storedSongsRaw.map(s => {
+          const out = { ...s, status: (s.status || 'active') };
+          if (s.arrangement) out.arrangement = dedupeArrangement(s.arrangement);
+          return out;
+        });
 
         const storedSettings = LS.get(LS_KEYS.bandSettings(activeBandId)) || { numSets: 2, setDuration: 45, setDurations: [], allowSongReuse: false, useEnergyCurve: true, forceOpener: false, forceCloser: true, lockedOpeners: [], lockedClosers: [], useTonalGravity: false, tonalSmoothness: 70, anchorKey: '', showDetailedDiagnostics: false, energyCurveType: 'standard', energyWeight: 0.35, tonalWeight: 0.25, diversityWeight: 1.0, randomness: 50, optimizationLevel: 'standard', setTemplate: 'freeform', songAffinities: [], songAntiAffinities: [], openerBySet: {}, closerBySet: {} };
         // Ensure backward compatibility for settings without newer fields
@@ -16679,7 +16834,22 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         if (!storedSettings.openerBySet || typeof storedSettings.openerBySet !== 'object') storedSettings.openerBySet = {};
         if (!storedSettings.closerBySet || typeof storedSettings.closerBySet !== 'object') storedSettings.closerBySet = {};
         const storedImports = LS.get(LS_KEYS.bandImports(activeBandId)) || [];
-        const storedGigs = LS.get(LS_KEYS.bandGigs(activeBandId)) || [];
+        const storedGigsRaw = LS.get(LS_KEYS.bandGigs(activeBandId)) || [];
+        let gigsDeduped = false;
+        const storedGigs = storedGigsRaw.map(g => ({
+          ...g,
+          setlists: (g.setlists || []).map(set => ({
+            ...set,
+            songs: (set.songs || []).map(sg => {
+              if (!sg.arrangement) return sg;
+              const arrangement = dedupeArrangement(sg.arrangement);
+              if (arrangement === sg.arrangement) return sg;
+              gigsDeduped = true;
+              return { ...sg, arrangement };
+            }),
+          })),
+        }));
+        if (gigsDeduped) LS.set(LS_KEYS.bandGigs(activeBandId), storedGigs);
         const storedWatermark = LS.get(LS_KEYS.bandWatermark(activeBandId)) || null;
         // Backfill: venues added before per-venue tracking tokens existed get one now
         // (stable per venue thereafter — never regenerated on subsequent loads).

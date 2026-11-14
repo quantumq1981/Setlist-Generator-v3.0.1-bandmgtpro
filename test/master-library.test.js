@@ -14,8 +14,8 @@ const {
 let n = 0;
 const idFn = () => 'id' + (++n);
 
-test('master library: 117 unique songs, valid styles/keys/BPM, clean text', () => {
-  assert.equal(MASTER_LIBRARY.length, 117);
+test('master library: 118 unique songs, valid styles/keys/BPM, clean text', () => {
+  assert.equal(MASTER_LIBRARY.length, 118);
   const keys = new Set();
   for (const e of MASTER_LIBRARY) {
     const k = masterTitleKey(e.title);
@@ -31,9 +31,9 @@ test('master library: 117 unique songs, valid styles/keys/BPM, clean text', () =
   }
 });
 
-test('master library: the 15 newest rehearsal notes are present and use real fields', () => {
+test('master library: the 23 current rehearsal notes are present and use real fields', () => {
   const withNotes = MASTER_LIBRARY.filter(e => e.arrangement);
-  assert.equal(withNotes.length, 15);
+  assert.equal(withNotes.length, 23);
   for (const e of withNotes) {
     const fields = Object.keys(e.arrangement);
     assert.ok(fields.length > 0);
@@ -44,7 +44,7 @@ test('master library: the 15 newest rehearsal notes are present and use real fie
   }
   const slow = MASTER_LIBRARY.find(e => e.title === 'Slow Blues for Z from the 5');
   // The source note was stored as per-glyph mojibake; it must read as words.
-  assert.match(slow.arrangement.global, /chromatic slide in bar 3 \(I9 - #I9 - I9\)/);
+  assert.match(slow.arrangement.form_harmony, /Chromatic slide in Bar 3 \(I9 - #I9 - I9 \)/);
   // Every song has an artist (owner confirmed the three the July sheet left blank/guessed).
   assert.deepEqual(MASTER_LIBRARY.filter(e => !e.artist).map(e => e.title), []);
   assert.equal(MASTER_LIBRARY.find(e => e.title === 'Street Corner Symphony').artist, 'Matchbox Twenty');
@@ -76,9 +76,9 @@ test('buildMasterLibrarySongs: full song objects with serialized arrangements', 
 
 test('mergeMasterLibrary: empty library gets everything', () => {
   const r = mergeMasterLibrary([], idFn);
-  assert.equal(r.added, 117);
+  assert.equal(r.added, 118);
   assert.equal(r.updated, 0);
-  assert.equal(r.songs.length, 117);
+  assert.equal(r.songs.length, 118);
 });
 
 test('mergeMasterLibrary: never overwrites user data, only fills blanks', () => {
@@ -90,7 +90,7 @@ test('mergeMasterLibrary: never overwrites user data, only fills blanks', () => 
   const frozen = JSON.stringify(mine);
   const r = mergeMasterLibrary(mine, idFn);
   assert.equal(JSON.stringify(mine), frozen, 'input not mutated');
-  assert.equal(r.added, 116);
+  assert.equal(r.added, 117);
   assert.equal(r.updated, 1);
   const w = r.songs.find(s => s.id === 'u1');
   assert.equal(w.key, 'G', 'user key kept');
