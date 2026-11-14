@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-11-14 (duplicate-note fix + master list refresh, §9ba).
+Last updated: 2026-11-14 (Tropicana work order folded into the master list, §9bb).
 
 ---
 
@@ -86,7 +86,8 @@ For a one-off probe you can still lift a single function ad hoc, but prefer addi
 case to the suite so the check is permanent.
 
 ### Git / PRs
-Feature branch: `claude/skill-point-usability-qqdkbn`. Open PRs against `main`.
+Feature branch: whichever `claude/*` branch the session assigns (historically
+`claude/skill-point-usability-qqdkbn`). Open PRs against `main`.
 When a PR merges, restart the branch from `origin/main` for the next change.
 
 **The app is being rebranded to "BandLeaderHQ" and taken public (GitHub Pages +
@@ -2401,6 +2402,46 @@ seeded with the owner's duplicated notes is cleaned on load and saved (songs and
 the editor shows each note once with the "Whole band" label; the exported guide prints each
 note once; a fresh install seeds 118 songs (23 with notes) and 📥 Master List still merges
 without overwriting.
+
+---
+
+## 9bb. Change log — 2026-11 Tropicana Oct 30–31 work order → master list
+
+Owner request: review the Tropicana Laughlin Oct 30–31 export (stage sheet + Master
+Arrangement Guide, generated 10/27, re-saved on iOS 10/29) and fold into `MASTER_LIBRARY`
+any rehearsal notes for songs that lack them and any songs not yet on the list. Data-only.
+
+- **Review.** Notes were read losslessly from the embedded `[[SLARR]]` block (58/58 chunks,
+  15 notes); the 61 songs from the stage grid. The iOS re-save added only one stray Pencil
+  stroke (a Stamp annotation on page 6, no text). Result of the diff against the §9ba list:
+  - **Songs:** all 61 are already on the master list (`AINT TO PROUD -MY GIRL` = the
+    *Ain't Too Proud to Beg / My Girl* medley). Nothing added.
+  - **Metadata:** 3 differences, all the owner's later edits recorded in §9ba (Tightrope Bb,
+    Rack 'Em Up 119, Superstition Em / up-tempo funk). The master keeps them.
+  - **Notes:** 12 of 15 were already in the master, identical or as the concise rewrite. Cissy
+    Strut and Shaky Ground carry only the generator's auto `[OPENER]` tag, so they stay
+    note-free (§9ba policy).
+- **Added: Hard to Handle / Hush** (the one song with real notes and none in the master).
+  The wording is as authored, except: the clipped first line (`Handle" / "Hush" Medley`) is repaired, and
+  item 6 ("Closer: Extended vamp; end on a visual cue.") is dropped. Item 6 is the generator's
+  `[CLOSER]` tag reworded, and it contradicts item 5's 3-tag ending. Stored in **explicit sections**
+  (`form_harmony`: heading + items 1–3; `transition_outro`: item 4 + the "Vocals alone on"
+  cue + item 5). In a whole-band (`global`) field, the guide's line classifier re-split it and
+  parted item 4 from its vocal cue. The source PDF shows that same scramble.
+- **Filled: Black Cat Bone** `guitar2` → "Cold Guitar open band comes in on the IV (F7)". This adds the F7
+  the export named, and fixes `|V` → `IV` (F7 is the IV in C, matching the entry's intro cue).
+  Existing installs: 📥 Master List fills only *empty* fields, so it adds Hush to a song
+  with no notes but never rewrites a Black Cat Bone note the user already has.
+- Result: **118 songs, 24 with notes.**
+
+Verification: `npm test` → 313/313 (master-library test updated to 24 notes, plus one test for
+this work order: Hush in sections + repaired heading + no closer/opener tag + dedupe-stable, the
+Black Cat Bone F7, the opener-tag-only songs still note-free, the owner's later edits kept).
+Babel compile clean (index.html + 3 companions). Headless Playwright drive of the real app
+(vendored npm libs) → 12/12, 0 page errors: fresh install seeds 118 songs / 24 with notes;
+the whole-library guide export prints the Hush entry once, items 1→5 in order; an
+existing 2-song install is not auto-seeded, and 📥 Master List fills Hush and keeps the user's own
+Black Cat Bone note.
 
 ---
 
