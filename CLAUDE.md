@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-11-14 (Tropicana work order folded into the master list, §9bb).
+Last updated: 2026-11-17 (4 missing songs added to the master list, §9bc).
 
 ---
 
@@ -2442,6 +2442,30 @@ Babel compile clean (index.html + 3 companions). Headless Playwright drive of th
 the whole-library guide export prints the Hush entry once, items 1→5 in order; an
 existing 2-song install is not auto-seeded, and 📥 Master List fills Hush and keeps the user's own
 Black Cat Bone note.
+
+---
+
+## 9bc. Change log — 2026-11 master list check (75-song live-library print)
+
+Owner request: check a 75-song "ZembaMusic Co Master Song List" (printed from the live
+library on iOS, 2026-11-17) against `MASTER_LIBRARY` and add whatever is missing. Data-only.
+
+- **Added 4 songs** (key/BPM/style as printed): Boys Are Back in Town (Thin Lizzy, A, 81,
+  straight-ahead rock), No Woman No Cry (Bob Marley, C, 78, reggae), I'll Be Around (The
+  Spinners, E, 101, soul ballad), The Joker (Steve Miller Band, F, 83, rock). Titles follow the
+  library's spelling so `masterTitleKey` matches them on 📥 Master List. Result: **122 songs,
+  24 with notes** (no new notes — every song in the print with real notes already has them).
+- **Not added (already present under another spelling):** `AINT TO PROUD -MY GIRL` = the
+  *Ain't Too Proud to Beg / My Girl* medley; `LEMON SONG` = *The Lemon Song*. Both spellings
+  produce a different `masterTitleKey`, so 📥 Master List on a library holding the print's
+  spelling adds the master's spelling as a second song. Left as-is pending the owner's choice.
+- **Metadata differences left alone** (the master was not changed): Superstition, Tightrope and
+  Rack 'Em Up print with their pre-§9ba values (E/funk, E, 112). The master keeps the owner's
+  later edits. Rows 62–75 print different BPM/style than the July-sheet values in the master:
+  Hoochie Coochie Man, Dixie Chicken, Plush, Mustang Sally, Deal, Hey Joe, Honky Tonk Women,
+  The Sky Is Crying, and Hey Hey What Can I Do.
+
+Verification: `npm test` → 313/313 (master-library counts 118 → 122); Babel compile clean.
 
 ---
 

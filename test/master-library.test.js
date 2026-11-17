@@ -14,8 +14,8 @@ const {
 let n = 0;
 const idFn = () => 'id' + (++n);
 
-test('master library: 118 unique songs, valid styles/keys/BPM, clean text', () => {
-  assert.equal(MASTER_LIBRARY.length, 118);
+test('master library: 122 unique songs, valid styles/keys/BPM, clean text', () => {
+  assert.equal(MASTER_LIBRARY.length, 122);
   const keys = new Set();
   for (const e of MASTER_LIBRARY) {
     const k = masterTitleKey(e.title);
@@ -100,9 +100,9 @@ test('buildMasterLibrarySongs: full song objects with serialized arrangements', 
 
 test('mergeMasterLibrary: empty library gets everything', () => {
   const r = mergeMasterLibrary([], idFn);
-  assert.equal(r.added, 118);
+  assert.equal(r.added, 122);
   assert.equal(r.updated, 0);
-  assert.equal(r.songs.length, 118);
+  assert.equal(r.songs.length, 122);
 });
 
 test('mergeMasterLibrary: never overwrites user data, only fills blanks', () => {
@@ -114,7 +114,7 @@ test('mergeMasterLibrary: never overwrites user data, only fills blanks', () => 
   const frozen = JSON.stringify(mine);
   const r = mergeMasterLibrary(mine, idFn);
   assert.equal(JSON.stringify(mine), frozen, 'input not mutated');
-  assert.equal(r.added, 117);
+  assert.equal(r.added, 121);
   assert.equal(r.updated, 1);
   const w = r.songs.find(s => s.id === 'u1');
   assert.equal(w.key, 'G', 'user key kept');
