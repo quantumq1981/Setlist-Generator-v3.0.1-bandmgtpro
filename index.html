@@ -1899,13 +1899,21 @@
       _attDbPromise = null;                                       // stale/lost connection → reopen
       return _idbTxOnce(store, mode, fn);
     });
-    const _idbAll = (store) => attOpen().then(db => new Promise((resolve, reject) => {
-      const tx = db.transaction(store, 'readonly');
+    // Read a whole store. Goes through the same reconnect-and-retry-once path as _idbTx, and
+    // REJECTS when the store can't be read (audit §12 #3): it used to resolve {} on any error,
+    // so a backup taken after iOS dropped the connection silently carried no charts.
+    const _idbAllOnce = (store) => attOpen().then(db => new Promise((resolve, reject) => {
+      const tx = db.transaction(store, 'readonly');   // throws InvalidStateError on a dead handle
       const out = {};
       const cur = tx.objectStore(store).openCursor();
       cur.onsuccess = () => { const c = cur.result; if (c) { out[c.key] = c.value; c.continue(); } else resolve(out); };
       cur.onerror = () => reject(cur.error);
-    })).catch(() => ({}));
+      tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
+    }));
+    const _idbAll = (store) => _idbAllOnce(store).catch(() => {
+      _attDbPromise = null;                                       // stale/lost connection → reopen
+      return _idbAllOnce(store);
+    });
     const attTx = (mode, fn) => _idbTx(ATT_STORE, mode, fn);
 
     // Session-memory fallback: when the browser refuses persistent storage outright, the
@@ -1935,12 +1943,18 @@
       clear: () => { _attMem.clear(); return attTx('readwrite', s => s.clear()); },
       keys: () => attTx('readonly', s => s.getAllKeys()).catch(() => []).then(k => [...new Set([...k, ..._attMem.keys()])]),
       // id → Blob for every stored attachment (persisted + session-only), for backups.
-      all: () => _idbAll(ATT_STORE).then(raw => {
-        const out = {};
-        for (const [id, v] of Object.entries(raw)) { const b = attRecordToBlob(v); if (b) out[id] = b; }
-        for (const [id, v] of _attMem) out[id] = attRecordToBlob(v);
-        return out;
-      }),
+      // Resolves { blobs, error }: `error` is set when the persistent store couldn't be
+      // read, so the caller can refuse to pretend the backup is complete.
+      all: async () => {
+        const blobs = {};
+        let error = null;
+        try {
+          const raw = await _idbAll(ATT_STORE);
+          for (const [id, v] of Object.entries(raw)) { const b = attRecordToBlob(v); if (b) blobs[id] = b; }
+        } catch (err) { error = err || new Error('IndexedDB read failed'); }
+        for (const [id, v] of _attMem) blobs[id] = attRecordToBlob(v);
+        return { blobs, error };
+      },
     };
     // Annotation strokes, keyed `${attId}:${page}` → { strokes: [...] }. Personal + offline.
     const annoStore = {
@@ -1964,6 +1978,67 @@
     const blobToB64 = (blob) => blob.arrayBuffer().then(buf => bytesToB64(new Uint8Array(buf)));
     const b64ToBlob = (b64, mime) => new Blob([b64ToBytes(b64)], { type: mime || 'application/octet-stream' });
     const fmtBytes = (n) => n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n || 0} B`;
+
+    // ---- Backup integrity (pure, unit-tested — audit §12 #3) --------------------------
+    // Attachment ids referenced anywhere in the backed-up stores (library songs, saved gig
+    // setlists, snapshots, ...). A deep walk, so a new place that carries songs is covered
+    // without wiring. Unparseable stores are skipped.
+    const backupReferencedAttachmentIds = (stores) => {
+      const ids = new Set();
+      const walk = (v, depth) => {
+        if (!v || typeof v !== 'object' || depth > 24) return;
+        if (Array.isArray(v)) { for (const x of v) walk(x, depth + 1); return; }
+        if (Array.isArray(v.attachments)) {
+          for (const a of v.attachments) if (a && typeof a === 'object' && typeof a.id === 'string' && a.id) ids.add(a.id);
+        }
+        for (const k of Object.keys(v)) if (k !== 'attachments') walk(v[k], depth + 1);
+      };
+      for (const raw of Object.values(stores || {})) {
+        if (typeof raw !== 'string') continue;
+        let parsed; try { parsed = JSON.parse(raw); } catch (e) { continue; }
+        walk(parsed, 0);
+      }
+      return [...ids];
+    };
+    // Validate a parsed backup file and describe what restoring it will do. Pure.
+    const planBackupRestore = (data) => {
+      if (!data || data.kind !== 'full-backup' || !data.stores || typeof data.stores !== 'object' || Array.isArray(data.stores)) {
+        return { ok: false, error: 'Not a BandLeaderHQ backup file' };
+      }
+      const storeKeys = Object.keys(data.stores).filter(k => k.startsWith('setlist_'));
+      if (!storeKeys.length) return { ok: false, error: 'This backup contains no app data' };
+      const bad = storeKeys.filter(k => typeof data.stores[k] !== 'string');
+      if (bad.length) return { ok: false, error: `This backup is damaged (${bad.length} unreadable store${bad.length > 1 ? 's' : ''})` };
+      const att = data.attachments && typeof data.attachments === 'object' ? data.attachments : {};
+      const attIds = Object.keys(att).filter(id => att[id] && typeof att[id].b64 === 'string');
+      const have = new Set(attIds);
+      const referenced = backupReferencedAttachmentIds(data.stores);
+      const missing = referenced.filter(id => !have.has(id));
+      const ann = data.annotations && typeof data.annotations === 'object' ? data.annotations : {};
+      return { ok: true, storeKeys, attIds, referenced, missing, annotationKeys: Object.keys(ann) };
+    };
+    // Replace every `prefix` store in a Storage-like object ({length,key,getItem,setItem,
+    // removeItem}) with `next`, all-or-nothing: if a write throws (quota), the previous
+    // stores are put back exactly. Returns { ok } or { ok:false, error, rollbackFailed? }.
+    const replaceStoresAtomically = (storage, next, prefix = 'setlist_') => {
+      const prev = {};
+      for (let i = 0; i < storage.length; i++) {
+        const k = storage.key(i);
+        if (k && k.startsWith(prefix)) prev[k] = storage.getItem(k);
+      }
+      const incoming = Object.entries(next || {}).filter(([k, v]) => k.startsWith(prefix) && typeof v === 'string');
+      try {
+        for (const k of Object.keys(prev)) storage.removeItem(k);
+        for (const [k, v] of incoming) storage.setItem(k, v);
+        return { ok: true };
+      } catch (error) {
+        try {
+          for (const [k] of incoming) storage.removeItem(k);
+          for (const [k, v] of Object.entries(prev)) storage.setItem(k, v);
+        } catch (e2) { return { ok: false, error, rollbackFailed: true }; }
+        return { ok: false, error };
+      }
+    };
 
     /******** STAGE CHART VIEWER — pure navigation core (headless-testable) ********/
     // The performance "music stand": from a generated setlist, render the selected
@@ -16998,6 +17073,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       // Everything lives in localStorage, so one JSON file IS the whole app state:
       // bands, songs, settings, venues + contact history, bookings, EPK, roster.
       const backupFileRef = React.useRef(null);
+      // Audit §12 #3: a backup must never claim to be complete when it isn't, and a restore
+      // must never destroy data it can't replace. So: export checks every chart the library
+      // references is actually in the file (asks before writing a partial one); restore writes
+      // the charts FIRST without clearing anything, then swaps localStorage all-or-nothing,
+      // and reloads only when everything landed.
       const exportBackup = async () => {
         const stores = {};
         for (let i = 0; i < localStorage.length; i++) {
@@ -17005,54 +17085,87 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           if (k && k.startsWith('setlist_')) stores[k] = localStorage.getItem(k);
         }
         // Embed attachment blobs (charts / lead sheets) as base64 so a restore is complete + offline.
+        const { blobs, error: attError } = await attStore.all();
         const attachments = {};
-        try {
-          const blobs = await attStore.all();
-          for (const [id, blob] of Object.entries(blobs)) {
-            attachments[id] = { mime: blob.type || 'application/octet-stream', b64: await blobToB64(blob) };
-          }
-        } catch (e) { /* no IDB / no attachments — back up localStorage only */ }
+        const unreadable = [];
+        for (const [id, blob] of Object.entries(blobs)) {
+          try { attachments[id] = { mime: blob.type || 'application/octet-stream', b64: await blobToB64(blob) }; }
+          catch (e) { unreadable.push(id); }
+        }
+        const referenced = backupReferencedAttachmentIds(stores);
+        const missing = referenced.filter(id => !attachments[id]);
+        if (missing.length) {
+          const why = attError
+            ? 'This device\'s chart storage could not be read (the browser dropped the connection — reloading the page usually fixes it).'
+            : 'They are not stored on this device (attached elsewhere, or lost from a private-browsing session).';
+          const ok = window.confirm(`${missing.length} of ${referenced.length} chart attachment${referenced.length !== 1 ? 's' : ''} could not be included in this backup.\n\n${why}\n\nOK = download the backup WITHOUT ${missing.length === 1 ? 'that chart' : 'those charts'}.\nCancel = stop (reload and try again).`);
+          if (!ok) { showToast('Backup cancelled — reload the page and try again', 'warning'); return; }
+        }
         // Annotation ink layers are plain JSON (vector strokes) — no base64 needed.
-        let annotations = {};
-        try { annotations = await annoStore.all(); } catch (e) { annotations = {}; }
-        const payload = JSON.stringify({ app: 'bandleaderhq', kind: 'full-backup', exportedAt: new Date().toISOString(), stores, attachments, annotations }, null, 1);
+        let annotations = null;
+        try { annotations = await annoStore.all(); } catch (e) { annotations = null; }
+        const payload = JSON.stringify({
+          app: 'bandleaderhq', kind: 'full-backup', exportedAt: new Date().toISOString(), stores, attachments,
+          ...(annotations ? { annotations } : { annotationsIncluded: false }),
+          ...(missing.length ? { attachmentsMissing: missing } : {}),
+        }, null, 1);
         const blob = new Blob([payload], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = `setlist-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
         a.click();
-        URL.revokeObjectURL(url);
+        a.remove();
+        // Revoking in the same tick can cancel the download (Safari/Firefox); give it time.
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
         localStorage.setItem('setlist_last_backup_at', String(Date.now()));
         const nAtt = Object.keys(attachments).length;
-        showToast(`Backup downloaded${nAtt ? ` (incl. ${nAtt} attachment${nAtt > 1 ? 's' : ''})` : ''} — keep it somewhere safe (Drive, Dropbox…)`, 'success');
+        const gaps = [missing.length && `${missing.length} chart${missing.length > 1 ? 's' : ''} missing`, !annotations && 'annotations not included'].filter(Boolean);
+        showToast(`Backup downloaded${nAtt ? ` (incl. ${nAtt} attachment${nAtt > 1 ? 's' : ''})` : ''}${gaps.length ? ` — ${gaps.join(', ')}` : ' — keep it somewhere safe (Drive, Dropbox…)'}`, gaps.length ? 'warning' : 'success');
       };
       const importBackup = (file) => {
         if (!file) return;
         const reader = new FileReader();
+        reader.onerror = () => showToast('Could not read backup file', 'error');
         reader.onload = async (ev) => {
-          try {
-            const data = JSON.parse(ev.target.result);
-            if (!data || data.kind !== 'full-backup' || !data.stores) { showToast('Not a BandLeaderHQ backup file', 'error'); return; }
-            const n = Object.keys(data.stores).length;
-            const nAtt = data.attachments ? Object.keys(data.attachments).length : 0;
-            if (!window.confirm(`Restore backup from ${(data.exportedAt || '').slice(0, 10)}?\n\nThis replaces ALL current app data (${n} stores${nAtt ? `, ${nAtt} attachments` : ''}) — bands, songs, venues, bookings, EPK. The app will reload.`)) return;
-            Object.keys(localStorage).filter(k => k.startsWith('setlist_')).forEach(k => localStorage.removeItem(k));
-            Object.entries(data.stores).forEach(([k, v]) => { if (k.startsWith('setlist_')) localStorage.setItem(k, v); });
-            // Restore embedded attachment blobs into IndexedDB (older backups have none — skipped).
+          let data;
+          try { data = JSON.parse(ev.target.result); } catch (e) { showToast('Could not read backup file: ' + e.message, 'error'); return; }
+          const plan = planBackupRestore(data);
+          if (!plan.ok) { showToast(plan.error, 'error'); return; }
+          const nAtt = plan.attIds.length;
+          const missingNote = plan.missing.length
+            ? `\n\n⚠ ${plan.missing.length} chart${plan.missing.length > 1 ? 's' : ''} referenced by this backup ${plan.missing.length > 1 ? 'are' : 'is'} not inside it. Charts already on this device are kept, so ${plan.missing.length > 1 ? 'they' : 'it'} may still open here.`
+            : '';
+          if (!window.confirm(`Restore backup from ${(data.exportedAt || '').slice(0, 10)}?\n\nThis replaces ALL current app data (${plan.storeKeys.length} stores${nAtt ? `, ${nAtt} attachments` : ''}) — bands, songs, venues, bookings, EPK. The app will reload.${missingNote}`)) return;
+          // 1) Charts + ink first, ADDITIVELY (nothing is cleared): if storage refuses them we
+          //    stop here with the current data untouched.
+          const failed = [];
+          for (const id of plan.attIds) {
+            const att = data.attachments[id];
             try {
-              await attStore.clear();
-              if (data.attachments) {
-                for (const [id, a] of Object.entries(data.attachments)) { await attStore.put(id, b64ToBlob(a.b64, a.mime)); }
-              }
-              await annoStore.clear();
-              if (data.annotations) {
-                for (const [k, rec] of Object.entries(data.annotations)) { await annoStore.set(k, rec); }
-              }
-            } catch (e) { /* IDB unavailable — localStorage was still restored */ }
-            localStorage.setItem('setlist_last_backup_at', String(Date.now()));
-            window.location.reload();
-          } catch (e) { showToast('Could not read backup file: ' + e.message, 'error'); }
+              const r = await attStore.put(id, b64ToBlob(att.b64, att.mime));
+              if (!r || !r.persisted) failed.push(id);       // session-only would vanish on reload
+            } catch (e) { failed.push(id); }
+          }
+          let annFailed = 0;
+          for (const k of plan.annotationKeys) {
+            try { await annoStore.set(k, data.annotations[k]); } catch (e) { annFailed++; }
+          }
+          if (failed.length || annFailed) {
+            const ok = window.confirm(`${failed.length ? `${failed.length} of ${nAtt} chart${nAtt !== 1 ? 's' : ''}` : ''}${failed.length && annFailed ? ' and ' : ''}${annFailed ? `${annFailed} annotation page${annFailed > 1 ? 's' : ''}` : ''} could not be saved to this device's storage (private browsing, or storage full).\n\nOK = restore everything else anyway.\nCancel = stop; your current data is unchanged.`);
+            if (!ok) { showToast('Restore cancelled — current data unchanged', 'warning'); return; }
+          }
+          // 2) Swap localStorage all-or-nothing; a quota failure rolls back to the current data.
+          const res = replaceStoresAtomically(localStorage, data.stores);
+          if (!res.ok) {
+            showToast(res.rollbackFailed
+              ? 'Restore failed and the previous data could not be fully put back — download a Backup before doing anything else'
+              : `Restore failed (${(res.error && res.error.name) || 'storage error'}) — your current data is unchanged`, 'error');
+            return;
+          }
+          try { localStorage.setItem('setlist_last_backup_at', String(Date.now())); } catch (e) {}
+          window.location.reload();
         };
         reader.readAsText(file);
       };

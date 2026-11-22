@@ -240,6 +240,7 @@ for (const f of [
   'getYTVideoId', 'tsToSeconds', 'ytStartFromUrl', 'ytUrlIssue', 'getYTEmbedUrl',
   // Attachment backup helpers — base64 <-> bytes/blob round-trip + byte formatter.
   'bytesToB64', 'b64ToBytes', 'blobToB64', 'b64ToBlob', 'fmtBytes', 'attRecordFromBytes', 'attRecordToBlob', 'attStorageErrorMessage',
+  'backupReferencedAttachmentIds', 'planBackupRestore', 'replaceStoresAtomically',
   // Stage chart viewer — pure navigation core (renderer key, queue, page clamp, nav step).
   'resolveChartKind', 'buildChartQueue', 'clampChartPage', 'stageNavStep',
   // Page-pin markers — normalize/sort + next/prev marker page.
@@ -271,6 +272,7 @@ const EXPORTS = [
   'parseDuration', 'getGenreParams', 'getCompositeEnergy', 'targetEnergyCurve', 'templateStylePenalty',
   'getYTVideoId', 'tsToSeconds', 'ytStartFromUrl', 'ytUrlIssue', 'getYTEmbedUrl',
   'bytesToB64', 'b64ToBytes', 'blobToB64', 'b64ToBlob', 'fmtBytes', 'attRecordFromBytes', 'attRecordToBlob', 'attStorageErrorMessage',
+  'backupReferencedAttachmentIds', 'planBackupRestore', 'replaceStoresAtomically',
   'resolveChartKind', 'buildChartQueue', 'clampChartPage', 'stageNavStep',
   'normalizeMarks', 'nextMarkPage',
   'chartExt', 'resolveChartFormat', 'transposeNote', 'transposeChord', 'parseChordProLine', 'parseChordPro',
