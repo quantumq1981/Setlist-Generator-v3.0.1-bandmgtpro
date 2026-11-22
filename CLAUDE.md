@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-11-17 (4 missing songs added to the master list, §9bc).
+Last updated: 2026-11-22 (production audit — open findings recorded in §12; no code changed).
 
 ---
 
@@ -2635,3 +2635,68 @@ overlay for the PR.
 ### Out of scope for the first PR
 Open/click tracking, HTML templates, attachments (link the EPK instead), scheduled
 sends, and multi-account support. Keep the first PR: connect → send → detect → done.
+
+
+---
+
+## 12. Open audit findings (2026-11-22) — not yet fixed
+
+Independent production audit; **no code was changed**. Fix in this order. Each item
+names its verification. Line numbers are as of commit `08362ac`.
+
+**Critical**
+1. **Service worker pins returning users to a stale build forever** (`sw.js:1-17`,
+   registered `index.html:51-55`). Cache-first for `index.html`, `CACHE_NAME` unchanged
+   since 2026-09-05 while `index.html` changed in 41 commits. Proven headlessly: after a
+   deploy, reloads and new tabs still serve the old HTML. It also never caches the CDN
+   libs, so offline is a blank page anyway. Fix: network-first for navigations/HTML
+   (cache as fallback), version the cache per release, `skipWaiting` + `clients.claim`.
+   Verify: Playwright — load, change `index.html`, reload → new build served.
+2. **PDF.js 3.11.174 is exposed to CVE-2024-4367** (arbitrary JS via a crafted font;
+   default `isEvalSupported: true`). User-supplied PDFs are rendered in Stage Mode
+   (`index.html:12869`) and OCR (`:13031`); parsed at `:6601`, `:6921`. JS in the app
+   origin reads all `localStorage` and the in-memory Gmail token. Fix: pass
+   `isEvalSupported: false` to every `getDocument` (upgrade to ≥4.2.67 later). Verify: a
+   source-scan test that every `getDocument(` call carries it.
+
+**Major**
+3. **Backup can silently omit every attachment** — `_idbAll` swallows errors and skips
+   the stale-connection retry (`:1891-1897`), so after iOS backgrounding `exportBackup`
+   writes `attachments: {}` with a success toast. Restoring that file runs
+   `attStore.clear()` (`:17018`) and deletes the charts; restore errors are swallowed and
+   it reloads anyway. `importBackup` also wipes `localStorage` before writing with no
+   rollback. Fix: route `_idbAll` through the retry, fail the backup loudly, verify
+   counts before clearing, snapshot current stores before wiping.
+4. **Reply detection overwrites venues with a stale copy** (`:13672-13696` →
+   `updateVenue` `:16943`, whole-object replace). A send/call/status change made while
+   the sequential Gmail checks run is lost, and a manually Booked venue can drop back to
+   Responded. Fix: functional patch by id that re-checks `status === 'contacted'`.
+5. **Bounces and auto-replies count as replies** (`gmailThreadHasReply` `:5142`). Gmail
+   threads `mailer-daemon` NDRs into the original thread, so bad scraped emails flip to
+   Responded, halt the sequence, and inflate the §9n learning loop. Fix: ignore
+   mailer-daemon/postmaster/no-reply senders and `Auto-Submitted` ≠ `no`.
+6. **Two tabs = silent last-writer-wins** on whole arrays (save effects `:16919-16938`,
+   no `storage` listener). Fix: `storage` event → reload or warn and lock the second tab.
+7. **Watermark data URL written unbounded to `localStorage`** (`:18176`). A phone photo
+   (2–5 MB → ~1.33× as base64) fails silently with a success toast, or succeeds and
+   starves later song saves. Fix: downscale to ≤~200 KB or move to IndexedDB.
+8. **Supply chain**: `react@18` / `react-dom@18` float (`:34-35`, contrary to §1) and
+   no script has an SRI `integrity` hash (`:34-41`). Fix: pin exact versions + SRI.
+9. **Babel Standalone compiles 1.14 MB of JSX on every load** (~1.0 s on the CI
+   container CPU before any render; slower on iPad). Known (§9p TASK-2) — still the top
+   performance item.
+
+**Minor** — `To:` header not checked for CR/LF (`:5126`, OSM/CSV emails flow in);
+Gmail `_fetch` has no timeout and no 401 → token refresh (`:5209`); corrupt JSON reads as
+"empty" and is then overwritten (`LS.get` `:5034` → LOAD effect); snapshots hold 3
+debounced copies seconds apart, so "recover" rarely reaches a pre-mistake state
+(`:16710-16733`); `URL.revokeObjectURL` right after `a.click()` on backup (`:16999`);
+EPK HTML written into a same-origin window (`:17380`) with an unescaped
+`data:image` src (`:17276`); `bulkAddVenues` dedups against a stale closure (`:16951`).
+
+**Checked and not a problem:** deep-mode generation on the 122-song library runs in
+~25–40 ms in Node, so the Web Worker (§9p TASK-6) is not needed yet.
+
+**Test gap:** the 313 tests cover pure functions only — nothing exercises backup/
+restore, the band-switch persistence effects, the IndexedDB layer, the service worker,
+or the Gmail send/reply loop.
