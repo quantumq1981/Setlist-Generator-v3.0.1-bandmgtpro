@@ -243,6 +243,9 @@ for (const f of [
   // Attachment backup helpers — base64 <-> bytes/blob round-trip + byte formatter.
   'bytesToB64', 'b64ToBytes', 'blobToB64', 'b64ToBlob', 'fmtBytes', 'attRecordFromBytes', 'attRecordToBlob', 'attStorageErrorMessage',
   'backupReferencedAttachmentIds', 'planBackupRestore', 'replaceStoresAtomically',
+  'LS_CROSS_TAB_IGNORE_RE', 'crossTabChangeMakesStale', 'WATERMARK_MAX_SIDE', 'WATERMARK_MAX_CHARS', 'fitWatermarkDims',
+  'SNAPSHOT_GAP_MS', 'SNAPSHOT_RECOVER_MIN_AGE_MS', 'SNAPSHOT_MAX', 'nextSnapshotRing', 'pickRecoverySnapshot',
+  'safeImageDataUrl', 'EPK_HTML_CSP',
   // Stage chart viewer — pure navigation core (renderer key, queue, page clamp, nav step).
   'resolveChartKind', 'buildChartQueue', 'clampChartPage', 'stageNavStep',
   // Page-pin markers — normalize/sort + next/prev marker page.
@@ -275,6 +278,9 @@ const EXPORTS = [
   'getYTVideoId', 'tsToSeconds', 'ytStartFromUrl', 'ytUrlIssue', 'getYTEmbedUrl',
   'bytesToB64', 'b64ToBytes', 'blobToB64', 'b64ToBlob', 'fmtBytes', 'attRecordFromBytes', 'attRecordToBlob', 'attStorageErrorMessage',
   'backupReferencedAttachmentIds', 'planBackupRestore', 'replaceStoresAtomically',
+  'LS_CROSS_TAB_IGNORE_RE', 'crossTabChangeMakesStale', 'WATERMARK_MAX_SIDE', 'WATERMARK_MAX_CHARS', 'fitWatermarkDims',
+  'SNAPSHOT_GAP_MS', 'SNAPSHOT_RECOVER_MIN_AGE_MS', 'SNAPSHOT_MAX', 'nextSnapshotRing', 'pickRecoverySnapshot',
+  'safeImageDataUrl', 'EPK_HTML_CSP',
   'resolveChartKind', 'buildChartQueue', 'clampChartPage', 'stageNavStep',
   'normalizeMarks', 'nextMarkPage',
   'chartExt', 'resolveChartFormat', 'transposeNote', 'transposeChord', 'parseChordProLine', 'parseChordPro',

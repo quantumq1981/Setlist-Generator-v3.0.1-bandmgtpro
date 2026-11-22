@@ -1977,6 +1977,52 @@
     };
     const blobToB64 = (blob) => blob.arrayBuffer().then(buf => bytesToB64(new Uint8Array(buf)));
     const b64ToBlob = (b64, mime) => new Blob([b64ToBytes(b64)], { type: mime || 'application/octet-stream' });
+    // An image data URL that is safe to drop into an HTML src attribute: raster types only
+    // (an SVG data URL can carry markup) and strictly base64 (no quotes/brackets to break out
+    // of the attribute). Anything else → ''. Pure.
+    const safeImageDataUrl = (v) => {
+      const s = typeof v === 'string' ? v.trim() : '';
+      return /^data:image\/(png|jpe?g|gif|webp|bmp|avif);base64,[A-Za-z0-9+/]+={0,2}$/i.test(s) ? s : '';
+    };
+    // CSP for generated EPK pages: only the print button's exact inline handler may run.
+    const EPK_HTML_CSP = "default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; font-src data: https:; "
+      + "script-src 'unsafe-hashes' 'sha256-MguIPR6qNR8D3B+eAlK+bIRTZe8t3wkOY4B/56Me9FU='; base-uri 'none'; form-action 'none'";
+
+    // ---- PDF watermark sizing (audit §12 #7) -----------------------------------------
+    const WATERMARK_MAX_SIDE = 1000;
+    const WATERMARK_MAX_CHARS = 200 * 1024;          // data-URL length budget in localStorage
+    // Scale (w,h) down so the long side is <= maxSide; never upscales. Pure.
+    const fitWatermarkDims = (w, h, maxSide) => {
+      if (!(w > 0 && h > 0) || !(maxSide > 0)) return null;
+      const k = Math.min(1, maxSide / Math.max(w, h));
+      return { w: Math.max(1, Math.round(w * k)), h: Math.max(1, Math.round(h * k)) };
+    };
+    // Re-encode an image File/Blob as a data URL under WATERMARK_MAX_CHARS: PNG first (keeps
+    // a logo's transparency), then JPEG on white, stepping the size down. Returns the
+    // smallest attempt if nothing fits (the caller reports a save failure honestly).
+    async function shrinkImageToDataUrl(blob) {
+      const url = URL.createObjectURL(blob);
+      try {
+        const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('image decode failed')); im.src = url; });
+        let best = null;
+        for (const side of [WATERMARK_MAX_SIDE, 800, 600, 400]) {
+          const d = fitWatermarkDims(img.naturalWidth || img.width, img.naturalHeight || img.height, side);
+          if (!d) throw new Error('image has no size');
+          const c = document.createElement('canvas'); c.width = d.w; c.height = d.h;
+          const g = c.getContext('2d');
+          g.drawImage(img, 0, 0, d.w, d.h);
+          const png = c.toDataURL('image/png');
+          if (png.length <= WATERMARK_MAX_CHARS) return png;
+          g.globalCompositeOperation = 'destination-over'; g.fillStyle = '#fff'; g.fillRect(0, 0, d.w, d.h);
+          for (const q of [0.82, 0.65]) {
+            const jpg = c.toDataURL('image/jpeg', q);
+            if (jpg.length <= WATERMARK_MAX_CHARS) return jpg;
+            if (!best || jpg.length < best.length) best = jpg;
+          }
+        }
+        return best;
+      } finally { URL.revokeObjectURL(url); }
+    }
     const fmtBytes = (n) => n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n || 0} B`;
 
     // ---- Backup integrity (pure, unit-tested — audit §12 #3) --------------------------
@@ -5134,19 +5180,61 @@
       return (parsed && parsed > 0) ? parsed : DEFAULT_DURATION_MINUTES;
     };
 
+    // ---- Recovery snapshots (audit §12 minor) -----------------------------------------
+    // The autosave fires ~1.2 s after every edit and used to keep the last 3, so "recover"
+    // landed on a copy taken seconds earlier — usually already containing the mistake. Now
+    // the head is a rolling "current" copy and older entries are kept ~SNAPSHOT_GAP_MS apart,
+    // and recovery picks the newest copy at least SNAPSHOT_RECOVER_MIN_AGE_MS older than the
+    // head. Same 3-copy storage cost. Both pure.
+    const SNAPSHOT_GAP_MS = 10 * 60 * 1000;
+    const SNAPSHOT_RECOVER_MIN_AGE_MS = 60 * 1000;
+    const SNAPSHOT_MAX = 3;
+    const nextSnapshotRing = (existing, payload, gapMs = SNAPSHOT_GAP_MS, max = SNAPSHOT_MAX) => {
+      const ring = (Array.isArray(existing) ? existing : []).filter(x => x && typeof x.ts === 'number');
+      // Replace the head while it's still within the gap of the copy before it; otherwise
+      // keep it (it becomes history) and start a new head.
+      const replaceHead = ring.length >= 2 && ring[0].ts - ring[1].ts < gapMs;
+      const next = replaceHead ? [payload, ...ring.slice(1)] : [payload, ...ring];
+      return next.slice(0, max).map((snap, idx) => ({ ...snap, id: `snapshot_${idx + 1}` }));
+    };
+    const pickRecoverySnapshot = (snapshots, minAgeMs = SNAPSHOT_RECOVER_MIN_AGE_MS) => {
+      const ring = (Array.isArray(snapshots) ? snapshots : []).filter(x => x && typeof x.ts === 'number');
+      if (ring.length < 2) return null;
+      return ring.slice(1).find(x => ring[0].ts - x.ts >= minAgeMs) || null;
+    };
+
+    // ---- Cross-tab safety (audit §12 #6) -----------------------------------------------
+    // Every store is written whole, so two open tabs were silent last-writer-wins: the idle
+    // tab's next save overwrote what the other tab did. When ANOTHER tab changes a data store,
+    // this tab is stale: it stops writing (LS_WRITE_LOCK) and the App shows a blocking
+    // "reload" screen. Housekeeping keys that don't make our data stale are ignored. Pure.
+    const LS_CROSS_TAB_IGNORE_RE = /^setlist_(last_backup_at|stage_prefs_v3|quarantine_|band_snapshots_v3_)/;
+    const crossTabChangeMakesStale = (key) => key === null
+      || (typeof key === 'string' && key.startsWith('setlist_') && !LS_CROSS_TAB_IGNORE_RE.test(key));
+    const LS_WRITE_LOCK = { locked: false };
+    // A store that no longer parses (a truncated write) used to read as "empty" and then be
+    // overwritten by the next save. Keep the raw text under setlist_quarantine_<key> (which a
+    // Backup includes) before anything can replace it, and tell the App (audit §12 minor).
+    const lsQuarantine = (k, raw) => {
+      const qk = 'setlist_quarantine_' + k;
+      try { if (localStorage.getItem(qk) !== raw) localStorage.setItem(qk, raw); } catch (e) { /* no room — still warn */ }
+      try { window.dispatchEvent(new CustomEvent('setlist:storage-corrupt', { detail: { key: k, quarantineKey: qk } })); } catch (e) {}
+    };
     const LS = {
-      // Add logging for localStorage getter failures. Swallowing exceptions silently hides
-      // corrupted data or JSON parse errors. Logging aids debugging without breaking runtime.
       get: (k) => {
+        let raw = null;
+        try { raw = localStorage.getItem(k); } catch (err) { console.warn('LS.get error:', err); return null; }
+        if (raw === null) return null;
         try {
-          return JSON.parse(localStorage.getItem(k));
+          return JSON.parse(raw);
         } catch (err) {
-          console.warn('LS.get error:', err);
+          console.warn('LS.get: unparseable store', k, err);
+          lsQuarantine(k, raw);
           return null;
         }
       },
-      set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (err) { console.error('LS.set error:', err); if (err && (err.name === 'QuotaExceededError' || err.code === 22 || err.code === 1014)) { window.dispatchEvent(new CustomEvent('setlist:storage-quota-warning')); } } },
-      remove: (k) => { try { localStorage.removeItem(k); } catch (err) { console.error('LS.remove error:', err); } }
+      set: (k, v) => { if (LS_WRITE_LOCK.locked) return; try { localStorage.setItem(k, JSON.stringify(v)); } catch (err) { console.error('LS.set error:', err); if (err && (err.name === 'QuotaExceededError' || err.code === 22 || err.code === 1014)) { window.dispatchEvent(new CustomEvent('setlist:storage-quota-warning')); } } },
+      remove: (k) => { if (LS_WRITE_LOCK.locked) return; try { localStorage.removeItem(k); } catch (err) { console.error('LS.remove error:', err); } }
     };
 
     // Saveable energy / tonal optimizer profiles. A profile captures just the knobs
@@ -16817,6 +16905,23 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     }
 
     function App() {
+      // Another tab changed our data → this tab is stale and must not write (audit §12 #6).
+      const [staleFromOtherTab, setStaleFromOtherTab] = useState(false);
+      useEffect(() => {
+        const onStorage = (e) => {
+          if (e.storageArea && e.storageArea !== window.localStorage) return;
+          if (!crossTabChangeMakesStale(e.key)) return;
+          LS_WRITE_LOCK.locked = true;
+          setStaleFromOtherTab(true);
+        };
+        const onCorrupt = (e) => {
+          const k = (e.detail && e.detail.key) || 'a store';
+          setTimeout(() => showToast(`A saved store (${k}) was damaged and couldn't be read — its raw copy was kept and goes into your next 💾 Backup`, 'error'), 0);
+        };
+        window.addEventListener('storage', onStorage);
+        window.addEventListener('setlist:storage-corrupt', onCorrupt);
+        return () => { window.removeEventListener('storage', onStorage); window.removeEventListener('setlist:storage-corrupt', onCorrupt); };
+      }, []);
       const [bands, setBands] = useState([]);
       const [activeBandId, setActiveBandId] = useState(null);
 
@@ -16919,14 +17024,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           locked: Array.from(locked)
         };
         const existing = LS.get(LS_KEYS.bandSnapshots(activeBandId)) || [];
-        const next = [payload, ...existing].slice(0, 3).map((snap, idx) => ({ ...snap, id: `snapshot_${idx + 1}` }));
-        LS.set(LS_KEYS.bandSnapshots(activeBandId), next);
+        LS.set(LS_KEYS.bandSnapshots(activeBandId), nextSnapshotRing(existing, payload));
       };
 
       const recoverPreviousSnapshot = () => {
         const snapshots = LS.get(LS_KEYS.bandSnapshots(activeBandId)) || [];
-        if (snapshots.length < 2) return showToast('No previous snapshot found.', 'warning');
-        const target = snapshots[1];
+        const target = pickRecoverySnapshot(snapshots);
+        if (!target) return showToast('No earlier snapshot yet — snapshots are kept about every 10 minutes while you work.', 'warning');
+        if (!window.confirm(`Restore songs, sets and settings to how they were at ${new Date(target.ts).toLocaleString()}?`)) return;
         setSongs(target.songs || []);
         setSetlists(target.setlists || []);
         setSettings(target.settings || settings);
@@ -17333,7 +17438,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         y += 12;
 
         // ── Landscape hero photo (full width) ──
-        const photo = e.pressPhotoData && /^data:image\//.test(e.pressPhotoData) ? e.pressPhotoData : '';
+        const photo = safeImageDataUrl(e.pressPhotoData);
         if (photo) {
           try {
             const props = doc.getImageProperties(photo);
@@ -17521,12 +17626,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
         const metaLine = [e.location, e.actType, e.targetAudience].filter(Boolean).map(esc).join(' &nbsp;|&nbsp; ');
         const tagline = e.tagline || e.actType || '';
-        const photo = e.pressPhotoData && /^data:image\//.test(e.pressPhotoData) ? e.pressPhotoData : '';
-        const logo = e.logoData && /^data:image\//.test(e.logoData) ? e.logoData : '';
+        const photo = safeImageDataUrl(e.pressPhotoData);
+        const logo = safeImageDataUrl(e.logoData);
         const hub = e.linktree || e.epkUrl || e.website || '';
         const liveApi = hub ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=0&bgcolor=191c24&color=f3f4f7&data=${encodeURIComponent(href(hub))}` : '';
         const qrData = hub ? await fetchQrDataUrl(href(hub)) : '';
-        const qr = qrData ? `<img class="qrimg" src="${qrData}" alt="Scan for links">` : (hub ? `<img class="qrimg" src="${esc(liveApi)}" alt="Scan for links">` : `<div class="qr">QR</div>`);
+        const qr = safeImageDataUrl(qrData) ? `<img class="qrimg" src="${esc(safeImageDataUrl(qrData))}" alt="Scan for links">` : (hub ? `<img class="qrimg" src="${esc(liveApi)}" alt="Scan for links">` : `<div class="qr">QR</div>`);
         let actPs = [];
         if (e.elevatorPitch) actPs.push(e.elevatorPitch);
         paras(e.bio).forEach(p => actPs.push(p));
@@ -17587,14 +17692,14 @@ footer{color:#6a6f79;font-size:10px;text-align:right;margin-top:18px;}
 .printbtn{position:fixed;right:18px;bottom:18px;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.5);z-index:99;}
 @media print{.no-print{display:none!important;}.page{padding:.45in .5in;max-width:none;}@page{size:letter;margin:0;}}`;
 
-        const headerHtml = `<header class="hdr"><div class="hdr-l"><h1>${esc(bn)}</h1>${tagline ? `<div class="tagline">${esc(tagline)}</div>` : ''}${metaLine ? `<div class="meta">${metaLine}</div>` : ''}</div>${logo ? `<img class="logo" src="${logo}" alt="">` : ''}</header><div class="rule"></div>`;
+        const headerHtml = `<header class="hdr"><div class="hdr-l"><h1>${esc(bn)}</h1>${tagline ? `<div class="tagline">${esc(tagline)}</div>` : ''}${metaLine ? `<div class="meta">${metaLine}</div>` : ''}</div>${logo ? `<img class="logo" src="${esc(logo)}" alt="">` : ''}</header><div class="rule"></div>`;
         const deco = `<div class="deco d1"></div><div class="deco d2"></div><div class="deco d3"></div><div class="deco d4"></div>`;
 
         const body = `<div class="page">${deco}
 ${headerHtml}
 <div class="grid21">
 <div class="card actcard"><h2><span class="bar"></span>The Act</h2>${actParas}</div>
-<div class="card"><div class="bc-photo">${photo ? `<img src="${photo}" alt="">` : 'HERO PHOTO / LOGO'}</div><div class="bc-title">Buyer Confidence</div><ul class="bullets">${bcBullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>${qr}</div>
+<div class="card"><div class="bc-photo">${photo ? `<img src="${esc(photo)}" alt="">` : 'HERO PHOTO / LOGO'}</div><div class="bc-title">Buyer Confidence</div><ul class="bullets">${bcBullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>${qr}</div>
 </div>
 <section style="margin-bottom:28px"><h2><span class="bar"></span>At a Glance</h2><div class="card"><div class="glance-grid">${glanceItems.map(g => `<div class="gitem"><div class="gl">${g[0]}</div><div class="gv">${g[1]}</div></div>`).join('')}</div></div></section>
 <div class="grid2">
@@ -17618,7 +17723,10 @@ ${headerHtml}
 </div>
 <button class="printbtn no-print" onclick="window.print()">🖨 Print / Save as PDF</button>`;
 
-        return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(bn)} — EPK</title><style>${css}</style></head><body>${body}</body></html>`;
+        // The preview is written into a window of THIS origin (it can read our localStorage), and
+        // the download gets hosted publicly — so the page allows no script except the exact
+        // print handler (hash), no network fetches, no forms (audit §12 minor).
+        return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${EPK_HTML_CSP}"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(bn)} — EPK</title><style>${css}</style></head><body>${body}</body></html>`;
       };
 
       // Open the Web EPK in a new tab (Print -> Save as PDF for the PDF).
@@ -18421,17 +18529,26 @@ ${headerHtml}
         setEmailModal({ open: true, text: lines.join('\n') });
       };
 
-      const handleWatermarkUpload = (e) => {
-        const file = e.target.files[0];
+      // Audit §12 #7: a phone photo (2–5 MB → ~1.33× as base64) used to go straight into
+      // localStorage — failing silently behind a success toast, or fitting and starving every
+      // later song save. It's drawn at 12% opacity, so ~1000 px is plenty: shrink to fit
+      // WATERMARK_MAX_CHARS, and report honestly if it still can't be saved.
+      const handleWatermarkUpload = async (e) => {
+        const input = e.target;
+        const file = input.files && input.files[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const dataUrl = ev.target.result;
-          setWatermarkImg(dataUrl);
-          if (activeBandId) LS.set(LS_KEYS.bandWatermark(activeBandId), dataUrl);
-          showToast('Watermark image set', 'success');
-        };
-        reader.readAsDataURL(file);
+        let dataUrl;
+        try { dataUrl = await shrinkImageToDataUrl(file); }
+        catch (err) { showToast('Could not read that image — try a PNG or JPEG', 'error'); input.value = ''; return; }
+        input.value = '';
+        setWatermarkImg(dataUrl);
+        if (!activeBandId) return;
+        try {
+          localStorage.setItem(LS_KEYS.bandWatermark(activeBandId), JSON.stringify(dataUrl));
+          showToast(`Watermark image set (${fmtBytes(dataUrl.length)})`, 'success');
+        } catch (err) {
+          showToast('Watermark set for this session only — this device is out of storage space', 'warning');
+        }
       };
 
       const clearWatermark = () => {
@@ -19397,6 +19514,18 @@ ${headerHtml}
       return (
         <WorkshopPlaylistContext.Provider value={workshopCtx}>
           <IDEBackground>
+            {staleFromOtherTab && (
+              <div role="alertdialog" aria-modal="true" aria-labelledby="stale-tab-title" data-testid="stale-tab-lock"
+                style={{ position: 'fixed', inset: 0, zIndex: 100000, background: 'rgba(5,8,14,.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+                <div style={{ maxWidth: 440, background: 'var(--secondary)', border: '1px solid var(--border)', borderRadius: 12, padding: '1.5rem', textAlign: 'center' }}>
+                  <h2 id="stale-tab-title" style={{ margin: '0 0 .5rem', fontSize: '1.15rem' }}>BandLeaderHQ is open in another tab</h2>
+                  <p style={{ margin: '0 0 1rem', color: 'var(--text-muted)', fontSize: '.9rem', lineHeight: 1.45 }}>
+                    Your data was changed there. This tab has stopped saving so it can't overwrite that work. Reload to pick up the latest.
+                  </p>
+                  <button className="btn btn-primary" onClick={() => window.location.reload()} autoFocus>Reload this tab</button>
+                </div>
+              </div>
+            )}
             <div className={`app-container no-print ${FEATURE_FLAGS.phase2MobileCompatibility && touchDrag.active ? 'touch-fallback-active' : ''}`}>
             <ConfirmDialog
               open={confirmDialog.open}
