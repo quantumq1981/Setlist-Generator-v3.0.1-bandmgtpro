@@ -50,3 +50,13 @@ Two spots hardcode the interim Pages base for social/SEO. Swap
 
 That's the whole deploy. No Actions workflow is required for branch-based Pages;
 add one only if you later introduce a build step (there is none today).
+
+## 4. Shipping a release
+
+- **Bump `SHELL_VERSION` in `sw.js`** (e.g. to the release date). The service worker serves
+  the app network-first, so users get a new build on their next load either way; the bump
+  retires the old offline copies.
+- **Changing a CDN library version** means updating three things together: the `<script>` URL,
+  its `integrity` hash (`curl -sS <url> | openssl dgst -sha384 -binary | base64`), and the
+  matching entry in `sw.js` `CDN_PRECACHE`. `npm test` (`test/supply-chain.test.js`) fails if
+  any of them is missing or a version is not exact.
