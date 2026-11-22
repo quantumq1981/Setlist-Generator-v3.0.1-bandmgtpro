@@ -3,7 +3,7 @@
 Authoritative engineering guide for this repository. Supersedes `Agent.MD` (kept
 for historical handoff notes). Read this first.
 
-Last updated: 2026-11-22 (production audit — open findings recorded in §12; no code changed).
+Last updated: 2026-11-22 (audit §12 remediation — see §9bd; only #9, the Babel precompile, remains open).
 
 ---
 
@@ -19,9 +19,19 @@ three small companion files loaded as `text/babel`: `featureHelp.js`,
   setlists** using an energy/tonal/diversity optimization algorithm, then export
   them to PDF/CSV and share them.
 
-### CDN dependencies (pinned)
-React 18, ReactDOM 18, `@babel/standalone` 7.29.7, jsPDF 2.5.1, PapaParse 5.4.1,
-PDF.js 3.11.174, mobile-drag-drop 3.0.0-rc.0.
+### CDN dependencies (pinned, SRI)
+React 18.3.1, ReactDOM 18.3.1, `@babel/standalone` 7.29.7, jsPDF 2.5.1, PapaParse 5.4.1,
+PDF.js 3.11.174, mobile-drag-drop 3.0.0-rc.0 — **all from jsDelivr `npm/` paths** (byte-identical
+to the npm tarballs) with `integrity="sha384-…"` + `crossorigin="anonymous"`. Never use a
+floating version (`react@18`) or a non-npm CDN path: a version bump means recomputing the hash
+(`curl -sS <url> | openssl dgst -sha384 -binary | base64`) and updating `sw.js` `CDN_PRECACHE`.
+`test/supply-chain.test.js` enforces exact versions, SRI, and the SW precache list.
+
+### Service worker (`sw.js`)
+Network-first for every same-origin request (cache is the offline / slow-network fallback),
+cache-first for the pinned CDN files (precached on install). **Bump `SHELL_VERSION` per
+release** — network-first means a missed bump no longer strands users, but the bump retires
+the old fallback copies. Registered with `updateViaCache: 'none'`.
 
 **Lazy-loaded notation renderers** (§9ac): abcjs 6.7.0, OpenSheetMusicDisplay 2.1.2,
 `@coderline/alphatab` 1.8.4 — jsDelivr `npm` URLs in `NOTATION_LIBS`, injected on first
@@ -38,10 +48,11 @@ editing. The main app logic lives in the final `<script type="text/babel">` bloc
 data (genre DB, energy/tonal functions, generator); React components are defined
 below them in the same scope.
 
-### Verification workflow (important — the sandbox has no CDN access)
+### Verification workflow (important — the headless browser has no CDN access)
 
-Outbound access to `unpkg`/`cdnjs`/`jsdelivr` is **blocked** by the agent proxy, so
-the app's own `<script src=…>` CDN tags will not load in a headless browser as-is.
+The agent proxy blocks `unpkg`/`cdnjs`; as of 2026-11-22 `cdn.jsdelivr.net` *is* reachable
+with `curl` (use it to compute SRI hashes), but headless Chromium doesn't use the proxy, so
+the app's `<script src=…>` CDN tags still won't load in a headless browser as-is.
 Two-step recipe that works and should be reused:
 
 1. **Compile-check the JSX** (catches syntax errors → a blank page):
@@ -53,7 +64,10 @@ Two-step recipe that works and should be reused:
    reachable; CDNs are not). `npm i react@18 react-dom@18 jspdf@2.5.1
    papaparse@5.4.1 pdfjs-dist@3.11.174 mobile-drag-drop@3.0.0-rc.0
    @babel/standalone@7.29.7`, rewrite the CDN `src`/`href` URLs to the local
-   `node_modules/**/umd/*.js` copies, serve the folder over `http`, and drive it
+   `node_modules/**/umd/*.js` copies (or, simpler and SRI-safe, keep the URLs and
+   `context.route('https://cdn.jsdelivr.net/npm/**')` to fulfil each `pkg@ver/path` from
+   `node_modules/pkg/path` — same bytes, so the integrity hashes still verify; context-level
+   routes also cover the service worker's fetches), serve the folder over `http`, and drive it
    with the preinstalled Chromium at `/opt/pw-browsers/chromium` via Playwright.
    Assert `pageerror` count is 0 and the expected DOM is present.
 
@@ -2469,6 +2483,56 @@ Verification: `npm test` → 313/313 (master-library counts 118 → 122); Babel 
 
 ---
 
+## 9bd. Change log — 2026-11 audit §12 remediation
+
+Fixes every §12 finding except #9 (Babel precompile — a distribution-model change, see below).
+
+- **#1 Service worker** — rewritten (§1 "Service worker"): network-first shell with a 6 s
+  stall fallback to cache, pinned CDN files cache-first + precached, versioned shell cache,
+  `skipWaiting` + `clients.claim`, `updateViaCache:'none'`, update check on foreground.
+- **#2 PDF.js CVE-2024-4367** — every `getDocument` passes `isEvalSupported: false`
+  (`test/pdfjs-security.test.js` scans all call sites). Upgrade to ≥ 4.2.67 still worth doing.
+- **#3 Backups** — `_idbAll` retries a stale connection and rejects instead of resolving `{}`;
+  `attStore.all()` returns `{ blobs, error }`. Export compares against every chart the stores
+  reference (`backupReferencedAttachmentIds`), asks before writing a partial file and marks it
+  (`attachmentsMissing`, `annotationsIncluded:false`). Restore validates (`planBackupRestore`),
+  writes charts/ink **additively first** (nothing is cleared — orphans cost space only), then
+  swaps localStorage all-or-nothing (`replaceStoresAtomically`, rolls back on quota), and
+  reloads only on success.
+- **#4 Stale venue overwrite** — background updates go through App `patchVenue(id, patchOrFn)`
+  → pure `applyVenuePatch`, evaluated against live state; reply detection only moves a venue
+  that is *still* Contacted. Use `onPatchVenue` (not `onUpdateVenue`) for any async work.
+- **#5 Bounces/auto-replies** — `gmailClassifyThread` / `gmailMessageKind` (NDR senders, DSN
+  content type, bounce subjects; Auto-Submitted, Precedence, X-Autoreply, no-reply senders, OOO
+  subjects). A bounce stamps `venue.bouncedEmail` + a `kind:'bounce'` log entry; while the email
+  equals `bouncedEmail`, `venueNeedsEmail` is true and `nextActionFor` stops following up.
+- **#6 Two tabs** — a `storage` event for a data key (`crossTabChangeMakesStale`) sets
+  `LS_WRITE_LOCK` (LS.set/remove become no-ops) and shows a blocking reload screen
+  (`data-testid="stale-tab-lock"`).
+- **#7 Watermark** — `shrinkImageToDataUrl` re-encodes to ≤ `WATERMARK_MAX_CHARS` (200 KB);
+  a failed save says "session only" instead of success.
+- **#8 Supply chain** — §1 "CDN dependencies"; lazy notation/OCR loaders carry SRI too.
+- **Minors** — RFC 2822 refuses CR/LF in To/From; Gmail fetches time out (20 s) and a 401
+  refreshes the token and retries once (`GmailAPI._authed`); an unparseable store is copied to
+  `setlist_quarantine_<key>` before it can be overwritten (`LS.get` → `lsQuarantine`); snapshots
+  keep history ~10 min apart (`nextSnapshotRing`) and Recover picks one ≥ 60 s older
+  (`pickRecoverySnapshot`); the backup URL is revoked after 60 s; Web EPK image data URLs must
+  pass `safeImageDataUrl` and are escaped, and the page carries `EPK_HTML_CSP` (only the print
+  button's hashed handler may run); `bulkAddVenues` dedups inside the state updater.
+- **#9 not done**: precompiling the JSX (esbuild → inlined bundle) changes the no-build
+  distribution model (§1) and needs the owner's decision plus a time-to-interactive measurement.
+
+Verification: `npm test` → 336/336 (+23: `pdfjs-security`, `supply-chain`, `backup-restore`,
+`gmail-reply-safety`, `storage-safety`); Babel compile clean (index.html + 3 companions);
+headless Playwright drives of the real app (jsDelivr routed to vendored npm files, SRI
+verifying) — SW 10/10 (deploy reaches reload + new tab, offline reload renders the latest
+build; the **old** `sw.js` fails 4 of these), two-tab + backup/restore 11/11 (lock appears
+only after a real write, damaged backup refused with data intact, restore brings chart bytes
+back, partial backup asks + marks), watermark 46 MB PNG → 138 KB stored, Web EPK with hostile
+fields renders under CSP without executing them; 0 page errors throughout.
+
+---
+
 ## 11. PDF export — two decoupled documents
 
 Exports split into two independent pipelines, both fed by pure model builders. Nothing
@@ -2639,10 +2703,11 @@ sends, and multi-account support. Keep the first PR: connect → send → detect
 
 ---
 
-## 12. Open audit findings (2026-11-22) — not yet fixed
+## 12. Audit findings (2026-11-22) — fixed in §9bd except #9
 
-Independent production audit; **no code was changed**. Fix in this order. Each item
-names its verification. Line numbers are as of commit `08362ac`.
+Independent production audit. **Status: #1–#8 and every minor item are fixed (§9bd); #9
+(Babel precompile) is still open** pending an owner decision. Kept for the record; line
+numbers are as of commit `08362ac` and no longer match.
 
 **Critical**
 1. **Service worker pins returning users to a stale build forever** (`sw.js:1-17`,
@@ -2697,6 +2762,7 @@ EPK HTML written into a same-origin window (`:17380`) with an unescaped
 **Checked and not a problem:** deep-mode generation on the 122-song library runs in
 ~25–40 ms in Node, so the Web Worker (§9p TASK-6) is not needed yet.
 
-**Test gap:** the 313 tests cover pure functions only — nothing exercises backup/
-restore, the band-switch persistence effects, the IndexedDB layer, the service worker,
-or the Gmail send/reply loop.
+**Test gap (narrowed):** backup/restore planning + rollback, the SW strategy, PDF.js flags,
+supply-chain pinning and Gmail classification now have unit tests, and the SW / two-tab /
+backup flows were driven headlessly (§9bd). Still untested in `npm test`: the band-switch
+persistence effects, the IndexedDB layer itself, and the live Gmail send loop.

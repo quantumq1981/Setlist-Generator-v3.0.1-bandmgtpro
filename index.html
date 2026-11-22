@@ -30,27 +30,38 @@
   <meta name="twitter:image" content="https://quantumq1981.github.io/Setlist-Generator-v3.0.1-bandmgtpro/assets/og-image.png" />
 
   <link rel="manifest" href="./manifest.webmanifest" />
-  <!-- TODO(SRI): add integrity hashes once CDN access is available in this environment. -->
-  <script crossorigin="anonymous" src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin="anonymous" src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script crossorigin="anonymous" src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
-  <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-  <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/mobile-drag-drop/3.0.0-rc.0/index.min.js"></script>
-  <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/mobile-drag-drop/3.0.0-rc.0/scroll-behaviour.min.js"></script>
+  <!-- Supply chain (audit §12 #8): every CDN script is an exact version on jsDelivr's npm
+       mirror (byte-identical to the npm tarball) with an SRI hash. Changing a version means
+       recomputing its hash: curl the URL, `openssl dgst -sha384 -binary f.js | base64`.
+       test/supply-chain.test.js enforces pinning + integrity; sw.js precaches the same list. -->
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js" integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js" integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.29.7/babel.min.js" integrity="sha384-ezQ6HS3FLspd9te19o2McUV6FAK091+GG7KO54f/R8DKgCDi7fULhapNrd5LY+vG"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" integrity="sha384-D/t0ZMqQW31H3az8ktEiNb39wyKnS82iFY52QPACM+IjKW3jDUhyIgh2PApRqJZs"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/mobile-drag-drop@3.0.0-rc.0/index.min.js" integrity="sha384-2jj7jJxeEm9KqRfF9LOSBQdArQruVJtAO/BpVQ5PZsEwHW1wG8DHeMdG1Ubz+/zx"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/mobile-drag-drop@3.0.0-rc.0/scroll-behaviour.min.js" integrity="sha384-KBSo4Ggm+ofASvdROZ6YUT1gejMmg006Y625P5qiOGZBSoFFFx9Srg4c5xKRhqyV"></script>
   <script>
     if (window.pdfjsLib) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
     }
     if (window.MobileDragDrop) {
       window.MobileDragDrop.polyfill({
         dragImageTranslateOverride: window.MobileDragDrop.scrollBehaviourDragImageTranslateOverride
       });
     }
+    // Service worker (audit §12 #1): sw.js serves the app shell network-first, so a deploy
+    // reaches returning users on their next load. updateViaCache:'none' stops the HTTP cache
+    // from hiding a new sw.js, and a check on every return-to-foreground catches the PWA
+    // that stays open for days on an iPad.
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('SW registration failed:', err));
+        navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((reg) => {
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') reg.update().catch(() => {});
+          });
+        }).catch((err) => console.warn('SW registration failed:', err));
       });
     }
   </script>
@@ -1888,13 +1899,21 @@
       _attDbPromise = null;                                       // stale/lost connection → reopen
       return _idbTxOnce(store, mode, fn);
     });
-    const _idbAll = (store) => attOpen().then(db => new Promise((resolve, reject) => {
-      const tx = db.transaction(store, 'readonly');
+    // Read a whole store. Goes through the same reconnect-and-retry-once path as _idbTx, and
+    // REJECTS when the store can't be read (audit §12 #3): it used to resolve {} on any error,
+    // so a backup taken after iOS dropped the connection silently carried no charts.
+    const _idbAllOnce = (store) => attOpen().then(db => new Promise((resolve, reject) => {
+      const tx = db.transaction(store, 'readonly');   // throws InvalidStateError on a dead handle
       const out = {};
       const cur = tx.objectStore(store).openCursor();
       cur.onsuccess = () => { const c = cur.result; if (c) { out[c.key] = c.value; c.continue(); } else resolve(out); };
       cur.onerror = () => reject(cur.error);
-    })).catch(() => ({}));
+      tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
+    }));
+    const _idbAll = (store) => _idbAllOnce(store).catch(() => {
+      _attDbPromise = null;                                       // stale/lost connection → reopen
+      return _idbAllOnce(store);
+    });
     const attTx = (mode, fn) => _idbTx(ATT_STORE, mode, fn);
 
     // Session-memory fallback: when the browser refuses persistent storage outright, the
@@ -1924,12 +1943,18 @@
       clear: () => { _attMem.clear(); return attTx('readwrite', s => s.clear()); },
       keys: () => attTx('readonly', s => s.getAllKeys()).catch(() => []).then(k => [...new Set([...k, ..._attMem.keys()])]),
       // id → Blob for every stored attachment (persisted + session-only), for backups.
-      all: () => _idbAll(ATT_STORE).then(raw => {
-        const out = {};
-        for (const [id, v] of Object.entries(raw)) { const b = attRecordToBlob(v); if (b) out[id] = b; }
-        for (const [id, v] of _attMem) out[id] = attRecordToBlob(v);
-        return out;
-      }),
+      // Resolves { blobs, error }: `error` is set when the persistent store couldn't be
+      // read, so the caller can refuse to pretend the backup is complete.
+      all: async () => {
+        const blobs = {};
+        let error = null;
+        try {
+          const raw = await _idbAll(ATT_STORE);
+          for (const [id, v] of Object.entries(raw)) { const b = attRecordToBlob(v); if (b) blobs[id] = b; }
+        } catch (err) { error = err || new Error('IndexedDB read failed'); }
+        for (const [id, v] of _attMem) blobs[id] = attRecordToBlob(v);
+        return { blobs, error };
+      },
     };
     // Annotation strokes, keyed `${attId}:${page}` → { strokes: [...] }. Personal + offline.
     const annoStore = {
@@ -1952,7 +1977,114 @@
     };
     const blobToB64 = (blob) => blob.arrayBuffer().then(buf => bytesToB64(new Uint8Array(buf)));
     const b64ToBlob = (b64, mime) => new Blob([b64ToBytes(b64)], { type: mime || 'application/octet-stream' });
+    // An image data URL that is safe to drop into an HTML src attribute: raster types only
+    // (an SVG data URL can carry markup) and strictly base64 (no quotes/brackets to break out
+    // of the attribute). Anything else → ''. Pure.
+    const safeImageDataUrl = (v) => {
+      const s = typeof v === 'string' ? v.trim() : '';
+      return /^data:image\/(png|jpe?g|gif|webp|bmp|avif);base64,[A-Za-z0-9+/]+={0,2}$/i.test(s) ? s : '';
+    };
+    // CSP for generated EPK pages: only the print button's exact inline handler may run.
+    const EPK_HTML_CSP = "default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; font-src data: https:; "
+      + "script-src 'unsafe-hashes' 'sha256-MguIPR6qNR8D3B+eAlK+bIRTZe8t3wkOY4B/56Me9FU='; base-uri 'none'; form-action 'none'";
+
+    // ---- PDF watermark sizing (audit §12 #7) -----------------------------------------
+    const WATERMARK_MAX_SIDE = 1000;
+    const WATERMARK_MAX_CHARS = 200 * 1024;          // data-URL length budget in localStorage
+    // Scale (w,h) down so the long side is <= maxSide; never upscales. Pure.
+    const fitWatermarkDims = (w, h, maxSide) => {
+      if (!(w > 0 && h > 0) || !(maxSide > 0)) return null;
+      const k = Math.min(1, maxSide / Math.max(w, h));
+      return { w: Math.max(1, Math.round(w * k)), h: Math.max(1, Math.round(h * k)) };
+    };
+    // Re-encode an image File/Blob as a data URL under WATERMARK_MAX_CHARS: PNG first (keeps
+    // a logo's transparency), then JPEG on white, stepping the size down. Returns the
+    // smallest attempt if nothing fits (the caller reports a save failure honestly).
+    async function shrinkImageToDataUrl(blob) {
+      const url = URL.createObjectURL(blob);
+      try {
+        const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('image decode failed')); im.src = url; });
+        let best = null;
+        for (const side of [WATERMARK_MAX_SIDE, 800, 600, 400]) {
+          const d = fitWatermarkDims(img.naturalWidth || img.width, img.naturalHeight || img.height, side);
+          if (!d) throw new Error('image has no size');
+          const c = document.createElement('canvas'); c.width = d.w; c.height = d.h;
+          const g = c.getContext('2d');
+          g.drawImage(img, 0, 0, d.w, d.h);
+          const png = c.toDataURL('image/png');
+          if (png.length <= WATERMARK_MAX_CHARS) return png;
+          g.globalCompositeOperation = 'destination-over'; g.fillStyle = '#fff'; g.fillRect(0, 0, d.w, d.h);
+          for (const q of [0.82, 0.65]) {
+            const jpg = c.toDataURL('image/jpeg', q);
+            if (jpg.length <= WATERMARK_MAX_CHARS) return jpg;
+            if (!best || jpg.length < best.length) best = jpg;
+          }
+        }
+        return best;
+      } finally { URL.revokeObjectURL(url); }
+    }
     const fmtBytes = (n) => n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n || 0} B`;
+
+    // ---- Backup integrity (pure, unit-tested — audit §12 #3) --------------------------
+    // Attachment ids referenced anywhere in the backed-up stores (library songs, saved gig
+    // setlists, snapshots, ...). A deep walk, so a new place that carries songs is covered
+    // without wiring. Unparseable stores are skipped.
+    const backupReferencedAttachmentIds = (stores) => {
+      const ids = new Set();
+      const walk = (v, depth) => {
+        if (!v || typeof v !== 'object' || depth > 24) return;
+        if (Array.isArray(v)) { for (const x of v) walk(x, depth + 1); return; }
+        if (Array.isArray(v.attachments)) {
+          for (const a of v.attachments) if (a && typeof a === 'object' && typeof a.id === 'string' && a.id) ids.add(a.id);
+        }
+        for (const k of Object.keys(v)) if (k !== 'attachments') walk(v[k], depth + 1);
+      };
+      for (const raw of Object.values(stores || {})) {
+        if (typeof raw !== 'string') continue;
+        let parsed; try { parsed = JSON.parse(raw); } catch (e) { continue; }
+        walk(parsed, 0);
+      }
+      return [...ids];
+    };
+    // Validate a parsed backup file and describe what restoring it will do. Pure.
+    const planBackupRestore = (data) => {
+      if (!data || data.kind !== 'full-backup' || !data.stores || typeof data.stores !== 'object' || Array.isArray(data.stores)) {
+        return { ok: false, error: 'Not a BandLeaderHQ backup file' };
+      }
+      const storeKeys = Object.keys(data.stores).filter(k => k.startsWith('setlist_'));
+      if (!storeKeys.length) return { ok: false, error: 'This backup contains no app data' };
+      const bad = storeKeys.filter(k => typeof data.stores[k] !== 'string');
+      if (bad.length) return { ok: false, error: `This backup is damaged (${bad.length} unreadable store${bad.length > 1 ? 's' : ''})` };
+      const att = data.attachments && typeof data.attachments === 'object' ? data.attachments : {};
+      const attIds = Object.keys(att).filter(id => att[id] && typeof att[id].b64 === 'string');
+      const have = new Set(attIds);
+      const referenced = backupReferencedAttachmentIds(data.stores);
+      const missing = referenced.filter(id => !have.has(id));
+      const ann = data.annotations && typeof data.annotations === 'object' ? data.annotations : {};
+      return { ok: true, storeKeys, attIds, referenced, missing, annotationKeys: Object.keys(ann) };
+    };
+    // Replace every `prefix` store in a Storage-like object ({length,key,getItem,setItem,
+    // removeItem}) with `next`, all-or-nothing: if a write throws (quota), the previous
+    // stores are put back exactly. Returns { ok } or { ok:false, error, rollbackFailed? }.
+    const replaceStoresAtomically = (storage, next, prefix = 'setlist_') => {
+      const prev = {};
+      for (let i = 0; i < storage.length; i++) {
+        const k = storage.key(i);
+        if (k && k.startsWith(prefix)) prev[k] = storage.getItem(k);
+      }
+      const incoming = Object.entries(next || {}).filter(([k, v]) => k.startsWith(prefix) && typeof v === 'string');
+      try {
+        for (const k of Object.keys(prev)) storage.removeItem(k);
+        for (const [k, v] of incoming) storage.setItem(k, v);
+        return { ok: true };
+      } catch (error) {
+        try {
+          for (const [k] of incoming) storage.removeItem(k);
+          for (const [k, v] of Object.entries(prev)) storage.setItem(k, v);
+        } catch (e2) { return { ok: false, error, rollbackFailed: true }; }
+        return { ok: false, error };
+      }
+    };
 
     /******** STAGE CHART VIEWER — pure navigation core (headless-testable) ********/
     // The performance "music stand": from a generated setlist, render the selected
@@ -3140,7 +3272,27 @@
     // email-centric. These close that gap: a "needs email" work queue with
     // assisted lookup, and a call path with logged outcomes so phone-only rooms
     // are first-class pipeline citizens instead of dead ends.
-    const venueNeedsEmail = (v) => !!v && !String(v.email || '').trim();
+    // A bounce (§12 #5) marks the address it bounced on; the venue needs a new email until
+    // the address changes, so the queue/sequence stop mailing a dead inbox.
+    const venueEmailBounced = (v) => !!v && !!v.bouncedEmail
+      && String(v.bouncedEmail).trim().toLowerCase() === String(v.email || '').trim().toLowerCase();
+    const venueNeedsEmail = (v) => !!v && (!String(v.email || '').trim() || venueEmailBounced(v));
+
+    // Merge a patch into the CURRENT venue state (audit §12 #4). Background work (Gmail reply
+    // checks) used to hand back a whole venue object captured when it started, wiping any
+    // send / call / status change made while it ran. `patch` may be a function of the current
+    // venue (return null to leave it alone), so a guard like "only if still Contacted" is
+    // evaluated against the live state. Status moves are logged exactly like updateVenue. Pure.
+    const applyVenuePatch = (current, patch, today) => {
+      if (!current) return current;
+      const p = typeof patch === 'function' ? patch(current) : patch;
+      if (!p || typeof p !== 'object') return current;
+      const next = { ...current, ...p };
+      if (p.status && p.status !== current.status) {
+        next.contactLog = [...(next.contactLog || []), { date: today, kind: 'status', status: p.status }];
+      }
+      return next;
+    };
 
     // Deep-link a Google hunt for the venue's booking address.
     const googleEmailSearchUrl = (v) => {
@@ -3363,7 +3515,7 @@
         const recent = last && (Date.parse(today + 'T00:00:00Z') - Date.parse(last + 'T00:00:00Z')) / 86400000 < SEQUENCE_STEP_DAYS;
         return recent ? null : { action: 'rebook', template: 'postGig' };
       }
-      const hasEmail = !!String(venue.email || '').trim();
+      const hasEmail = !!String(venue.email || '').trim() && !venueEmailBounced(venue);
       const hasPhone = !!String(venue.phone || '').trim();
       switch (venue.status) {
         case 'prospect':
@@ -5028,19 +5180,61 @@
       return (parsed && parsed > 0) ? parsed : DEFAULT_DURATION_MINUTES;
     };
 
+    // ---- Recovery snapshots (audit §12 minor) -----------------------------------------
+    // The autosave fires ~1.2 s after every edit and used to keep the last 3, so "recover"
+    // landed on a copy taken seconds earlier — usually already containing the mistake. Now
+    // the head is a rolling "current" copy and older entries are kept ~SNAPSHOT_GAP_MS apart,
+    // and recovery picks the newest copy at least SNAPSHOT_RECOVER_MIN_AGE_MS older than the
+    // head. Same 3-copy storage cost. Both pure.
+    const SNAPSHOT_GAP_MS = 10 * 60 * 1000;
+    const SNAPSHOT_RECOVER_MIN_AGE_MS = 60 * 1000;
+    const SNAPSHOT_MAX = 3;
+    const nextSnapshotRing = (existing, payload, gapMs = SNAPSHOT_GAP_MS, max = SNAPSHOT_MAX) => {
+      const ring = (Array.isArray(existing) ? existing : []).filter(x => x && typeof x.ts === 'number');
+      // Replace the head while it's still within the gap of the copy before it; otherwise
+      // keep it (it becomes history) and start a new head.
+      const replaceHead = ring.length >= 2 && ring[0].ts - ring[1].ts < gapMs;
+      const next = replaceHead ? [payload, ...ring.slice(1)] : [payload, ...ring];
+      return next.slice(0, max).map((snap, idx) => ({ ...snap, id: `snapshot_${idx + 1}` }));
+    };
+    const pickRecoverySnapshot = (snapshots, minAgeMs = SNAPSHOT_RECOVER_MIN_AGE_MS) => {
+      const ring = (Array.isArray(snapshots) ? snapshots : []).filter(x => x && typeof x.ts === 'number');
+      if (ring.length < 2) return null;
+      return ring.slice(1).find(x => ring[0].ts - x.ts >= minAgeMs) || null;
+    };
+
+    // ---- Cross-tab safety (audit §12 #6) -----------------------------------------------
+    // Every store is written whole, so two open tabs were silent last-writer-wins: the idle
+    // tab's next save overwrote what the other tab did. When ANOTHER tab changes a data store,
+    // this tab is stale: it stops writing (LS_WRITE_LOCK) and the App shows a blocking
+    // "reload" screen. Housekeeping keys that don't make our data stale are ignored. Pure.
+    const LS_CROSS_TAB_IGNORE_RE = /^setlist_(last_backup_at|stage_prefs_v3|quarantine_|band_snapshots_v3_)/;
+    const crossTabChangeMakesStale = (key) => key === null
+      || (typeof key === 'string' && key.startsWith('setlist_') && !LS_CROSS_TAB_IGNORE_RE.test(key));
+    const LS_WRITE_LOCK = { locked: false };
+    // A store that no longer parses (a truncated write) used to read as "empty" and then be
+    // overwritten by the next save. Keep the raw text under setlist_quarantine_<key> (which a
+    // Backup includes) before anything can replace it, and tell the App (audit §12 minor).
+    const lsQuarantine = (k, raw) => {
+      const qk = 'setlist_quarantine_' + k;
+      try { if (localStorage.getItem(qk) !== raw) localStorage.setItem(qk, raw); } catch (e) { /* no room — still warn */ }
+      try { window.dispatchEvent(new CustomEvent('setlist:storage-corrupt', { detail: { key: k, quarantineKey: qk } })); } catch (e) {}
+    };
     const LS = {
-      // Add logging for localStorage getter failures. Swallowing exceptions silently hides
-      // corrupted data or JSON parse errors. Logging aids debugging without breaking runtime.
       get: (k) => {
+        let raw = null;
+        try { raw = localStorage.getItem(k); } catch (err) { console.warn('LS.get error:', err); return null; }
+        if (raw === null) return null;
         try {
-          return JSON.parse(localStorage.getItem(k));
+          return JSON.parse(raw);
         } catch (err) {
-          console.warn('LS.get error:', err);
+          console.warn('LS.get: unparseable store', k, err);
+          lsQuarantine(k, raw);
           return null;
         }
       },
-      set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (err) { console.error('LS.set error:', err); if (err && (err.name === 'QuotaExceededError' || err.code === 22 || err.code === 1014)) { window.dispatchEvent(new CustomEvent('setlist:storage-quota-warning')); } } },
-      remove: (k) => { try { localStorage.removeItem(k); } catch (err) { console.error('LS.remove error:', err); } }
+      set: (k, v) => { if (LS_WRITE_LOCK.locked) return; try { localStorage.setItem(k, JSON.stringify(v)); } catch (err) { console.error('LS.set error:', err); if (err && (err.name === 'QuotaExceededError' || err.code === 22 || err.code === 1014)) { window.dispatchEvent(new CustomEvent('setlist:storage-quota-warning')); } } },
+      remove: (k) => { if (LS_WRITE_LOCK.locked) return; try { localStorage.removeItem(k); } catch (err) { console.error('LS.remove error:', err); } }
     };
 
     // Saveable energy / tonal optimizer profiles. A profile captures just the knobs
@@ -5103,6 +5297,7 @@
     const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
     const GMAIL_REPLY_CHECK_COOLDOWN_MS = 3 * 3600 * 1000;
     const GMAIL_REPLY_CHECK_MAX_THREADS = 50;
+    const GMAIL_FETCH_TIMEOUT_MS = 20000;
 
     // UTF-8 → standard base64.
     const gmailB64Utf8 = (str) => {
@@ -5123,7 +5318,10 @@
 
     // Build an RFC 2822 text/plain message. The body is base64-encoded so any UTF-8
     // content survives with safe line lengths.
+    // To/From go into raw headers: a CR/LF in an imported (OSM/CSV) address would let it
+    // inject headers (Bcc:, a second body). Refuse rather than repair (audit §12 minor).
     const gmailBuildRfc2822 = ({ to, from, subject, body }) => {
+      if (/[\r\n]/.test(String(to || '')) || /[\r\n]/.test(String(from || ''))) throw new Error('Invalid email address (contains a line break)');
       const lines = [
         `To: ${to || ''}`,
         from ? `From: ${from}` : null,
@@ -5137,18 +5335,47 @@
       return lines.filter(l => l !== null).join('\r\n');
     };
 
-    // True when a thread (Gmail metadata format) contains a message from anyone other
-    // than the connected account — i.e. the venue wrote back.
-    const gmailThreadHasReply = (thread, connectedEmail) => {
-      const me = String(connectedEmail || '').trim().toLowerCase();
-      if (!me || !thread || !Array.isArray(thread.messages)) return false;
-      return thread.messages.some(m => {
-        const from = (((m || {}).payload || {}).headers || []).find(h => /^from$/i.test((h && h.name) || ''));
-        if (!from || !from.value) return false;
-        const addr = ((from.value.match(/<([^>]+)>/) || [null, from.value])[1] || '').trim().toLowerCase();
-        return !!addr && addr !== me;
-      });
+    // Reply classification (audit §12 #5). Gmail threads a bounce (mailer-daemon NDR) and an
+    // out-of-office auto-reply into the original thread, and both have a foreign From — so a
+    // bad scraped address used to flip the venue to Responded, halt its sequence and inflate
+    // the §9n learning loop. Each message is classified; only a human reply counts.
+    const GMAIL_REPLY_HEADERS = ['From', 'Subject', 'Auto-Submitted', 'Precedence', 'X-Autoreply', 'X-Autorespond', 'Content-Type'];
+    const GMAIL_BOUNCE_LOCAL_RE = /^(mailer-daemon|postmaster|mail-?daemon)([+._-]|$)/i;
+    const GMAIL_BOUNCE_SUBJECT_RE = /^\s*(undeliverable|undelivered mail|delivery status notification|delivery (has )?failed|delivery failure|mail delivery (failed|subsystem)|returned mail|failure notice|message not delivered|address not found)/i;
+    const GMAIL_AUTO_LOCAL_RE = /^(no-?reply|do-?not-?reply|donotreply|bounces?|auto-?reply|autoresponder|notifications?)([+._-]|$)/i;
+    const GMAIL_AUTO_SUBJECT_RE = /^\s*(automatic reply|auto(matic)?[- ]?(reply|response)|out of (the )?office|ooo\b|away from (the )?office|on vacation)/i;
+    // 'mine' | 'bounce' | 'auto' | 'reply' | 'none' for one metadata-format message. Pure.
+    const gmailMessageKind = (m, me) => {
+      const h = {};
+      for (const x of (((m || {}).payload || {}).headers || [])) if (x && x.name) h[String(x.name).toLowerCase()] = String(x.value || '');
+      if (!h.from) return 'none';
+      const addr = ((h.from.match(/<([^>]+)>/) || [null, h.from])[1] || '').trim().toLowerCase();
+      if (!addr) return 'none';
+      if (addr === me) return 'mine';
+      const local = addr.split('@')[0];
+      const subject = h.subject || '';
+      if (GMAIL_BOUNCE_LOCAL_RE.test(local) || /multipart\/report/i.test(h['content-type'] || '') || GMAIL_BOUNCE_SUBJECT_RE.test(subject)) return 'bounce';
+      const autoSub = (h['auto-submitted'] || '').trim();
+      if (autoSub && !/^no$/i.test(autoSub)) return 'auto';
+      if (h['x-autoreply'] || h['x-autorespond'] || /^(auto_reply|bulk|junk)$/i.test((h.precedence || '').trim())) return 'auto';
+      if (GMAIL_AUTO_LOCAL_RE.test(local) || GMAIL_AUTO_SUBJECT_RE.test(subject)) return 'auto';
+      return 'reply';
     };
+    // { replied, bounced, autoReplied } for a thread. Pure.
+    const gmailClassifyThread = (thread, connectedEmail) => {
+      const me = String(connectedEmail || '').trim().toLowerCase();
+      const out = { replied: false, bounced: false, autoReplied: false };
+      if (!me || !thread || !Array.isArray(thread.messages)) return out;
+      for (const m of thread.messages) {
+        const k = gmailMessageKind(m, me);
+        if (k === 'reply') out.replied = true;
+        else if (k === 'bounce') out.bounced = true;
+        else if (k === 'auto') out.autoReplied = true;
+      }
+      return out;
+    };
+    // True when a thread contains a HUMAN reply from anyone other than the connected account.
+    const gmailThreadHasReply = (thread, connectedEmail) => gmailClassifyThread(thread, connectedEmail).replied;
 
     // Venues due for a reply check: still sitting in Contacted, have at least one
     // Gmail-sent touch (threadId), and weren't checked within the cooldown window.
@@ -5206,17 +5433,40 @@
         return this._requestToken(cfg.clientId, '');
       },
 
+      // Every call times out (a hung request used to stall the sequential reply checks
+      // forever) and carries the HTTP status so _authed can tell an expired token apart.
       async _fetch(path, opts, token) {
-        const r = await fetch(GMAIL_API_BASE + path, {
-          ...(opts || {}),
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...((opts || {}).headers || {}) },
-        });
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), GMAIL_FETCH_TIMEOUT_MS) : null;
+        let r;
+        try {
+          r = await fetch(GMAIL_API_BASE + path, {
+            ...(opts || {}),
+            ...(ctrl ? { signal: ctrl.signal } : {}),
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...((opts || {}).headers || {}) },
+          });
+        } catch (e) {
+          throw new Error(e && e.name === 'AbortError' ? 'Gmail did not respond — check your connection and try again' : `Could not reach Gmail (${(e && e.message) || 'network error'})`);
+        } finally { if (timer) clearTimeout(timer); }
         if (!r.ok) {
           let msg = `Gmail API error ${r.status}`;
           try { const j = await r.json(); msg = (j.error && j.error.message) || msg; } catch (_) {}
-          throw new Error(msg);
+          const err = new Error(msg); err.status = r.status;
+          throw err;
         }
         return r.json();
+      },
+      // Run fn(token). A 401 means Google revoked/expired the token before our clock said so:
+      // drop it, silently fetch a new one, retry once. (A 401 send was not delivered, so the
+      // retry cannot double-send.)
+      async _authed(fn) {
+        const token = await this.getToken();
+        try { return await fn(token); }
+        catch (e) {
+          if (!e || e.status !== 401) throw e;
+          this._token = null; this._tokenExpiresAt = 0;
+          return fn(await this.getToken());
+        }
       },
 
       // First-time connect: full consent prompt, then resolve the account's address.
@@ -5241,17 +5491,17 @@
 
       // Send a plain-text message as the connected user; resolves { id, threadId }.
       async send({ to, subject, body }) {
-        const token = await this.getToken();
         const raw = gmailBase64Url(gmailBuildRfc2822({ to, from: this.getConfig().connectedEmail, subject, body }));
-        return this._fetch('/messages/send', { method: 'POST', body: JSON.stringify({ raw }) }, token);
+        return this._authed(token => this._fetch('/messages/send', { method: 'POST', body: JSON.stringify({ raw }) }, token));
       },
 
-      // Metadata-only thread fetch (From headers) → did anyone else write in it?
-      async threadHasReply(threadId) {
-        const token = await this.getToken();
-        const thread = await this._fetch(`/threads/${encodeURIComponent(threadId)}?format=metadata&metadataHeaders=From`, {}, token);
-        return gmailThreadHasReply(thread, this.getConfig().connectedEmail);
+      // Metadata-only thread fetch → { replied, bounced, autoReplied } (gmailClassifyThread).
+      async checkThread(threadId) {
+        const qs = GMAIL_REPLY_HEADERS.map(h => `metadataHeaders=${encodeURIComponent(h)}`).join('&');
+        const thread = await this._authed(token => this._fetch(`/threads/${encodeURIComponent(threadId)}?format=metadata&${qs}`, {}, token));
+        return gmailClassifyThread(thread, this.getConfig().connectedEmail);
       },
+      async threadHasReply(threadId) { return (await this.checkThread(threadId)).replied; },
     };
 
     const storageHealth = {
@@ -6585,6 +6835,13 @@
     // parse it several times (notes-detection pre-pass, set parser, flat fallback), so
     // each entry point hands PDF.js a private copy and the caller's buffer stays usable.
     // Accepts ArrayBuffer | TypedArray | DataView. Pure.
+    //
+    // SECURITY (audit §12 #2, CVE-2024-4367): PDF.js 3.x compiles font glyph paths with
+    // `new Function` when isEvalSupported is true (the default), and a crafted font can
+    // escape into arbitrary JS in this origin — which can read every localStorage store
+    // and the in-memory Gmail token. EVERY PDF.js document-open call must pass
+    // `isEvalSupported: false` (test/pdfjs-security.test.js scans for it). The real fix is
+    // PDF.js >= 4.2.67; until that upgrade, this flag closes the hole.
     function pdfDataCopy(data) {
       if (data instanceof ArrayBuffer) {
         if (data.byteLength === 0) throw new Error('PDF data is empty (the file buffer was already consumed) — please re-select the file.');
@@ -6598,7 +6855,7 @@
 
     async function pdfExtractText(arrayBuffer) {
       if (!window.pdfjsLib) throw new Error('PDF.js not loaded');
-      const pdf = await pdfjsLib.getDocument({ data: pdfDataCopy(arrayBuffer) }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: pdfDataCopy(arrayBuffer), isEvalSupported: false }).promise;
       const pages = [];
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
@@ -6918,7 +7175,7 @@
     // by Y. Returns [{ page, rows:[{ y, items:[{str,x}] }] }].
     async function pdfExtractRows(arrayBuffer) {
       if (!window.pdfjsLib) throw new Error('PDF.js not loaded');
-      const pdf = await pdfjsLib.getDocument({ data: pdfDataCopy(arrayBuffer) }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: pdfDataCopy(arrayBuffer), isEvalSupported: false }).promise;
       const pages = [];
       for (let p = 1; p <= pdf.numPages; p++) {
         const page = await pdf.getPage(p);
@@ -12866,7 +13123,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         if (!blob) return;
         if (!window.pdfjsLib) { onError && onError('PDF viewer unavailable (offline libraries not loaded).'); return; }
         blob.arrayBuffer()
-          .then(buf => pdfjsLib.getDocument({ data: buf }).promise)
+          .then(buf => pdfjsLib.getDocument({ data: buf, isEvalSupported: false }).promise)
           .then(pdf => {
             if (cancelled) { try { pdf.destroy(); } catch (e) {} return; }
             pdfRef.current = pdf;
@@ -12978,18 +13235,25 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     // jsDelivr URLs mirror the pinned npm packages exactly; verification rewrites them to the
     // local vendored copies. alphaTab auto-resolves its Bravura font from the script's dir.
     const NOTATION_LIBS = {
-      abc: { url: 'https://cdn.jsdelivr.net/npm/abcjs@6.7.0/dist/abcjs-basic-min.js', global: 'ABCJS' },
-      musicxml: { url: 'https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@2.1.2/build/opensheetmusicdisplay.min.js', global: 'opensheetmusicdisplay' },
-      guitarpro: { url: 'https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/alphaTab.min.js', global: 'alphaTab' },
+      abc: { url: 'https://cdn.jsdelivr.net/npm/abcjs@6.7.0/dist/abcjs-basic-min.js', global: 'ABCJS',
+        integrity: 'sha384-QEx1pDqNtno80p4xYN5Cqm5JcAAtUDUCHqFLq0UBhWRFoFzzNHumh20zFGG/9XMi' },
+      musicxml: { url: 'https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@2.1.2/build/opensheetmusicdisplay.min.js', global: 'opensheetmusicdisplay',
+        integrity: 'sha384-12lItsNRZQLTAONzjzkiAB2oOKC7L9JPNqWBHro/ug0hLJZTmGxbr0V2JRt8KwC2' },
+      guitarpro: { url: 'https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/alphaTab.min.js', global: 'alphaTab',
+        integrity: 'sha384-gqEQct7a5Q9FIVJn5YA5grARLrkneus3C4hXWlDkgxq9Yrg+j59ohfs8hxVFYMkF' },
     };
     const _scriptCache = {};
-    function loadScriptOnce(url) {
+    // `integrity` is the SRI hash of the pinned file (audit §12 #8); an integrity failure
+    // fires onerror, so a tampered CDN file is refused instead of run. A failed load is
+    // dropped from the cache so a later attempt (e.g. back online) can retry.
+    function loadScriptOnce(url, integrity) {
       if (_scriptCache[url]) return _scriptCache[url];
       _scriptCache[url] = new Promise((resolve, reject) => {
         const s = document.createElement('script');
         s.src = url; s.async = true;
+        if (integrity) { s.integrity = integrity; s.crossOrigin = 'anonymous'; }
         s.onload = () => resolve();
-        s.onerror = () => reject(new Error('Failed to load ' + url));
+        s.onerror = () => { delete _scriptCache[url]; s.remove(); reject(new Error('Failed to load ' + url)); };
         document.head.appendChild(s);
       });
       return _scriptCache[url];
@@ -12998,7 +13262,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const lib = NOTATION_LIBS[format];
       if (!lib) return Promise.reject(new Error('No library for ' + format));
       if (window[lib.global]) return Promise.resolve(window[lib.global]);
-      return loadScriptOnce(lib.url).then(() => {
+      return loadScriptOnce(lib.url, lib.integrity).then(() => {
         if (!window[lib.global]) throw new Error(lib.global + ' did not initialize');
         return window[lib.global];
       });
@@ -13009,9 +13273,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     // engine fetches its own worker/core/lang data from the CDN on first use, so this
     // step needs a live connection once (it then caches); it degrades gracefully offline.
     const TESSERACT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+    const TESSERACT_SRI = 'sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F';
     function ensureTesseract() {
       if (window.Tesseract) return Promise.resolve(window.Tesseract);
-      return loadScriptOnce(TESSERACT_URL).then(() => {
+      return loadScriptOnce(TESSERACT_URL, TESSERACT_SRI).then(() => {
         if (!window.Tesseract) throw new Error('Tesseract did not initialize');
         return window.Tesseract;
       });
@@ -13028,7 +13293,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       } else {
         const pdfjs = window.pdfjsLib;
         if (!pdfjs) throw new Error('PDF.js unavailable');
-        const doc = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
+        const doc = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()), isEvalSupported: false }).promise;
         const page = await doc.getPage(1);
         const vp = page.getViewport({ scale: 2 });
         const canvas = document.createElement('canvas');
@@ -13570,9 +13835,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
     /******************* VENUE MODAL *******************/
     function VenueModal({ open, onClose, initialTab, venues, bookings, setlists, songs, epkSettings,
-      onSaveEpkSettings, onAddVenue, onUpdateVenue, onDeleteVenue,
+      onSaveEpkSettings, onAddVenue, onUpdateVenue, onPatchVenue, onDeleteVenue,
       onAddBooking, onUpdateBooking, onDeleteBooking, bandName, showToast, onBulkAddVenues, onGenerateEPK, onGenerateEPKHtml, onDownloadEPKHtml }) {
       const [vTab, setVTab] = useState('venues');
+      const venuesRef = React.useRef(venues);   // latest venues for async background work
+      venuesRef.current = venues;
       // Deep-link: when the modal is opened from a top-level nav item, jump to that sub-tab.
       // (The modal stays mounted and returns null while closed, so vTab persists — hence this effect.)
       React.useEffect(() => { if (open && initialTab) setVTab(initialTab); }, [open, initialTab]);
@@ -13676,24 +13943,45 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           const candidates = gmailReplyCheckCandidates(venues);
           if (!candidates.length) return;
           try { await GmailAPI.getToken(); } catch (_) { return; } // no silent auth → skip quietly
-          let checked = 0, flipped = 0;
+          let checked = 0, flipped = 0, bounced = 0;
           for (const venue of candidates) {
             if (cancelled || checked >= GMAIL_REPLY_CHECK_MAX_THREADS) break;
             const threadIds = [...new Set((venue.contactLog || []).filter(e => e && e.kind === 'sent' && e.threadId).map(e => e.threadId))];
-            let replied = false;
+            let replied = false, bounce = false;
             for (const tid of threadIds) {
               if (cancelled || checked >= GMAIL_REPLY_CHECK_MAX_THREADS) break;
               checked++;
-              try { if (await GmailAPI.threadHasReply(tid)) { replied = true; break; } }
+              try {
+                const r = await GmailAPI.checkThread(tid);
+                if (r.bounced) bounce = true;
+                if (r.replied) { replied = true; break; }
+              }
               catch (_) { /* deleted thread / transient error — skip this one */ }
             }
             if (cancelled) break;
-            onUpdateVenue(replied
-              ? { ...venue, status: 'responded', lastReplyCheckAt: Date.now() }
-              : { ...venue, lastReplyCheckAt: Date.now() });
-            if (replied) flipped++;
+            const now = Date.now(), sentTo = venue.email;
+            // Decide against the LIVE venue (venuesRef), and patch through a guard that
+            // re-checks it inside the state update: a send/call/status change made while we
+            // were checking survives, and a venue the user already moved on (Booked, Pass…)
+            // is never pulled back to Responded.
+            const live = (venuesRef.current || []).find(v => v.id === venue.id);
+            if (!live) continue;
+            const isReply = replied && live.status === 'contacted';
+            const isBounce = !replied && bounce && live.email === sentTo && live.bouncedEmail !== live.email;
+            onPatchVenue(venue.id, (cur) => {
+              const patch = { lastReplyCheckAt: now };
+              if (replied && cur.status === 'contacted') patch.status = 'responded';
+              else if (!replied && bounce && cur.email === sentTo && cur.bouncedEmail !== cur.email) {
+                patch.bouncedEmail = cur.email;
+                patch.contactLog = [...(cur.contactLog || []), { date: new Date(now).toISOString().slice(0, 10), kind: 'bounce', email: cur.email }];
+              }
+              return patch;
+            });
+            if (isReply) flipped++;
+            if (isBounce) bounced++;
           }
           if (!cancelled && flipped) showToast(`📬 ${flipped} venue${flipped > 1 ? 's' : ''} replied — moved to Responded`, 'success');
+          if (!cancelled && bounced) showToast(`⚠ ${bounced} email${bounced > 1 ? 's' : ''} bounced — ${bounced > 1 ? 'those venues are' : 'that venue is'} back in the 📇 No email queue`, 'warning');
         })();
         return () => { cancelled = true; };
       }, [open]);
@@ -14367,6 +14655,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                                 ? <span style={{ color: (VENUE_STATUSES.find(s => s.key === e.status) || {}).color || 'var(--text)' }}>moved to {(VENUE_STATUSES.find(s => s.key === e.status) || {}).label || e.status}</span>
                                 : e.kind === 'call'
                                 ? <span>📞 call — {(CALL_OUTCOMES.find(o => o.key === e.outcome) || {}).label || e.outcome}</span>
+                                : e.kind === 'bounce'
+                                ? <span style={{ color: 'var(--error)' }}>⚠ bounced — {e.email || 'address'} is not deliverable</span>
                                 : <span>✉ sent “{e.template || 'email'}”{e.via === 'gmail' ? <span style={{ color: 'var(--success)' }}> · via Gmail ✓</span> : ''}</span>}
                             </div>
                           ))}
@@ -16615,6 +16905,23 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     }
 
     function App() {
+      // Another tab changed our data → this tab is stale and must not write (audit §12 #6).
+      const [staleFromOtherTab, setStaleFromOtherTab] = useState(false);
+      useEffect(() => {
+        const onStorage = (e) => {
+          if (e.storageArea && e.storageArea !== window.localStorage) return;
+          if (!crossTabChangeMakesStale(e.key)) return;
+          LS_WRITE_LOCK.locked = true;
+          setStaleFromOtherTab(true);
+        };
+        const onCorrupt = (e) => {
+          const k = (e.detail && e.detail.key) || 'a store';
+          setTimeout(() => showToast(`A saved store (${k}) was damaged and couldn't be read — its raw copy was kept and goes into your next 💾 Backup`, 'error'), 0);
+        };
+        window.addEventListener('storage', onStorage);
+        window.addEventListener('setlist:storage-corrupt', onCorrupt);
+        return () => { window.removeEventListener('storage', onStorage); window.removeEventListener('setlist:storage-corrupt', onCorrupt); };
+      }, []);
       const [bands, setBands] = useState([]);
       const [activeBandId, setActiveBandId] = useState(null);
 
@@ -16717,14 +17024,14 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           locked: Array.from(locked)
         };
         const existing = LS.get(LS_KEYS.bandSnapshots(activeBandId)) || [];
-        const next = [payload, ...existing].slice(0, 3).map((snap, idx) => ({ ...snap, id: `snapshot_${idx + 1}` }));
-        LS.set(LS_KEYS.bandSnapshots(activeBandId), next);
+        LS.set(LS_KEYS.bandSnapshots(activeBandId), nextSnapshotRing(existing, payload));
       };
 
       const recoverPreviousSnapshot = () => {
         const snapshots = LS.get(LS_KEYS.bandSnapshots(activeBandId)) || [];
-        if (snapshots.length < 2) return showToast('No previous snapshot found.', 'warning');
-        const target = snapshots[1];
+        const target = pickRecoverySnapshot(snapshots);
+        if (!target) return showToast('No earlier snapshot yet — snapshots are kept about every 10 minutes while you work.', 'warning');
+        if (!window.confirm(`Restore songs, sets and settings to how they were at ${new Date(target.ts).toLocaleString()}?`)) return;
         setSongs(target.songs || []);
         setSetlists(target.setlists || []);
         setSettings(target.settings || settings);
@@ -16947,9 +17254,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         }
         return v;
       }));
+      // Functional, id-keyed patch against the latest state — for background updates.
+      const patchVenue = (id, patch) => setVenues(prev => prev.map(x => x.id === id
+        ? applyVenuePatch(x, patch, new Date().toISOString().slice(0, 10)) : x));
       const deleteVenue = (id) => { setVenues(prev => prev.filter(x => x.id !== id)); showToast('Venue removed', 'success'); };
       const bulkAddVenues = (newVenues) => {
-        const currentNames = new Set(venues.map(v => v.name.trim().toLowerCase()));
+        const currentNames = new Set(venues.map(v => (v.name || '').trim().toLowerCase()));
         const toAdd = []; let skipped = 0;
         newVenues.forEach(v => {
           const key = (v.name || '').trim().toLowerCase();
@@ -16957,7 +17267,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           currentNames.add(key);
           toAdd.push({ ...BLANK_VENUE, ...v, id: genId(), createdAt: Date.now(), trackingToken: v.trackingToken || genTrackingToken() });
         });
-        if (toAdd.length) setVenues(prev => [...prev, ...toAdd]);
+        // Re-check against the LIVE list inside the updater (audit §12 minor): two quick adds
+        // from the directory/prospector used to dedup against the same stale closure.
+        if (toAdd.length) setVenues(prev => {
+          const live = new Set(prev.map(v => (v.name || '').trim().toLowerCase()));
+          return [...prev, ...toAdd.filter(v => !live.has(v.name.trim().toLowerCase()))];
+        });
         const msg = toAdd.length
           ? `Added ${toAdd.length} venue${toAdd.length !== 1 ? 's' : ''}${skipped ? `, skipped ${skipped} duplicate${skipped !== 1 ? 's' : ''}` : ''}`
           : `No new venues — ${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped`;
@@ -16972,6 +17287,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       // Everything lives in localStorage, so one JSON file IS the whole app state:
       // bands, songs, settings, venues + contact history, bookings, EPK, roster.
       const backupFileRef = React.useRef(null);
+      // Audit §12 #3: a backup must never claim to be complete when it isn't, and a restore
+      // must never destroy data it can't replace. So: export checks every chart the library
+      // references is actually in the file (asks before writing a partial one); restore writes
+      // the charts FIRST without clearing anything, then swaps localStorage all-or-nothing,
+      // and reloads only when everything landed.
       const exportBackup = async () => {
         const stores = {};
         for (let i = 0; i < localStorage.length; i++) {
@@ -16979,54 +17299,87 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           if (k && k.startsWith('setlist_')) stores[k] = localStorage.getItem(k);
         }
         // Embed attachment blobs (charts / lead sheets) as base64 so a restore is complete + offline.
+        const { blobs, error: attError } = await attStore.all();
         const attachments = {};
-        try {
-          const blobs = await attStore.all();
-          for (const [id, blob] of Object.entries(blobs)) {
-            attachments[id] = { mime: blob.type || 'application/octet-stream', b64: await blobToB64(blob) };
-          }
-        } catch (e) { /* no IDB / no attachments — back up localStorage only */ }
+        const unreadable = [];
+        for (const [id, blob] of Object.entries(blobs)) {
+          try { attachments[id] = { mime: blob.type || 'application/octet-stream', b64: await blobToB64(blob) }; }
+          catch (e) { unreadable.push(id); }
+        }
+        const referenced = backupReferencedAttachmentIds(stores);
+        const missing = referenced.filter(id => !attachments[id]);
+        if (missing.length) {
+          const why = attError
+            ? 'This device\'s chart storage could not be read (the browser dropped the connection — reloading the page usually fixes it).'
+            : 'They are not stored on this device (attached elsewhere, or lost from a private-browsing session).';
+          const ok = window.confirm(`${missing.length} of ${referenced.length} chart attachment${referenced.length !== 1 ? 's' : ''} could not be included in this backup.\n\n${why}\n\nOK = download the backup WITHOUT ${missing.length === 1 ? 'that chart' : 'those charts'}.\nCancel = stop (reload and try again).`);
+          if (!ok) { showToast('Backup cancelled — reload the page and try again', 'warning'); return; }
+        }
         // Annotation ink layers are plain JSON (vector strokes) — no base64 needed.
-        let annotations = {};
-        try { annotations = await annoStore.all(); } catch (e) { annotations = {}; }
-        const payload = JSON.stringify({ app: 'bandleaderhq', kind: 'full-backup', exportedAt: new Date().toISOString(), stores, attachments, annotations }, null, 1);
+        let annotations = null;
+        try { annotations = await annoStore.all(); } catch (e) { annotations = null; }
+        const payload = JSON.stringify({
+          app: 'bandleaderhq', kind: 'full-backup', exportedAt: new Date().toISOString(), stores, attachments,
+          ...(annotations ? { annotations } : { annotationsIncluded: false }),
+          ...(missing.length ? { attachmentsMissing: missing } : {}),
+        }, null, 1);
         const blob = new Blob([payload], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = `setlist-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
         a.click();
-        URL.revokeObjectURL(url);
+        a.remove();
+        // Revoking in the same tick can cancel the download (Safari/Firefox); give it time.
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
         localStorage.setItem('setlist_last_backup_at', String(Date.now()));
         const nAtt = Object.keys(attachments).length;
-        showToast(`Backup downloaded${nAtt ? ` (incl. ${nAtt} attachment${nAtt > 1 ? 's' : ''})` : ''} — keep it somewhere safe (Drive, Dropbox…)`, 'success');
+        const gaps = [missing.length && `${missing.length} chart${missing.length > 1 ? 's' : ''} missing`, !annotations && 'annotations not included'].filter(Boolean);
+        showToast(`Backup downloaded${nAtt ? ` (incl. ${nAtt} attachment${nAtt > 1 ? 's' : ''})` : ''}${gaps.length ? ` — ${gaps.join(', ')}` : ' — keep it somewhere safe (Drive, Dropbox…)'}`, gaps.length ? 'warning' : 'success');
       };
       const importBackup = (file) => {
         if (!file) return;
         const reader = new FileReader();
+        reader.onerror = () => showToast('Could not read backup file', 'error');
         reader.onload = async (ev) => {
-          try {
-            const data = JSON.parse(ev.target.result);
-            if (!data || data.kind !== 'full-backup' || !data.stores) { showToast('Not a BandLeaderHQ backup file', 'error'); return; }
-            const n = Object.keys(data.stores).length;
-            const nAtt = data.attachments ? Object.keys(data.attachments).length : 0;
-            if (!window.confirm(`Restore backup from ${(data.exportedAt || '').slice(0, 10)}?\n\nThis replaces ALL current app data (${n} stores${nAtt ? `, ${nAtt} attachments` : ''}) — bands, songs, venues, bookings, EPK. The app will reload.`)) return;
-            Object.keys(localStorage).filter(k => k.startsWith('setlist_')).forEach(k => localStorage.removeItem(k));
-            Object.entries(data.stores).forEach(([k, v]) => { if (k.startsWith('setlist_')) localStorage.setItem(k, v); });
-            // Restore embedded attachment blobs into IndexedDB (older backups have none — skipped).
+          let data;
+          try { data = JSON.parse(ev.target.result); } catch (e) { showToast('Could not read backup file: ' + e.message, 'error'); return; }
+          const plan = planBackupRestore(data);
+          if (!plan.ok) { showToast(plan.error, 'error'); return; }
+          const nAtt = plan.attIds.length;
+          const missingNote = plan.missing.length
+            ? `\n\n⚠ ${plan.missing.length} chart${plan.missing.length > 1 ? 's' : ''} referenced by this backup ${plan.missing.length > 1 ? 'are' : 'is'} not inside it. Charts already on this device are kept, so ${plan.missing.length > 1 ? 'they' : 'it'} may still open here.`
+            : '';
+          if (!window.confirm(`Restore backup from ${(data.exportedAt || '').slice(0, 10)}?\n\nThis replaces ALL current app data (${plan.storeKeys.length} stores${nAtt ? `, ${nAtt} attachments` : ''}) — bands, songs, venues, bookings, EPK. The app will reload.${missingNote}`)) return;
+          // 1) Charts + ink first, ADDITIVELY (nothing is cleared): if storage refuses them we
+          //    stop here with the current data untouched.
+          const failed = [];
+          for (const id of plan.attIds) {
+            const att = data.attachments[id];
             try {
-              await attStore.clear();
-              if (data.attachments) {
-                for (const [id, a] of Object.entries(data.attachments)) { await attStore.put(id, b64ToBlob(a.b64, a.mime)); }
-              }
-              await annoStore.clear();
-              if (data.annotations) {
-                for (const [k, rec] of Object.entries(data.annotations)) { await annoStore.set(k, rec); }
-              }
-            } catch (e) { /* IDB unavailable — localStorage was still restored */ }
-            localStorage.setItem('setlist_last_backup_at', String(Date.now()));
-            window.location.reload();
-          } catch (e) { showToast('Could not read backup file: ' + e.message, 'error'); }
+              const r = await attStore.put(id, b64ToBlob(att.b64, att.mime));
+              if (!r || !r.persisted) failed.push(id);       // session-only would vanish on reload
+            } catch (e) { failed.push(id); }
+          }
+          let annFailed = 0;
+          for (const k of plan.annotationKeys) {
+            try { await annoStore.set(k, data.annotations[k]); } catch (e) { annFailed++; }
+          }
+          if (failed.length || annFailed) {
+            const ok = window.confirm(`${failed.length ? `${failed.length} of ${nAtt} chart${nAtt !== 1 ? 's' : ''}` : ''}${failed.length && annFailed ? ' and ' : ''}${annFailed ? `${annFailed} annotation page${annFailed > 1 ? 's' : ''}` : ''} could not be saved to this device's storage (private browsing, or storage full).\n\nOK = restore everything else anyway.\nCancel = stop; your current data is unchanged.`);
+            if (!ok) { showToast('Restore cancelled — current data unchanged', 'warning'); return; }
+          }
+          // 2) Swap localStorage all-or-nothing; a quota failure rolls back to the current data.
+          const res = replaceStoresAtomically(localStorage, data.stores);
+          if (!res.ok) {
+            showToast(res.rollbackFailed
+              ? 'Restore failed and the previous data could not be fully put back — download a Backup before doing anything else'
+              : `Restore failed (${(res.error && res.error.name) || 'storage error'}) — your current data is unchanged`, 'error');
+            return;
+          }
+          try { localStorage.setItem('setlist_last_backup_at', String(Date.now())); } catch (e) {}
+          window.location.reload();
         };
         reader.readAsText(file);
       };
@@ -17085,7 +17438,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         y += 12;
 
         // ── Landscape hero photo (full width) ──
-        const photo = e.pressPhotoData && /^data:image\//.test(e.pressPhotoData) ? e.pressPhotoData : '';
+        const photo = safeImageDataUrl(e.pressPhotoData);
         if (photo) {
           try {
             const props = doc.getImageProperties(photo);
@@ -17273,12 +17626,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
         const metaLine = [e.location, e.actType, e.targetAudience].filter(Boolean).map(esc).join(' &nbsp;|&nbsp; ');
         const tagline = e.tagline || e.actType || '';
-        const photo = e.pressPhotoData && /^data:image\//.test(e.pressPhotoData) ? e.pressPhotoData : '';
-        const logo = e.logoData && /^data:image\//.test(e.logoData) ? e.logoData : '';
+        const photo = safeImageDataUrl(e.pressPhotoData);
+        const logo = safeImageDataUrl(e.logoData);
         const hub = e.linktree || e.epkUrl || e.website || '';
         const liveApi = hub ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=0&bgcolor=191c24&color=f3f4f7&data=${encodeURIComponent(href(hub))}` : '';
         const qrData = hub ? await fetchQrDataUrl(href(hub)) : '';
-        const qr = qrData ? `<img class="qrimg" src="${qrData}" alt="Scan for links">` : (hub ? `<img class="qrimg" src="${esc(liveApi)}" alt="Scan for links">` : `<div class="qr">QR</div>`);
+        const qr = safeImageDataUrl(qrData) ? `<img class="qrimg" src="${esc(safeImageDataUrl(qrData))}" alt="Scan for links">` : (hub ? `<img class="qrimg" src="${esc(liveApi)}" alt="Scan for links">` : `<div class="qr">QR</div>`);
         let actPs = [];
         if (e.elevatorPitch) actPs.push(e.elevatorPitch);
         paras(e.bio).forEach(p => actPs.push(p));
@@ -17339,14 +17692,14 @@ footer{color:#6a6f79;font-size:10px;text-align:right;margin-top:18px;}
 .printbtn{position:fixed;right:18px;bottom:18px;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.5);z-index:99;}
 @media print{.no-print{display:none!important;}.page{padding:.45in .5in;max-width:none;}@page{size:letter;margin:0;}}`;
 
-        const headerHtml = `<header class="hdr"><div class="hdr-l"><h1>${esc(bn)}</h1>${tagline ? `<div class="tagline">${esc(tagline)}</div>` : ''}${metaLine ? `<div class="meta">${metaLine}</div>` : ''}</div>${logo ? `<img class="logo" src="${logo}" alt="">` : ''}</header><div class="rule"></div>`;
+        const headerHtml = `<header class="hdr"><div class="hdr-l"><h1>${esc(bn)}</h1>${tagline ? `<div class="tagline">${esc(tagline)}</div>` : ''}${metaLine ? `<div class="meta">${metaLine}</div>` : ''}</div>${logo ? `<img class="logo" src="${esc(logo)}" alt="">` : ''}</header><div class="rule"></div>`;
         const deco = `<div class="deco d1"></div><div class="deco d2"></div><div class="deco d3"></div><div class="deco d4"></div>`;
 
         const body = `<div class="page">${deco}
 ${headerHtml}
 <div class="grid21">
 <div class="card actcard"><h2><span class="bar"></span>The Act</h2>${actParas}</div>
-<div class="card"><div class="bc-photo">${photo ? `<img src="${photo}" alt="">` : 'HERO PHOTO / LOGO'}</div><div class="bc-title">Buyer Confidence</div><ul class="bullets">${bcBullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>${qr}</div>
+<div class="card"><div class="bc-photo">${photo ? `<img src="${esc(photo)}" alt="">` : 'HERO PHOTO / LOGO'}</div><div class="bc-title">Buyer Confidence</div><ul class="bullets">${bcBullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>${qr}</div>
 </div>
 <section style="margin-bottom:28px"><h2><span class="bar"></span>At a Glance</h2><div class="card"><div class="glance-grid">${glanceItems.map(g => `<div class="gitem"><div class="gl">${g[0]}</div><div class="gv">${g[1]}</div></div>`).join('')}</div></div></section>
 <div class="grid2">
@@ -17370,7 +17723,10 @@ ${headerHtml}
 </div>
 <button class="printbtn no-print" onclick="window.print()">🖨 Print / Save as PDF</button>`;
 
-        return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(bn)} — EPK</title><style>${css}</style></head><body>${body}</body></html>`;
+        // The preview is written into a window of THIS origin (it can read our localStorage), and
+        // the download gets hosted publicly — so the page allows no script except the exact
+        // print handler (hash), no network fetches, no forms (audit §12 minor).
+        return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${EPK_HTML_CSP}"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(bn)} — EPK</title><style>${css}</style></head><body>${body}</body></html>`;
       };
 
       // Open the Web EPK in a new tab (Print -> Save as PDF for the PDF).
@@ -18173,17 +18529,26 @@ ${headerHtml}
         setEmailModal({ open: true, text: lines.join('\n') });
       };
 
-      const handleWatermarkUpload = (e) => {
-        const file = e.target.files[0];
+      // Audit §12 #7: a phone photo (2–5 MB → ~1.33× as base64) used to go straight into
+      // localStorage — failing silently behind a success toast, or fitting and starving every
+      // later song save. It's drawn at 12% opacity, so ~1000 px is plenty: shrink to fit
+      // WATERMARK_MAX_CHARS, and report honestly if it still can't be saved.
+      const handleWatermarkUpload = async (e) => {
+        const input = e.target;
+        const file = input.files && input.files[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const dataUrl = ev.target.result;
-          setWatermarkImg(dataUrl);
-          if (activeBandId) LS.set(LS_KEYS.bandWatermark(activeBandId), dataUrl);
-          showToast('Watermark image set', 'success');
-        };
-        reader.readAsDataURL(file);
+        let dataUrl;
+        try { dataUrl = await shrinkImageToDataUrl(file); }
+        catch (err) { showToast('Could not read that image — try a PNG or JPEG', 'error'); input.value = ''; return; }
+        input.value = '';
+        setWatermarkImg(dataUrl);
+        if (!activeBandId) return;
+        try {
+          localStorage.setItem(LS_KEYS.bandWatermark(activeBandId), JSON.stringify(dataUrl));
+          showToast(`Watermark image set (${fmtBytes(dataUrl.length)})`, 'success');
+        } catch (err) {
+          showToast('Watermark set for this session only — this device is out of storage space', 'warning');
+        }
       };
 
       const clearWatermark = () => {
@@ -19149,6 +19514,18 @@ ${headerHtml}
       return (
         <WorkshopPlaylistContext.Provider value={workshopCtx}>
           <IDEBackground>
+            {staleFromOtherTab && (
+              <div role="alertdialog" aria-modal="true" aria-labelledby="stale-tab-title" data-testid="stale-tab-lock"
+                style={{ position: 'fixed', inset: 0, zIndex: 100000, background: 'rgba(5,8,14,.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+                <div style={{ maxWidth: 440, background: 'var(--secondary)', border: '1px solid var(--border)', borderRadius: 12, padding: '1.5rem', textAlign: 'center' }}>
+                  <h2 id="stale-tab-title" style={{ margin: '0 0 .5rem', fontSize: '1.15rem' }}>BandLeaderHQ is open in another tab</h2>
+                  <p style={{ margin: '0 0 1rem', color: 'var(--text-muted)', fontSize: '.9rem', lineHeight: 1.45 }}>
+                    Your data was changed there. This tab has stopped saving so it can't overwrite that work. Reload to pick up the latest.
+                  </p>
+                  <button className="btn btn-primary" onClick={() => window.location.reload()} autoFocus>Reload this tab</button>
+                </div>
+              </div>
+            )}
             <div className={`app-container no-print ${FEATURE_FLAGS.phase2MobileCompatibility && touchDrag.active ? 'touch-fallback-active' : ''}`}>
             <ConfirmDialog
               open={confirmDialog.open}
@@ -19607,6 +19984,7 @@ ${headerHtml}
               onSaveEpkSettings={saveEpkSettings}
               onAddVenue={addVenue}
               onUpdateVenue={updateVenue}
+              onPatchVenue={patchVenue}
               onDeleteVenue={deleteVenue}
               onAddBooking={addBooking}
               onUpdateBooking={updateBooking}
