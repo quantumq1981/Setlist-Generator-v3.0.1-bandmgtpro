@@ -30,27 +30,38 @@
   <meta name="twitter:image" content="https://quantumq1981.github.io/Setlist-Generator-v3.0.1-bandmgtpro/assets/og-image.png" />
 
   <link rel="manifest" href="./manifest.webmanifest" />
-  <!-- TODO(SRI): add integrity hashes once CDN access is available in this environment. -->
-  <script crossorigin="anonymous" src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin="anonymous" src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script crossorigin="anonymous" src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
-  <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-  <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/mobile-drag-drop/3.0.0-rc.0/index.min.js"></script>
-  <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/mobile-drag-drop/3.0.0-rc.0/scroll-behaviour.min.js"></script>
+  <!-- Supply chain (audit §12 #8): every CDN script is an exact version on jsDelivr's npm
+       mirror (byte-identical to the npm tarball) with an SRI hash. Changing a version means
+       recomputing its hash: curl the URL, `openssl dgst -sha384 -binary f.js | base64`.
+       test/supply-chain.test.js enforces pinning + integrity; sw.js precaches the same list. -->
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js" integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js" integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.29.7/babel.min.js" integrity="sha384-ezQ6HS3FLspd9te19o2McUV6FAK091+GG7KO54f/R8DKgCDi7fULhapNrd5LY+vG"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" integrity="sha384-D/t0ZMqQW31H3az8ktEiNb39wyKnS82iFY52QPACM+IjKW3jDUhyIgh2PApRqJZs"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/mobile-drag-drop@3.0.0-rc.0/index.min.js" integrity="sha384-2jj7jJxeEm9KqRfF9LOSBQdArQruVJtAO/BpVQ5PZsEwHW1wG8DHeMdG1Ubz+/zx"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/mobile-drag-drop@3.0.0-rc.0/scroll-behaviour.min.js" integrity="sha384-KBSo4Ggm+ofASvdROZ6YUT1gejMmg006Y625P5qiOGZBSoFFFx9Srg4c5xKRhqyV"></script>
   <script>
     if (window.pdfjsLib) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
     }
     if (window.MobileDragDrop) {
       window.MobileDragDrop.polyfill({
         dragImageTranslateOverride: window.MobileDragDrop.scrollBehaviourDragImageTranslateOverride
       });
     }
+    // Service worker (audit §12 #1): sw.js serves the app shell network-first, so a deploy
+    // reaches returning users on their next load. updateViaCache:'none' stops the HTTP cache
+    // from hiding a new sw.js, and a check on every return-to-foreground catches the PWA
+    // that stays open for days on an iPad.
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('SW registration failed:', err));
+        navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((reg) => {
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') reg.update().catch(() => {});
+          });
+        }).catch((err) => console.warn('SW registration failed:', err));
       });
     }
   </script>
@@ -6585,6 +6596,13 @@
     // parse it several times (notes-detection pre-pass, set parser, flat fallback), so
     // each entry point hands PDF.js a private copy and the caller's buffer stays usable.
     // Accepts ArrayBuffer | TypedArray | DataView. Pure.
+    //
+    // SECURITY (audit §12 #2, CVE-2024-4367): PDF.js 3.x compiles font glyph paths with
+    // `new Function` when isEvalSupported is true (the default), and a crafted font can
+    // escape into arbitrary JS in this origin — which can read every localStorage store
+    // and the in-memory Gmail token. EVERY PDF.js document-open call must pass
+    // `isEvalSupported: false` (test/pdfjs-security.test.js scans for it). The real fix is
+    // PDF.js >= 4.2.67; until that upgrade, this flag closes the hole.
     function pdfDataCopy(data) {
       if (data instanceof ArrayBuffer) {
         if (data.byteLength === 0) throw new Error('PDF data is empty (the file buffer was already consumed) — please re-select the file.');
@@ -6598,7 +6616,7 @@
 
     async function pdfExtractText(arrayBuffer) {
       if (!window.pdfjsLib) throw new Error('PDF.js not loaded');
-      const pdf = await pdfjsLib.getDocument({ data: pdfDataCopy(arrayBuffer) }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: pdfDataCopy(arrayBuffer), isEvalSupported: false }).promise;
       const pages = [];
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
@@ -6918,7 +6936,7 @@
     // by Y. Returns [{ page, rows:[{ y, items:[{str,x}] }] }].
     async function pdfExtractRows(arrayBuffer) {
       if (!window.pdfjsLib) throw new Error('PDF.js not loaded');
-      const pdf = await pdfjsLib.getDocument({ data: pdfDataCopy(arrayBuffer) }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: pdfDataCopy(arrayBuffer), isEvalSupported: false }).promise;
       const pages = [];
       for (let p = 1; p <= pdf.numPages; p++) {
         const page = await pdf.getPage(p);
@@ -12866,7 +12884,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         if (!blob) return;
         if (!window.pdfjsLib) { onError && onError('PDF viewer unavailable (offline libraries not loaded).'); return; }
         blob.arrayBuffer()
-          .then(buf => pdfjsLib.getDocument({ data: buf }).promise)
+          .then(buf => pdfjsLib.getDocument({ data: buf, isEvalSupported: false }).promise)
           .then(pdf => {
             if (cancelled) { try { pdf.destroy(); } catch (e) {} return; }
             pdfRef.current = pdf;
@@ -12978,18 +12996,25 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     // jsDelivr URLs mirror the pinned npm packages exactly; verification rewrites them to the
     // local vendored copies. alphaTab auto-resolves its Bravura font from the script's dir.
     const NOTATION_LIBS = {
-      abc: { url: 'https://cdn.jsdelivr.net/npm/abcjs@6.7.0/dist/abcjs-basic-min.js', global: 'ABCJS' },
-      musicxml: { url: 'https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@2.1.2/build/opensheetmusicdisplay.min.js', global: 'opensheetmusicdisplay' },
-      guitarpro: { url: 'https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/alphaTab.min.js', global: 'alphaTab' },
+      abc: { url: 'https://cdn.jsdelivr.net/npm/abcjs@6.7.0/dist/abcjs-basic-min.js', global: 'ABCJS',
+        integrity: 'sha384-QEx1pDqNtno80p4xYN5Cqm5JcAAtUDUCHqFLq0UBhWRFoFzzNHumh20zFGG/9XMi' },
+      musicxml: { url: 'https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@2.1.2/build/opensheetmusicdisplay.min.js', global: 'opensheetmusicdisplay',
+        integrity: 'sha384-12lItsNRZQLTAONzjzkiAB2oOKC7L9JPNqWBHro/ug0hLJZTmGxbr0V2JRt8KwC2' },
+      guitarpro: { url: 'https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/alphaTab.min.js', global: 'alphaTab',
+        integrity: 'sha384-gqEQct7a5Q9FIVJn5YA5grARLrkneus3C4hXWlDkgxq9Yrg+j59ohfs8hxVFYMkF' },
     };
     const _scriptCache = {};
-    function loadScriptOnce(url) {
+    // `integrity` is the SRI hash of the pinned file (audit §12 #8); an integrity failure
+    // fires onerror, so a tampered CDN file is refused instead of run. A failed load is
+    // dropped from the cache so a later attempt (e.g. back online) can retry.
+    function loadScriptOnce(url, integrity) {
       if (_scriptCache[url]) return _scriptCache[url];
       _scriptCache[url] = new Promise((resolve, reject) => {
         const s = document.createElement('script');
         s.src = url; s.async = true;
+        if (integrity) { s.integrity = integrity; s.crossOrigin = 'anonymous'; }
         s.onload = () => resolve();
-        s.onerror = () => reject(new Error('Failed to load ' + url));
+        s.onerror = () => { delete _scriptCache[url]; s.remove(); reject(new Error('Failed to load ' + url)); };
         document.head.appendChild(s);
       });
       return _scriptCache[url];
@@ -12998,7 +13023,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       const lib = NOTATION_LIBS[format];
       if (!lib) return Promise.reject(new Error('No library for ' + format));
       if (window[lib.global]) return Promise.resolve(window[lib.global]);
-      return loadScriptOnce(lib.url).then(() => {
+      return loadScriptOnce(lib.url, lib.integrity).then(() => {
         if (!window[lib.global]) throw new Error(lib.global + ' did not initialize');
         return window[lib.global];
       });
@@ -13009,9 +13034,10 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
     // engine fetches its own worker/core/lang data from the CDN on first use, so this
     // step needs a live connection once (it then caches); it degrades gracefully offline.
     const TESSERACT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+    const TESSERACT_SRI = 'sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F';
     function ensureTesseract() {
       if (window.Tesseract) return Promise.resolve(window.Tesseract);
-      return loadScriptOnce(TESSERACT_URL).then(() => {
+      return loadScriptOnce(TESSERACT_URL, TESSERACT_SRI).then(() => {
         if (!window.Tesseract) throw new Error('Tesseract did not initialize');
         return window.Tesseract;
       });
@@ -13028,7 +13054,7 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
       } else {
         const pdfjs = window.pdfjsLib;
         if (!pdfjs) throw new Error('PDF.js unavailable');
-        const doc = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
+        const doc = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()), isEvalSupported: false }).promise;
         const page = await doc.getPage(1);
         const vp = page.getViewport({ scale: 2 });
         const canvas = document.createElement('canvas');
