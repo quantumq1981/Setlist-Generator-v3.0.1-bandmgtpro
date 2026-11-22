@@ -3226,7 +3226,27 @@
     // email-centric. These close that gap: a "needs email" work queue with
     // assisted lookup, and a call path with logged outcomes so phone-only rooms
     // are first-class pipeline citizens instead of dead ends.
-    const venueNeedsEmail = (v) => !!v && !String(v.email || '').trim();
+    // A bounce (§12 #5) marks the address it bounced on; the venue needs a new email until
+    // the address changes, so the queue/sequence stop mailing a dead inbox.
+    const venueEmailBounced = (v) => !!v && !!v.bouncedEmail
+      && String(v.bouncedEmail).trim().toLowerCase() === String(v.email || '').trim().toLowerCase();
+    const venueNeedsEmail = (v) => !!v && (!String(v.email || '').trim() || venueEmailBounced(v));
+
+    // Merge a patch into the CURRENT venue state (audit §12 #4). Background work (Gmail reply
+    // checks) used to hand back a whole venue object captured when it started, wiping any
+    // send / call / status change made while it ran. `patch` may be a function of the current
+    // venue (return null to leave it alone), so a guard like "only if still Contacted" is
+    // evaluated against the live state. Status moves are logged exactly like updateVenue. Pure.
+    const applyVenuePatch = (current, patch, today) => {
+      if (!current) return current;
+      const p = typeof patch === 'function' ? patch(current) : patch;
+      if (!p || typeof p !== 'object') return current;
+      const next = { ...current, ...p };
+      if (p.status && p.status !== current.status) {
+        next.contactLog = [...(next.contactLog || []), { date: today, kind: 'status', status: p.status }];
+      }
+      return next;
+    };
 
     // Deep-link a Google hunt for the venue's booking address.
     const googleEmailSearchUrl = (v) => {
@@ -3449,7 +3469,7 @@
         const recent = last && (Date.parse(today + 'T00:00:00Z') - Date.parse(last + 'T00:00:00Z')) / 86400000 < SEQUENCE_STEP_DAYS;
         return recent ? null : { action: 'rebook', template: 'postGig' };
       }
-      const hasEmail = !!String(venue.email || '').trim();
+      const hasEmail = !!String(venue.email || '').trim() && !venueEmailBounced(venue);
       const hasPhone = !!String(venue.phone || '').trim();
       switch (venue.status) {
         case 'prospect':
@@ -5189,6 +5209,7 @@
     const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
     const GMAIL_REPLY_CHECK_COOLDOWN_MS = 3 * 3600 * 1000;
     const GMAIL_REPLY_CHECK_MAX_THREADS = 50;
+    const GMAIL_FETCH_TIMEOUT_MS = 20000;
 
     // UTF-8 → standard base64.
     const gmailB64Utf8 = (str) => {
@@ -5209,7 +5230,10 @@
 
     // Build an RFC 2822 text/plain message. The body is base64-encoded so any UTF-8
     // content survives with safe line lengths.
+    // To/From go into raw headers: a CR/LF in an imported (OSM/CSV) address would let it
+    // inject headers (Bcc:, a second body). Refuse rather than repair (audit §12 minor).
     const gmailBuildRfc2822 = ({ to, from, subject, body }) => {
+      if (/[\r\n]/.test(String(to || '')) || /[\r\n]/.test(String(from || ''))) throw new Error('Invalid email address (contains a line break)');
       const lines = [
         `To: ${to || ''}`,
         from ? `From: ${from}` : null,
@@ -5223,18 +5247,47 @@
       return lines.filter(l => l !== null).join('\r\n');
     };
 
-    // True when a thread (Gmail metadata format) contains a message from anyone other
-    // than the connected account — i.e. the venue wrote back.
-    const gmailThreadHasReply = (thread, connectedEmail) => {
-      const me = String(connectedEmail || '').trim().toLowerCase();
-      if (!me || !thread || !Array.isArray(thread.messages)) return false;
-      return thread.messages.some(m => {
-        const from = (((m || {}).payload || {}).headers || []).find(h => /^from$/i.test((h && h.name) || ''));
-        if (!from || !from.value) return false;
-        const addr = ((from.value.match(/<([^>]+)>/) || [null, from.value])[1] || '').trim().toLowerCase();
-        return !!addr && addr !== me;
-      });
+    // Reply classification (audit §12 #5). Gmail threads a bounce (mailer-daemon NDR) and an
+    // out-of-office auto-reply into the original thread, and both have a foreign From — so a
+    // bad scraped address used to flip the venue to Responded, halt its sequence and inflate
+    // the §9n learning loop. Each message is classified; only a human reply counts.
+    const GMAIL_REPLY_HEADERS = ['From', 'Subject', 'Auto-Submitted', 'Precedence', 'X-Autoreply', 'X-Autorespond', 'Content-Type'];
+    const GMAIL_BOUNCE_LOCAL_RE = /^(mailer-daemon|postmaster|mail-?daemon)([+._-]|$)/i;
+    const GMAIL_BOUNCE_SUBJECT_RE = /^\s*(undeliverable|undelivered mail|delivery status notification|delivery (has )?failed|delivery failure|mail delivery (failed|subsystem)|returned mail|failure notice|message not delivered|address not found)/i;
+    const GMAIL_AUTO_LOCAL_RE = /^(no-?reply|do-?not-?reply|donotreply|bounces?|auto-?reply|autoresponder|notifications?)([+._-]|$)/i;
+    const GMAIL_AUTO_SUBJECT_RE = /^\s*(automatic reply|auto(matic)?[- ]?(reply|response)|out of (the )?office|ooo\b|away from (the )?office|on vacation)/i;
+    // 'mine' | 'bounce' | 'auto' | 'reply' | 'none' for one metadata-format message. Pure.
+    const gmailMessageKind = (m, me) => {
+      const h = {};
+      for (const x of (((m || {}).payload || {}).headers || [])) if (x && x.name) h[String(x.name).toLowerCase()] = String(x.value || '');
+      if (!h.from) return 'none';
+      const addr = ((h.from.match(/<([^>]+)>/) || [null, h.from])[1] || '').trim().toLowerCase();
+      if (!addr) return 'none';
+      if (addr === me) return 'mine';
+      const local = addr.split('@')[0];
+      const subject = h.subject || '';
+      if (GMAIL_BOUNCE_LOCAL_RE.test(local) || /multipart\/report/i.test(h['content-type'] || '') || GMAIL_BOUNCE_SUBJECT_RE.test(subject)) return 'bounce';
+      const autoSub = (h['auto-submitted'] || '').trim();
+      if (autoSub && !/^no$/i.test(autoSub)) return 'auto';
+      if (h['x-autoreply'] || h['x-autorespond'] || /^(auto_reply|bulk|junk)$/i.test((h.precedence || '').trim())) return 'auto';
+      if (GMAIL_AUTO_LOCAL_RE.test(local) || GMAIL_AUTO_SUBJECT_RE.test(subject)) return 'auto';
+      return 'reply';
     };
+    // { replied, bounced, autoReplied } for a thread. Pure.
+    const gmailClassifyThread = (thread, connectedEmail) => {
+      const me = String(connectedEmail || '').trim().toLowerCase();
+      const out = { replied: false, bounced: false, autoReplied: false };
+      if (!me || !thread || !Array.isArray(thread.messages)) return out;
+      for (const m of thread.messages) {
+        const k = gmailMessageKind(m, me);
+        if (k === 'reply') out.replied = true;
+        else if (k === 'bounce') out.bounced = true;
+        else if (k === 'auto') out.autoReplied = true;
+      }
+      return out;
+    };
+    // True when a thread contains a HUMAN reply from anyone other than the connected account.
+    const gmailThreadHasReply = (thread, connectedEmail) => gmailClassifyThread(thread, connectedEmail).replied;
 
     // Venues due for a reply check: still sitting in Contacted, have at least one
     // Gmail-sent touch (threadId), and weren't checked within the cooldown window.
@@ -5292,17 +5345,40 @@
         return this._requestToken(cfg.clientId, '');
       },
 
+      // Every call times out (a hung request used to stall the sequential reply checks
+      // forever) and carries the HTTP status so _authed can tell an expired token apart.
       async _fetch(path, opts, token) {
-        const r = await fetch(GMAIL_API_BASE + path, {
-          ...(opts || {}),
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...((opts || {}).headers || {}) },
-        });
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), GMAIL_FETCH_TIMEOUT_MS) : null;
+        let r;
+        try {
+          r = await fetch(GMAIL_API_BASE + path, {
+            ...(opts || {}),
+            ...(ctrl ? { signal: ctrl.signal } : {}),
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...((opts || {}).headers || {}) },
+          });
+        } catch (e) {
+          throw new Error(e && e.name === 'AbortError' ? 'Gmail did not respond — check your connection and try again' : `Could not reach Gmail (${(e && e.message) || 'network error'})`);
+        } finally { if (timer) clearTimeout(timer); }
         if (!r.ok) {
           let msg = `Gmail API error ${r.status}`;
           try { const j = await r.json(); msg = (j.error && j.error.message) || msg; } catch (_) {}
-          throw new Error(msg);
+          const err = new Error(msg); err.status = r.status;
+          throw err;
         }
         return r.json();
+      },
+      // Run fn(token). A 401 means Google revoked/expired the token before our clock said so:
+      // drop it, silently fetch a new one, retry once. (A 401 send was not delivered, so the
+      // retry cannot double-send.)
+      async _authed(fn) {
+        const token = await this.getToken();
+        try { return await fn(token); }
+        catch (e) {
+          if (!e || e.status !== 401) throw e;
+          this._token = null; this._tokenExpiresAt = 0;
+          return fn(await this.getToken());
+        }
       },
 
       // First-time connect: full consent prompt, then resolve the account's address.
@@ -5327,17 +5403,17 @@
 
       // Send a plain-text message as the connected user; resolves { id, threadId }.
       async send({ to, subject, body }) {
-        const token = await this.getToken();
         const raw = gmailBase64Url(gmailBuildRfc2822({ to, from: this.getConfig().connectedEmail, subject, body }));
-        return this._fetch('/messages/send', { method: 'POST', body: JSON.stringify({ raw }) }, token);
+        return this._authed(token => this._fetch('/messages/send', { method: 'POST', body: JSON.stringify({ raw }) }, token));
       },
 
-      // Metadata-only thread fetch (From headers) → did anyone else write in it?
-      async threadHasReply(threadId) {
-        const token = await this.getToken();
-        const thread = await this._fetch(`/threads/${encodeURIComponent(threadId)}?format=metadata&metadataHeaders=From`, {}, token);
-        return gmailThreadHasReply(thread, this.getConfig().connectedEmail);
+      // Metadata-only thread fetch → { replied, bounced, autoReplied } (gmailClassifyThread).
+      async checkThread(threadId) {
+        const qs = GMAIL_REPLY_HEADERS.map(h => `metadataHeaders=${encodeURIComponent(h)}`).join('&');
+        const thread = await this._authed(token => this._fetch(`/threads/${encodeURIComponent(threadId)}?format=metadata&${qs}`, {}, token));
+        return gmailClassifyThread(thread, this.getConfig().connectedEmail);
       },
+      async threadHasReply(threadId) { return (await this.checkThread(threadId)).replied; },
     };
 
     const storageHealth = {
@@ -13671,9 +13747,11 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
 
     /******************* VENUE MODAL *******************/
     function VenueModal({ open, onClose, initialTab, venues, bookings, setlists, songs, epkSettings,
-      onSaveEpkSettings, onAddVenue, onUpdateVenue, onDeleteVenue,
+      onSaveEpkSettings, onAddVenue, onUpdateVenue, onPatchVenue, onDeleteVenue,
       onAddBooking, onUpdateBooking, onDeleteBooking, bandName, showToast, onBulkAddVenues, onGenerateEPK, onGenerateEPKHtml, onDownloadEPKHtml }) {
       const [vTab, setVTab] = useState('venues');
+      const venuesRef = React.useRef(venues);   // latest venues for async background work
+      venuesRef.current = venues;
       // Deep-link: when the modal is opened from a top-level nav item, jump to that sub-tab.
       // (The modal stays mounted and returns null while closed, so vTab persists — hence this effect.)
       React.useEffect(() => { if (open && initialTab) setVTab(initialTab); }, [open, initialTab]);
@@ -13777,24 +13855,45 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           const candidates = gmailReplyCheckCandidates(venues);
           if (!candidates.length) return;
           try { await GmailAPI.getToken(); } catch (_) { return; } // no silent auth → skip quietly
-          let checked = 0, flipped = 0;
+          let checked = 0, flipped = 0, bounced = 0;
           for (const venue of candidates) {
             if (cancelled || checked >= GMAIL_REPLY_CHECK_MAX_THREADS) break;
             const threadIds = [...new Set((venue.contactLog || []).filter(e => e && e.kind === 'sent' && e.threadId).map(e => e.threadId))];
-            let replied = false;
+            let replied = false, bounce = false;
             for (const tid of threadIds) {
               if (cancelled || checked >= GMAIL_REPLY_CHECK_MAX_THREADS) break;
               checked++;
-              try { if (await GmailAPI.threadHasReply(tid)) { replied = true; break; } }
+              try {
+                const r = await GmailAPI.checkThread(tid);
+                if (r.bounced) bounce = true;
+                if (r.replied) { replied = true; break; }
+              }
               catch (_) { /* deleted thread / transient error — skip this one */ }
             }
             if (cancelled) break;
-            onUpdateVenue(replied
-              ? { ...venue, status: 'responded', lastReplyCheckAt: Date.now() }
-              : { ...venue, lastReplyCheckAt: Date.now() });
-            if (replied) flipped++;
+            const now = Date.now(), sentTo = venue.email;
+            // Decide against the LIVE venue (venuesRef), and patch through a guard that
+            // re-checks it inside the state update: a send/call/status change made while we
+            // were checking survives, and a venue the user already moved on (Booked, Pass…)
+            // is never pulled back to Responded.
+            const live = (venuesRef.current || []).find(v => v.id === venue.id);
+            if (!live) continue;
+            const isReply = replied && live.status === 'contacted';
+            const isBounce = !replied && bounce && live.email === sentTo && live.bouncedEmail !== live.email;
+            onPatchVenue(venue.id, (cur) => {
+              const patch = { lastReplyCheckAt: now };
+              if (replied && cur.status === 'contacted') patch.status = 'responded';
+              else if (!replied && bounce && cur.email === sentTo && cur.bouncedEmail !== cur.email) {
+                patch.bouncedEmail = cur.email;
+                patch.contactLog = [...(cur.contactLog || []), { date: new Date(now).toISOString().slice(0, 10), kind: 'bounce', email: cur.email }];
+              }
+              return patch;
+            });
+            if (isReply) flipped++;
+            if (isBounce) bounced++;
           }
           if (!cancelled && flipped) showToast(`📬 ${flipped} venue${flipped > 1 ? 's' : ''} replied — moved to Responded`, 'success');
+          if (!cancelled && bounced) showToast(`⚠ ${bounced} email${bounced > 1 ? 's' : ''} bounced — ${bounced > 1 ? 'those venues are' : 'that venue is'} back in the 📇 No email queue`, 'warning');
         })();
         return () => { cancelled = true; };
       }, [open]);
@@ -14468,6 +14567,8 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
                                 ? <span style={{ color: (VENUE_STATUSES.find(s => s.key === e.status) || {}).color || 'var(--text)' }}>moved to {(VENUE_STATUSES.find(s => s.key === e.status) || {}).label || e.status}</span>
                                 : e.kind === 'call'
                                 ? <span>📞 call — {(CALL_OUTCOMES.find(o => o.key === e.outcome) || {}).label || e.outcome}</span>
+                                : e.kind === 'bounce'
+                                ? <span style={{ color: 'var(--error)' }}>⚠ bounced — {e.email || 'address'} is not deliverable</span>
                                 : <span>✉ sent “{e.template || 'email'}”{e.via === 'gmail' ? <span style={{ color: 'var(--success)' }}> · via Gmail ✓</span> : ''}</span>}
                             </div>
                           ))}
@@ -17048,9 +17149,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
         }
         return v;
       }));
+      // Functional, id-keyed patch against the latest state — for background updates.
+      const patchVenue = (id, patch) => setVenues(prev => prev.map(x => x.id === id
+        ? applyVenuePatch(x, patch, new Date().toISOString().slice(0, 10)) : x));
       const deleteVenue = (id) => { setVenues(prev => prev.filter(x => x.id !== id)); showToast('Venue removed', 'success'); };
       const bulkAddVenues = (newVenues) => {
-        const currentNames = new Set(venues.map(v => v.name.trim().toLowerCase()));
+        const currentNames = new Set(venues.map(v => (v.name || '').trim().toLowerCase()));
         const toAdd = []; let skipped = 0;
         newVenues.forEach(v => {
           const key = (v.name || '').trim().toLowerCase();
@@ -17058,7 +17162,12 @@ function generateSetlistsCore_WithTonalGravity(songs, opts) {
           currentNames.add(key);
           toAdd.push({ ...BLANK_VENUE, ...v, id: genId(), createdAt: Date.now(), trackingToken: v.trackingToken || genTrackingToken() });
         });
-        if (toAdd.length) setVenues(prev => [...prev, ...toAdd]);
+        // Re-check against the LIVE list inside the updater (audit §12 minor): two quick adds
+        // from the directory/prospector used to dedup against the same stale closure.
+        if (toAdd.length) setVenues(prev => {
+          const live = new Set(prev.map(v => (v.name || '').trim().toLowerCase()));
+          return [...prev, ...toAdd.filter(v => !live.has(v.name.trim().toLowerCase()))];
+        });
         const msg = toAdd.length
           ? `Added ${toAdd.length} venue${toAdd.length !== 1 ? 's' : ''}${skipped ? `, skipped ${skipped} duplicate${skipped !== 1 ? 's' : ''}` : ''}`
           : `No new venues — ${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped`;
@@ -19746,6 +19855,7 @@ ${headerHtml}
               onSaveEpkSettings={saveEpkSettings}
               onAddVenue={addVenue}
               onUpdateVenue={updateVenue}
+              onPatchVenue={patchVenue}
               onDeleteVenue={deleteVenue}
               onAddBooking={addBooking}
               onUpdateBooking={updateBooking}

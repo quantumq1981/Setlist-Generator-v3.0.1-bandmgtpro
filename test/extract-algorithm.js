@@ -139,6 +139,8 @@ pieces.push(extractDecl('SET_STRUCTURE_TEMPLATES'));
 for (const g of [
   'GMAIL_REPLY_CHECK_COOLDOWN_MS',
   'gmailB64Utf8', 'gmailBase64Url', 'gmailEncodeHeader', 'gmailBuildRfc2822',
+  'GMAIL_REPLY_HEADERS', 'GMAIL_BOUNCE_LOCAL_RE', 'GMAIL_BOUNCE_SUBJECT_RE', 'GMAIL_AUTO_LOCAL_RE', 'GMAIL_AUTO_SUBJECT_RE',
+  'gmailMessageKind', 'gmailClassifyThread',
   'gmailThreadHasReply', 'gmailReplyCheckCandidates',
 ]) pieces.push(extractDecl(g));
 
@@ -201,7 +203,7 @@ for (const g of ['ENERGY_PROFILE_FIELDS', 'extractEnergyProfile', 'applyEnergyPr
 
 // Contact enrichment + phone-first outreach helpers (CALL_OUTCOMES before its users).
 for (const g of [
-  'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
+  'venueEmailBounced', 'applyVenuePatch', 'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
 ]) pieces.push(extractDecl(g));
 
 // Feedback-driven scoring (constants before the functions that use them).
@@ -284,7 +286,8 @@ const EXPORTS = [
   'generateSetlistsCore', 'generateSetlistsCore_WithTonalGravity', 'validateGenerationConstraints',
   'SET_LENGTH_MODES', 'libraryDistributedDurations', 'resolveSetDurations', 'distributeLeftoverSongs',
   'GMAIL_REPLY_CHECK_COOLDOWN_MS', 'gmailB64Utf8', 'gmailBase64Url', 'gmailEncodeHeader',
-  'gmailBuildRfc2822', 'gmailThreadHasReply', 'gmailReplyCheckCandidates',
+  'gmailBuildRfc2822', 'gmailThreadHasReply', 'gmailReplyCheckCandidates', 'gmailMessageKind', 'gmailClassifyThread',
+  'venueEmailBounced', 'applyVenuePatch',
   'venueNeedsEmail', 'googleEmailSearchUrl', 'CALL_OUTCOMES', 'applyCallOutcome', 'buildCallScript',
   'DAILY_OUTREACH_CAP', 'MAX_SEQUENCE_SENDS', 'SEQUENCE_STEP_DAYS', 'addDaysISO', 'sendsToday', 'nextActionFor',
   'VENUE_FORMATS', 'genTrackingToken', 'epkVenueSlug', 'SOLO_DUO_FORMATS', 'epkBaseForFormat', 'epkBaseForVenue', 'epkLinkForVenue',
